@@ -156,18 +156,224 @@ Filtering & metadata:
 
 ---
 
-## 📌 Status Summary — End of Day 2
+update 
 
-| Area                    | Status     |
-| ----------------------- | ---------- |
-| Chat creation & listing | ✅ Complete |
-| Pin / Unpin chats       | ✅ Done     |
-| Archive + Restore       | ✅ Done     |
-| Message Accept flag     | ✅ Done     |
-| Summary inclusion flag  | ✅ Done     |
-| DB schema stabilization | ✅ Done     |
-| UI integration          | ✅ Done     |
-| Multi-model engine      | 🔜 Next    |
-| Auto-summary logic      | 🔜 Next    |
+This document tracks **exactly what was built + verified today** — focused on **signal-aware chat intelligence, backend correctness, and UI integration.**
 
 ---
+
+## 🧠 1. Signal Classification — Fully Integrated & Working
+
+We successfully trained and deployed a **DistilBERT text classifier** that assigns a **signal level** to every **user message**:
+
+```
+high
+medium
+low
+noise
+```
+
+### 🔹 Rules Implemented
+
+| Message Type        | signal_level | include_in_summary     |
+| ------------------- | ------------ | ---------------------- |
+| **User — high**     | stored       | ✅ true                 |
+| **User — medium**   | stored       | ✅ true                 |
+| **User — low**      | stored       | ❌ false                |
+| **User — noise**    | stored       | ❌ false                |
+| **Assistant (any)** | **NULL**     | false unless synthesis |
+
+So **only high + medium user messages enter project memory.**
+
+---
+
+## 🚦 2. Noise Handling — Soft Reject Flow Complete
+
+If a message is classified **noise**:
+
+✔ It **still gets stored**
+✔ AI models are **NOT triggered**
+✔ A polite default assistant reply is sent
+✔ Message does **not enter the summary**
+
+Reply text returned:
+
+> This message appears to contain very little actionable project context — so it was not added to your working summary.
+> If this was important, please resend with details 🙂
+
+This creates **clean project memory without deleting anything.**
+
+---
+
+## 🤖 3. Multi-Model Replies — Clean Metadata Rules
+
+We confirmed database behavior:
+
+### Assistant messages now store:
+
+```
+signal_level = NULL
+include_in_summary = False
+accepted = False
+```
+
+And **synthesis replies default to include_in_summary = True**
+
+This prevents UI confusion & matches real-world product expectations.
+
+---
+
+## 🛠 4. Database Schema — Corrected & Consistent
+
+There was a bug where assistant rows previously had **signal_level = 'high'**
+We patched this in three steps:
+
+1️⃣ Allowed NULL values
+2️⃣ Backfilled assistant rows → `NULL signal_level`
+3️⃣ Restarted API contracts to match UI needs
+
+Now the DB is consistent and future-safe.
+
+---
+
+## 🧪 5. Backend Validation — All Core Scenarios Tested
+
+We verified using live DB inspection:
+
+### 🟩 User messages behave like:
+
+```
+signal_level = high|medium|low|noise
+include_in_summary = signal in (high, medium)
+```
+
+### 🟩 Assistant messages behave like:
+
+```
+signal_level = NULL
+include_in_summary = False
+```
+
+### 🟩 Synthesis behaves like:
+
+```
+signal_level = NULL
+include_in_summary = True (default)
+```
+
+### 🟩 Noise stops model fan-out
+
+Confirmed via DB + logs.
+
+---
+
+## 🎨 6. UI — Signal-Aware Chat Rendering
+
+Frontend now shows:
+
+✔ colored **signal badges**
+✔ **auto-dimming of noise messages**
+✔ correct assistant metadata
+✔ correct user badges
+✔ proper Accepted / Pin controls
+✔ synthesis pinning behavior
+
+Everything is **state-safe + visually intuitive.**
+
+---
+
+## 🔍 7. API Contract — Fixed & Verified
+
+FastAPI previously rejected NULL signal_level in responses.
+
+We updated the schema so:
+
+```
+signal_level: Optional[str]
+```
+
+And confirmed in Swagger:
+
+✔ `/chats/{id}/messages` returns valid JSON
+✔ Frontend consumes cleanly
+✔ No validation errors remain
+
+---
+
+## 🧾 8. Mock Gemini Support — Confirmed Safe
+
+Gemini replies are currently mocked with deterministic output.
+
+This ensures:
+
+✔ no external dependency
+✔ consistent QA
+✔ clear logging
+✔ safe dev-mode behavior
+
+---
+
+## 🟢 System State Right Now (Truth Summary)
+
+### What Works — 100% Verified
+
+✔ append-only chat logging
+✔ signal classification
+✔ memory filtering
+✔ soft noise rejection
+✔ multi-model AI reply flow
+✔ synthesis grouping
+✔ UI badges & dimming
+✔ correct DB metadata
+✔ Swagger API stability
+
+### What We **deliberately did NOT** build today
+
+🚫 version history
+🚫 revert
+🚫 search
+🚫 dynamic memory slices
+🚫 autosummarization
+🚫 auto-card extraction
+
+(Those come later.)
+
+---
+
+## 🧘 Philosophy — Why Today Mattered
+
+In the last 6 hours we converted Clarity-Stack from:
+
+> *“a chat system with LLM replies”*
+
+into:
+
+> **a signal-aware, memory-safe thinking environment where noise never pollutes truth — without deleting user history.**
+
+This is the **foundation layer of trust.**
+
+---
+
+## 🪪 Authorship
+
+Built collaboratively by **Ansh + GPT (Principal Architect mode)**
+with strict focus on:
+
+✔ correctness
+✔ stability
+✔ clarity
+✔ transparency
+
+---
+
+If you want, I can also generate:
+
+📌 a **CHANGELOG.md for just today**
+🧪 a **test-case script list**
+📊 a **visual explainer diagram**
+
+Just say the word 😄
+
+
+---
+
