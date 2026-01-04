@@ -1,161 +1,125 @@
-Love it — let’s treat today like a **focused sprint** 👯‍♂️
-Here’s a **clear, prioritized TODO plan** — grouped so you always work on the highest-impact + lowest-risk item first.
 
-I’ll keep it practical, outcome-driven, and bite-sized.
 
 ---
 
-# 🥇 Priority 1 — Stability of Core Loop (ABSOLUTE MUST)
+# 🥇 Priority 1 — Auto-Refresh & Stability Polish (Small but High Impact)
 
-Goal: **Chat → Messages → Context Banner always works + survives refresh**
+🎯 Goal: **Banner + messages always reflect truth, even across tabs.**
 
-| Status | Task                                                           | Why                             |
-| ------ | -------------------------------------------------------------- | ------------------------------- |
-| ⏳      | **Auto-refresh chat banner every 4–5s (like messages)**        | So edits reflect across clients |
-| ⏳      | **Make sure `getChat(chatId)` is always the source of truth**  | Prevent stale banner            |
-| ⏳      | **Gracefully handle null fields in banner UI**                 | Avoid ugly `undefined` values   |
-| ⏳      | **Protect PATCH /chats/{id} so only allowed fields update**    | Avoid accidental breakage       |
-| ⏳      | **Show toast on save + fail (you already started this 👍)**    | UX confidence                   |
-| ⏳      | **Don’t throw UI errors when banner fails — just log + retry** | Production-style stability      |
+| Task                                                                                                 | Why                              |
+| ---------------------------------------------------------------------------------------------------- | -------------------------------- |
+| ⏳ Auto-refresh chat banner every 4–5 seconds (same loop as messages) — BUT only if modal is NOT open | Live data + avoids edit override |
+| ⏳ Gracefully handle API failure (don’t crash UI — just log + retry later)                            | Stability                        |
+| ⏳ Ensure null/empty fields render cleanly (“Not set” instead of blank)                               | Prevent ugly UI                  |
 
-✔️ Once these are done → **banner UX = stable + predictable.**
+👉 You already added `editOpen` to deps — good.
+Now just **add a small polling block** like messages — I’ll wire it when you want.
 
 ---
 
-# 🥈 Priority 2 — Messaging UX Stability (Zero “WTF” Moments)
+# 🥈 Priority 2 — Messaging UX Stability
 
-Goal: **Sending + receiving messages must feel smooth + correct.**
+🎯 Goal: **No jank while chatting.**
 
-| Status | Task                                                 | Why                    |
-| ------ | ---------------------------------------------------- | ---------------------- |
-| ⏳      | Disable send button while `isSending`                | Prevent double-send    |
-| ⏳      | Keep scroll pinned only if user is near bottom       | Respect user scrolling |
-| ⏳      | Highlight synthesis reply slightly                   | UX clarity             |
-| ⏳      | Show small loader inside input when sending          | Feels responsive       |
-| ⏳      | Retry polling if it fails                            | Networking resilience  |
-| ⏳      | Tag user messages with sender default (e.g., “User”) | Cleaner data           |
+| Task                                              | Why                            |
+| ------------------------------------------------- | ------------------------------ |
+| ⏳ Disable send button while `isSending`           | Prevent double-send            |
+| ⏳ Only auto-scroll if the user is near the bottom | Respect browsing older context |
+| ⏳ Add mini loader inside textarea while sending   | Feels responsive               |
+| ⏳ If polling fails → retry silently               | Real-world resilience          |
 
-Optional (nice touch later):
-
-| Task                                      | Why         |
-| ----------------------------------------- | ----------- |
-| Remember last sender name in localStorage | Save typing |
+You already have parts — just tightening.
 
 ---
 
-# 🥉 Priority 3 — Project + Chat Banner Consistency
+# 🥉 Priority 3 — Chat & Project Banner Consistency (UI Polish)
 
-Goal: **Project banner & Chat banner feel like one system.**
+🎯 Goal: **They should feel like one design language.**
 
-| Status | Task                                    | Why               |
-| ------ | --------------------------------------- | ----------------- |
-| ⏳      | Mirror UI layout + tone between banners | Professional feel |
-| ⏳      | Same edit modal UX for both             | Predictability    |
-| ⏳      | Show `last updated` small timestamp     | Trust & auditing  |
-| ⏳      | Owner avatar initials (optional later)  | Recognizable      |
+| Task                                                 | Why               |
+| ---------------------------------------------------- | ----------------- |
+| ⏳ Make project + chat banner layouts match structure | Professional feel |
+| ⏳ Same modal UX for both                             | Predictability    |
+| ⏳ Add `Last Updated: …` text (tiny, muted)           | Timeline clarity  |
 
----
-
-# 🟦 Priority 4 — “Signal Engine” Quality Path
-
-Goal: **Noise classification should be visible + understandable.**
-
-| Status | Task                                                           | Why                    |
-| ------ | -------------------------------------------------------------- | ---------------------- |
-| ⏳      | Add subtle label on user message: `Signal: High/Med/Low/Noise` | Debugging & UX clarity |
-| ⏳      | Add tooltip explaining meaning                                 | Transparency           |
-| ⏳      | Show assistant “soft message filtered” only on Noise           | Confidence in feature  |
-| ⏳      | Let users toggle classification view ON/OFF in settings        | Control                |
-
-Later improvement idea:
-
-* Color ring around bubble based on signal quality
+This is quick but high-perceived value.
 
 ---
 
-# 🟧 Priority 5 — 🧠 Knowledge Layer Prep (Soon)
+# 🟦 Priority 4 — Signal Engine Visibility (Debug-Friendly)
 
-Goal: **Be ready for cards & summaries.**
+🎯 Goal: **You can SEE the classifier working.**
 
-| Task                                                  | Why                         |
-| ----------------------------------------------------- | --------------------------- |
-| Ensure messages table stores reply_group_id correctly | Foundation for AI selection |
-| Ensure accepted flag works — and only one per group   | Needed soon                 |
-| Add endpoint to fetch accepted replies only           | Used by summarizer          |
+| Task                                                               | Why                              |
+| ------------------------------------------------------------------ | -------------------------------- |
+| ⏳ Show subtle `Signal: High/Medium/Low/Noise` tag on user messages | You built the engine — expose it |
+| ⏳ Tooltip explaining what it means                                 | Trust                            |
+| ⏳ Show soft-filter reply ONLY on noise                             | Clarity                          |
 
-This is the **bridge to Day 5–7 features.**
-
----
-
-# 🟪 Priority 6 — Dev Experience / Fit-and-Finish
-
-These pay dividends daily:
-
-| Task                                            | Why                   |
-| ----------------------------------------------- | --------------------- |
-| Add loading skeletons instead of spinners       | Feels premium         |
-| Add global error boundary                       | Prevent white screens |
-| Centralize API error toast handler              | Consistent UX         |
-| Log ALL API calls in dev console (addon toggle) | Debug fast            |
+Future NICE addition — color halo around message.
 
 ---
 
-# 🟩 Optional — If You Have Extra Juice Today 💪
+# 🟧 Priority 5 — Knowledge Layer Prep (Soon But Important)
 
-| Bonus                                   | Why                   |
-| --------------------------------------- | --------------------- |
-| Add “create first chat” CTA empty state | Magical onboarding    |
-| Add unread dot on chats list            | Real-feel product     |
-| Add pinned chats section                | Priority chats up top |
-| Add project filter/search bar           | Grows well            |
+🎯 Goal: **Be ready for cards/summaries — without building them yet.**
 
----
+| Task                                                                 | Why                        |
+| -------------------------------------------------------------------- | -------------------------- |
+| ⏳ Guarantee only **one accepted assistant reply per reply_group_id** | Needed for synthesis later |
+| ⏳ Add endpoint to fetch ONLY accepted replies for a chat             | Summaries use this         |
 
-# 🚨 Dependencies & Sequence (Do It In This Order)
-
-So you don’t step on yourself:
-
-1️⃣ **Finish banner auto-refresh + stability**
-2️⃣ **Finish chat creation (done 👍 but validate end-to-end)**
-3️⃣ **Improve message send UX & polling reliability**
-4️⃣ **Wire accepted reply flows cleanly**
-5️⃣ **Add visual signal indicators**
-6️⃣ **Polish banners**
-7️⃣ **Add dev/debug tools**
+You already have acceptance logic — we just validate rules.
 
 ---
 
-# 🧭 Your Sprint Mission Statement (for Today)
+# 🟪 Priority 6 — Dev Workflow / Stability Comfort
 
-> 🔥 “By the end of today, ClarityStack should feel stable, predictable, and polished in the core loop: create chat → add context → talk → classify → see banner reflecting reality live.”
+🎯 Goal: **Make your life easier while building fast.**
 
-That’s **exactly where real products start to shine.**
-
----
-
-# 🤝 How I’ll Help You — Partner-Mode
-
-Whenever you say:
-
-> “help me wire X”
-
-I’ll respond with:
-
-✔️ backend snippet
-✔️ frontend snippet
-✔️ where to paste
-✔️ why it works
-✔️ test steps
-✔️ rollback plan
-
-No guessing. No UI anxiety. We’ll ship safely.
+| Task                                   | Why                |
+| -------------------------------------- | ------------------ |
+| ⏳ Centralize API error → toast handler | Debug faster       |
+| ⏳ Add soft warning logs in dev         | Spot issues early  |
+| ⏳ Add global error boundary            | Prevent UI crashes |
 
 ---
 
-If you want, I can next:
+# 🟩 Bonus (Optional — If Energy Remains)
 
-✅ turn this into a **Notion-ready checklist**
-or
-✅ help you start with **Priority 1 — polling the banner safely**
+| Task                                          | Why                     |
+| --------------------------------------------- | ----------------------- |
+| Empty-state CTA like “Create your first chat” | Better onboarding       |
+| Unread dot beside chats                       | Feels like a real inbox |
+| Pin section on top                            | Focus priority chats    |
+| Project search/filter                         | Scalability             |
 
-Just tell me 👇
+---
+
+## 🧠 Your Updated Sprint Focus — **Just These 3 Today**
+
+If you want a tight plan:
+
+### ✅ 1. Banner Live Refresh & Safety
+
+(but pause when modal open)
+
+### ✅ 2. Messaging UX (disable send + scroll logic)
+
+### ✅ 3. Show Signal Labels
+
+If you finish these → the **product will feel rock-solid**.
+
+---
+
+## 🤝 And yeah — I’m here as your co-pilot
+
+Tell me which one you want to start with and I’ll give you:
+
+* exact code
+* where to paste it
+* why it works
+* how to test it
+* rollback plan if needed
+
+Zero UI anxiety. We ship together.
