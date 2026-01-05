@@ -2,77 +2,6 @@
 
 ---
 
-# 🥇 Priority 1 — Auto-Refresh & Stability Polish (Small but High Impact)
-
-🎯 Goal: **Banner + messages always reflect truth, even across tabs.**
-
-| Task                                                                                                 | Why                              |
-| ---------------------------------------------------------------------------------------------------- | -------------------------------- |
-| ⏳ Auto-refresh chat banner every 4–5 seconds (same loop as messages) — BUT only if modal is NOT open | Live data + avoids edit override |
-| ⏳ Gracefully handle API failure (don’t crash UI — just log + retry later)                            | Stability                        |
-| ⏳ Ensure null/empty fields render cleanly (“Not set” instead of blank)                               | Prevent ugly UI                  |
-
-👉 You already added `editOpen` to deps — good.
-Now just **add a small polling block** like messages — I’ll wire it when you want.
-
----
-
-# 🥈 Priority 2 — Messaging UX Stability
-
-🎯 Goal: **No jank while chatting.**
-
-| Task                                              | Why                            |
-| ------------------------------------------------- | ------------------------------ |
-| ⏳ Disable send button while `isSending`           | Prevent double-send            |
-| ⏳ Only auto-scroll if the user is near the bottom | Respect browsing older context |
-| ⏳ Add mini loader inside textarea while sending   | Feels responsive               |
-| ⏳ If polling fails → retry silently               | Real-world resilience          |
-
-You already have parts — just tightening.
-
----
-
-# 🥉 Priority 3 — Chat & Project Banner Consistency (UI Polish)
-
-🎯 Goal: **They should feel like one design language.**
-
-| Task                                                 | Why               |
-| ---------------------------------------------------- | ----------------- |
-| ⏳ Make project + chat banner layouts match structure | Professional feel |
-| ⏳ Same modal UX for both                             | Predictability    |
-| ⏳ Add `Last Updated: …` text (tiny, muted)           | Timeline clarity  |
-
-This is quick but high-perceived value.
-
----
-
-# 🟦 Priority 4 — Signal Engine Visibility (Debug-Friendly)
-
-🎯 Goal: **You can SEE the classifier working.**
-
-| Task                                                               | Why                              |
-| ------------------------------------------------------------------ | -------------------------------- |
-| ⏳ Show subtle `Signal: High/Medium/Low/Noise` tag on user messages | You built the engine — expose it |
-| ⏳ Tooltip explaining what it means                                 | Trust                            |
-| ⏳ Show soft-filter reply ONLY on noise                             | Clarity                          |
-
-Future NICE addition — color halo around message.
-
----
-
-# 🟧 Priority 5 — Knowledge Layer Prep (Soon But Important)
-
-🎯 Goal: **Be ready for cards/summaries — without building them yet.**
-
-| Task                                                                 | Why                        |
-| -------------------------------------------------------------------- | -------------------------- |
-| ⏳ Guarantee only **one accepted assistant reply per reply_group_id** | Needed for synthesis later |
-| ⏳ Add endpoint to fetch ONLY accepted replies for a chat             | Summaries use this         |
-
-You already have acceptance logic — we just validate rules.
-
----
-
 # 🟪 Priority 6 — Dev Workflow / Stability Comfort
 
 🎯 Goal: **Make your life easier while building fast.**
@@ -84,6 +13,238 @@ You already have acceptance logic — we just validate rules.
 | ⏳ Add global error boundary            | Prevent UI crashes |
 
 ---
+Yes — your **priority sequencing + design instinct here is spot-on.**
+Let’s line it up cleanly so nothing slips and you don’t build fragile layers.
+
+---
+
+# 🟪 **First — Fix Priority 6 (Dev Workflow / Stability)**
+
+This is boring but VERY high-leverage.
+It will save you **hours of pain later.**
+
+### ✅ Do these now:
+
+1️⃣ **Centralize API errors → toast handler**
+So instead of sprinkling try/catch everywhere:
+
+* One fetch wrapper
+* Detect network / 500 / 401 / timeout separately
+* Show meaningful toast
+* Log in console (dev only)
+
+2️⃣ **Soft warning logs in dev**
+Examples:
+
+* Classifier returns NONE
+* Two assistant replies both accepted (shouldn’t happen)
+* API slow > 1.5s
+* User sends empty text
+* Model returns blank
+* Summarizer failed → fallback text
+
+These are *signals something’s wrong* but not user-visible.
+
+3️⃣ **Global React error boundary**
+So your UI **NEVER white-screens.**
+
+Just show:
+
+> Something broke — reload?
+> Logs copied to console.
+
+THEN…
+
+💜 **development becomes peaceful.**
+
+---
+
+# 🟡 **Second — YES: Improve Synthesis Quality Before Cards**
+
+You are absolutely right:
+
+> Current synthesis = concatenation
+> And that becomes noisy + redundant
+
+That is NOT a synthesis.
+That’s just **aggregating outputs.**
+
+So we need:
+
+### 🧠 **LLM-Powered Compression Layer**
+
+Goal:
+
+✔ remove redundancy
+✔ merge meaning
+✔ normalize tone
+✔ structure output
+✔ detach model hallucinations
+✔ preserve *intent*, *decision*, *outcome*
+
+---
+
+## 🔹 **What should the Synthesizer do?**
+
+Given all assistant replies in a reply-group:
+
+```
+[reply A, reply B, reply C]
+```
+
+It should produce:
+
+### **One merged, concise, neutral summary**
+
+Something like:
+
+> The system recommends a role-based access model.
+> 3 roles exist: Admin, Analyst, Viewer.
+> Admins can delete projects, others cannot.
+
+Not:
+
+❌ “Claude said…”
+❌ Raw paragraphs
+❌ Conflicting wording
+
+---
+
+# 🧪 **Should we use pretrained or build NLP summarizer?**
+
+### 👉 **Use an LLM. Do NOT build rule-based NLP.**
+
+Here’s why:
+
+| Option            | Pros                                                  | Cons                                |
+| ----------------- | ----------------------------------------------------- | ----------------------------------- |
+| 🧠 LLM summarizer | Handles ambiguity, context, tone, long-range patterns | Costs tokens                        |
+| ⚙ Rule-based NLP  | Cheap                                                 | BAD summaries, brittle, zero nuance |
+
+LLM will:
+✔ merge similar points
+✔ detect conflict
+✔ normalize language
+✔ infer shared intent
+
+You are already in LLM land — *don’t step backward.*
+
+We can still do:
+
+* **length control**
+* **structure the output**
+* **add markers like bullets**
+
+So the card becomes predictable.
+
+---
+
+# 🟩 **Third — Build Cards (NOW your system becomes beautiful)**
+
+Order so far:
+
+```
+Messages → Classifier → Acceptance → Synthesizer → Card Builder
+```
+
+At card-time, we already have clean inputs 👌
+
+So card building is now:
+
+* deterministic
+* stable
+* explainable
+* useful
+
+And **each card is a knowledge unit**.
+
+This is the core of your product.
+
+---
+
+# 🟦 **Finally — Build Context-Aware Requests**
+
+Once cards exist, your system has 3 layers:
+
+### 1️⃣ Raw chat
+
+(the noisy world)
+
+### 2️⃣ Synthesized insight
+
+(clean thread-level thinking)
+
+### 3️⃣ Card knowledge graph
+
+(long-term truth)
+
+Then **context-aware AI becomes powerful & cheap**, because:
+
+✔ You don’t re-feed 300 messages
+✔ You feed only the **best information**
+✔ You avoid hallucinations
+✔ You bias the model toward your truth
+
+---
+
+# 📌 **So the Correct Sequence is:**
+
+### **✔ Step 1 — Dev Comfort Stability**
+
+* API toast errors
+* Dev warnings
+* Error boundary
+
+### **✔ Step 2 — Proper Synthesizer**
+
+* Combine assistant replies
+* Remove redundancy
+* Generate structured short output
+
+### **✔ Step 3 — Chat Cards**
+
+* One per chat
+* Structured knowledge
+* Editable by user
+* Stored + versioned
+
+### **✔ Step 4 — Project Page = collection of Cards**
+
+### **✔ Step 5 — Context-Aware Model**
+
+Feed:
+
+```
+Project Context
+↓
+Chat Context
+↓
+Relevant Cards
+↓
+Recent User Signals (high+medium)
+↓
+Accepted Replies
+↓
+Maybe latest synthesis
+```
+
+Now the AI **thinks like your project.**
+
+---
+
+# 💡 **You asked: do we also include synthesis in context?**
+
+YES — but only **after** we clean it.
+
+Because:
+
+🟩 Accepted = user preference → *what user liked*
+🟦 Synthesis = objective merge → *what conversation means*
+
+Both are needed.
+
+---
+
 
 # 🟩 Bonus (Optional — If Energy Remains)
 
