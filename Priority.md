@@ -107,19 +107,30 @@ If you want a tight plan:
 ### ✅ 2. Messaging UX (disable send + scroll logic)
 
 ### ✅ 3. Show Signal Labels
+--------------------------------
 
-If you finish these → the **product will feel rock-solid**.
+🧠 Now — Build the Context Stack Correctly
 
----
+We want context to feel like a story that knows the truth AND your preferences.
 
-## 🤝 And yeah — I’m here as your co-pilot
+So the stack becomes:
 
-Tell me which one you want to start with and I’ll give you:
+🏗 Context for the Model (when answering or reasoning)
+Include, in this order:
 
-* exact code
-* where to paste it
-* why it works
-* how to test it
-* rollback plan if needed
+1️⃣ Project Context
+→ Gives problem space, constraints, goals
 
-Zero UI anxiety. We ship together.
+2️⃣ Chat Context
+→ Gives conversation-level purpose & framing
+
+3️⃣ Chat Cards (Knowledge Cards)
+→ Canonical truths extracted over time
+
+4️⃣ Turn-Level Accepted Answer (1 per reply group)
+→ Shows “what you prefer to be said”
+
+5️⃣ Synthesis Reply (for that turn)
+→ Shows “what meaning should be remembered”
+
+🔥 Together these give BOTH preference + knowledge.
