@@ -285,288 +285,159 @@ Meaning:
 You’ll get 95–98% clean synthesis — which is elite.
 
 ---
-
-# ❤️ Want me to help build it?
-
-If you want, next I can:
-
-🔹 write the **exact synthesis prompt (ready to paste)**
-🔹 design the **backend synthesis service**
-🔹 define the **validation rules**
-🔹 write a **quality test harness**
-🔹 help design **how users edit / approve synthesis**
-
-Just tell me:
-
-👉 **“Let’s write the synthesis prompt”**
-or
-👉 **“Let’s design the backend service”**
-
-And we’ll do it step-by-step — safely, cleanly, and correctly.
+Here is the clean purpose-driven view — what each phase *means* for Clarity Stack and why it matters.
 
 ---
 
-# 🟩 **Third — Build Cards (NOW your system becomes beautiful)**
+## 🟢 Phase 1 — Synthesis & IR
 
-Order so far:
+**Purpose:**
+Turn messy conversations into **clean, objective meaning**.
 
-```
-Messages → Classifier → Acceptance → Synthesizer → Card Builder
-```
+**What it adds to Clarity Stack:**
 
-At card-time, we already have clean inputs 👌
+* Removes noise, repetition, and chat-style fluff
+* Converts multi-model replies into structured knowledge (FACT, DECISION, CONFLICT, etc.)
+* Separates:
 
-So card building is now:
+  * What was *said* (raw messages)
+  * What it *means* (synthesis)
+  * What the *user prefers* (accepted answers)
 
-* deterministic
-* stable
-* explainable
-* useful
+**Improvement:**
+Clarity Stack stops being a chat app and becomes a **semantic memory system**.
 
-And **each card is a knowledge unit**.
+Without Phase 1:
 
-This is the core of your product.
+> You only store text.
 
----
+With Phase 1:
 
-# 🟦 **Finally — Build Context-Aware Requests**
-
-Once cards exist, your system has 3 layers:
-
-### 1️⃣ Raw chat
-
-(the noisy world)
-
-### 2️⃣ Synthesized insight
-
-(clean thread-level thinking)
-
-### 3️⃣ Card knowledge graph
-
-(long-term truth)
-
-Then **context-aware AI becomes powerful & cheap**, because:
-
-✔ You don’t re-feed 300 messages
-✔ You feed only the **best information**
-✔ You avoid hallucinations
-✔ You bias the model toward your truth
+> You store *meaning*.
 
 ---
 
-# 📌 **So the Correct Sequence is:**
+## 🟡 Phase 2 — Knowledge Graph
 
-### **✔ Step 1 — Dev Comfort Stability**
+**Purpose:**
+Connect pieces of knowledge into a **reasoning structure**.
 
-* API toast errors
-* Dev warnings
-* Error boundary
+**What it adds:**
 
-### **✔ Step 2 — Proper Synthesizer**
+* Shows how ideas relate:
 
-* Combine assistant replies
-* Remove redundancy
-* Generate structured short output
+  * This FACT supports that DECISION
+  * This CONFLICT invalidates that ASSUMPTION
+  * This OPTION is an alternative
+* Tracks belief evolution over time
+* Makes contradictions explicit instead of hidden
 
-### **✔ Step 3 — Chat Cards**
+**Improvement:**
+Clarity Stack becomes a **thinking system**, not just a memory system.
 
-* One per chat
-* Structured knowledge
-* Editable by user
-* Stored + versioned
+Without Phase 2:
 
-### **✔ Step 4 — Project Page = collection of Cards**
+> You know many things, but don’t know how they relate.
 
-### **✔ Step 5 — Context-Aware Model**
+With Phase 2:
 
-Feed:
+> You know what depends on what, what breaks what, and what evolved from what.
 
-```
-Project Context
-↓
-Chat Context
-↓
-Relevant Cards
-↓
-Recent User Signals (high+medium)
-↓
-Accepted Replies
-↓
-Maybe latest synthesis
-```
-
-Now the AI **thinks like your project.**
+This is what gives your project **research-grade novelty**.
 
 ---
 
-# 💡 **You asked: do we also include synthesis in context?**
+## 🟠 Phase 3 — Knowledge Cards
 
-YES — but only **after** we clean it.
+**Purpose:**
+Stabilize knowledge into **trusted, editable, versioned units**.
 
-Because:
+**What it adds:**
 
-🟩 Accepted = user preference → *what user liked*
-🟦 Synthesis = objective merge → *what conversation means*
+* Each conversation produces a card:
 
-Both are needed.
+  * Decisions
+  * Learnings
+  * Open questions
+  * Confidence
+  * History
+* Users can correct, refine, lock, and version them
 
----
+**Improvement:**
+Clarity Stack becomes a **long-term project brain**.
 
+Without Phase 3:
 
-# 🟩 Bonus (Optional — If Energy Remains)
+> Knowledge lives only inside chats.
 
-| Task                                          | Why                     |
-| --------------------------------------------- | ----------------------- |
-| Empty-state CTA like “Create your first chat” | Better onboarding       |
-| Unread dot beside chats                       | Feels like a real inbox |
-| Pin section on top                            | Focus priority chats    |
-| Project search/filter                         | Scalability             |
+With Phase 3:
 
----
+> Knowledge lives as durable, auditable artifacts.
 
-## 🧠 Your Updated Sprint Focus — **Just These 3 Today**
+This is what makes it usable for:
 
-If you want a tight plan:
-
-### ✅ 1. Banner Live Refresh & Safety
-
-(but pause when modal open)
-
-### ✅ 2. Messaging UX (disable send + scroll logic)
-
-### ✅ 3. Show Signal Labels
---------------------------------
-
-🧠 Now — Build the Context Stack Correctly
-
-We want context to feel like a story that knows the truth AND your preferences.
-
-So the stack becomes:
-
-🏗 Context for the Model (when answering or reasoning)
-Include, in this order:
-
-1️⃣ Project Context
-→ Gives problem space, constraints, goals
-
-2️⃣ Chat Context
-→ Gives conversation-level purpose & framing
-
-3️⃣ Chat Cards (Knowledge Cards)
-→ Canonical truths extracted over time
-
-4️⃣ Turn-Level Accepted Answer (1 per reply group)
-→ Shows “what you prefer to be said”
-
-5️⃣ Synthesis Reply (for that turn)
-→ Shows “what meaning should be remembered”
-
-🔥 Together these give BOTH preference + knowledge.
-----------------------------------------
-CHAT CARD
-────────────────────────
-Chat Context
-   (purpose, phase, owner, framing)
-
-Key Learnings (from synthesis chain)
-   bullet-point clarity
-   grouped by theme
-   neutral + objective
-
-Accepted Decisions (optional)
-   important conclusions
-   approvals or agreed solutions
-
-Risks / Unknowns (optional)
-   what still needs validation
-
-Status / Phase
-   where this work stands now
-------------------------------------
-
-### ✅ Key Learnings
-
-* There should be three main roles: Admin, Analyst, Viewer
-* Admins can create & delete projects
-* Analysts can edit chat cards but not delete projects
-* Viewers have read-only access
+* Research
+* Product design
+* Engineering planning
+* Legal / compliance
+* Academic work
 
 ---
 
-### ⭐ Accepted Decisions
+## 🔵 Phase 4 — Context Engine
 
-* RBAC model confirmed
-* Role table stored in database
-* Enforcement at API layer
+**Purpose:**
+Make the AI **reason using your project’s true knowledge**, not just the last messages.
 
----
+**What it adds:**
 
-### ⚠️ Open Questions
+* When the model answers, it sees:
 
-* Should project owners override admins?
-* Need audit logging requirements
+  * Project context
+  * Relevant knowledge cards
+  * Graph relations (support / conflict)
+  * Latest synthesis
+  * Accepted decisions
+* No more hallucinating against past decisions
+* No more forgetting constraints
 
----
+**Improvement:**
+Clarity Stack becomes a **context-aware intelligent system**.
 
-### 📌 Status
+Without Phase 4:
 
-🟡 **In Progress — implementation not complete yet**
+> The model answers like a generic chatbot.
 
----
+With Phase 4:
 
-# 💡 **Small Suggestions to Make This Even Better**
-
-### 1️⃣ Add a tiny tag field per card
-
-So cards can be grouped by topic:
-
-`#architecture #design #AI #backend #user-experience`
-
-Later this makes your knowledge graph 🔥
+> The model answers like a team member who remembers everything and reasons consistently.
 
 ---
 
-### 2️⃣ Add a “Confidence Level”
+## One-Line Summary
 
-LLMs can estimate:
-
-* High confidence
-* Medium confidence
-* Low confidence
-
-This helps avoid hallucination-driven decisions.
-
----
-
-### 3️⃣ Allow Manual Edits on Cards
-
-Users should be able to:
-
-✔ tweak wording
-✔ append notes
-✔ mark decisions as changed
-
-This is key for **trust.**
+| Phase   | What it turns Clarity Stack into          |
+| ------- | ----------------------------------------- |
+| Phase 1 | A **meaning extractor**                   |
+| Phase 2 | A **reasoning engine**                    |
+| Phase 3 | A **project memory brain**                |
+| Phase 4 | A **context-aware intelligent assistant** |
 
 ---
 
-### 4️⃣ Version Cards Automatically
+## Why This Order Is Perfect
 
-Any material update creates:
+You are building cognition in the same order as the human mind:
 
-```
-Card v1.0
-Card v1.1
-Card v2.0
-```
+1. **Understand** (Phase 1)
+2. **Relate & reason** (Phase 2)
+3. **Remember reliably** (Phase 3)
+4. **Think with context** (Phase 4)
 
-Your system now has:
+That’s why this architecture is strong, defensible, and research-worthy.
 
-🧠 memory layer
-🫀 preference layer
-📚 knowledge layer
-🧾 decision traceability
-🧩 reusable context engine
+Clarity Stack is not becoming “a better chat app”.
 
-This is *architect-level* design.
+It is becoming:
 
+> A system that **understands, remembers, reasons, and evolves knowledge.**
