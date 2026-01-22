@@ -1,265 +1,240 @@
+Alright. Calm, clean, and structured.
+Here is the **correct `priority.md` style roadmap**, with:
 
+* **Phase-1 marked as COMPLETED**
+* **Phase-2, Phase-3, Phase-4 included**
+* Written in the same gold-standard structured style you showed.
 
----
-
-Great — now we’re asking the *right* question:
-
-> **“How do we engineer synthesis so well that it feels reliable, smart, and clean — every single time?”**
-
-Here’s the **gold-standard roadmap** I’d follow if we were building this inside a production AI platform.
-We’ll go in **small controlled steps** so quality improves without breaking anything.
+You can paste this directly.
 
 ---
 
-# ⭐ Phase 1 — Make Today’s Synthesis Solid (Foundation First)
+# 🧠 Project Roadmap — Current Execution Plan
 
-Goal: **Stop redundancy + enforce structure — with zero risk.**
+> From raw chats → trusted synthesis → reasoning graph → long-term knowledge → context-aware intelligence.
 
-## ✅ Step 1 — Lock a Strict Output Structure
+---
 
-Right now synthesis still sometimes rambles.
-We fix that by forcing output shape every time.
+# ✅ Phase 1 — Synthesis & IR (COMPLETED)
 
-### **Required format**
+Goal: **Convert messy multi-model replies into clean, structured, validated meaning.**
+
+Status: 🟢 **Done**
+
+Completed components:
+
+✔ IR schema (FACT, OPTION, DECISION, CONFLICT, UNKNOWN)
+✔ Multi-model extraction
+✔ Deterministic synthesis
+✔ Structure validation
+✔ Conflict detection
+✔ UI role separation (assistant vs synthesis)
+✔ Summary pinning logic
+✔ Signal classification
+✔ Acceptance system
+
+This phase answers:
+
+> “What does this conversation objectively mean?”
+
+We now have a **clean semantic layer**.
+
+---
+
+# ⭐ Phase 2 — Knowledge Graph & Reasoning Layer (NOW)
+
+Goal: **Turn synthesis into a connected belief system with support, conflict, and evolution.**
+
+---
+
+## 🔴 P2.1 — Graph Schema (Foundation)
+
+Create core tables:
+
+### knowledge_nodes
+
+Each bullet becomes a node:
+
+* id
+* type: FACT | DECISION | OPTION | CONFLICT | UNKNOWN
+* content
+* synthesis_id
+* version
+* confidence
+* created_at
+
+### knowledge_edges
+
+Relations between beliefs:
+
+* from_node_id
+* to_node_id
+* relation:
+
+  * SUPPORTS
+  * CONTRADICTS
+  * REFINES
+  * UPDATES
+  * DEPENDS_ON
+  * BLOCKS
+  * ALTERNATIVE_OF
+* created_at
+
+This forms the **epistemic backbone**.
+
+---
+
+## 🔴 P2.2 — Deterministic Relation Extraction
+
+Map IR → Graph automatically:
+
+| IR Section   | Relation       | Target       |
+| ------------ | -------------- | ------------ |
+| FACT         | supports       | DECISION     |
+| CONFLICT     | contradicts    | DECISION     |
+| OPTION       | alternative_of | OPTION       |
+| UNKNOWN      | blocks         | DECISION     |
+| ASSUMPTION   | depends_on     | DECISION     |
+| New DECISION | refines        | Old DECISION |
+
+No guessing.
+No LLM hallucination.
+Pure structural logic.
+
+---
+
+## 🔴 P2.3 — Versioning & Belief Evolution
+
+Every update creates a chain:
 
 ```
-KEY LEARNINGS
-• …
-
-DECISIONS
-• …
-
-RISKS / OPEN QUESTIONS
-• …
-
-NEXT ACTIONS
-• …
+Decision v1
+   ↓ refines
+Decision v2
+   ⚔ contradicts
+Decision v3
 ```
 
-Rules enforced in the prompt:
+So we can answer:
 
-✔ No mention of who said what
-✔ No long paragraphs
-✔ No filler
-✔ No emojis
-✔ No markdown headings other than those labels
-✔ No conclusions that weren’t clearly stated
+✔ What changed
+✔ Why it changed
+✔ What it replaced
+✔ What it invalidated
 
-This is the most important step.
+This enables **temporal reasoning**.
 
 ---
 
-## ✅ Step 2 — Always Feed Metadata to the Model
+## 🔴 P2.4 — Reasoning Queries
 
-Pass along:
+Expose APIs:
 
-✔ chat purpose
-✔ reply group ID
-✔ assistant replies text
-✔ acceptance status
-✔ project-level context (optional later)
+* What supports this decision?
+* What contradicts it?
+* What assumptions does it depend on?
+* What is unresolved?
+* What alternatives exist?
+* What changed over time?
 
-Because **context sharpens synthesis.**
-
----
-
-## ✅ Step 3 — Add Deterministic Pre-Cleaning (Before LLM)
-
-Before calling the LLM, clean text:
-
-✔ remove duplicate replies
-✔ strip greetings (“Sure here’s your answer…”)
-✔ collapse whitespace
-✔ remove disclaimers
-✔ trim verbosity (optional rule-based shortening)
-
-This alone cuts 30–50% noise.
+Now the system can **think over its own knowledge**.
 
 ---
 
-## ✅ Step 4 — Add Deterministic Post-Validation (After LLM)
+## 🔴 P2.5 — UI: Knowledge Graph Inspector
 
-After the LLM returns:
-
-Run checks:
-
-| Check                           | Action               |
-| ------------------------------- | -------------------- |
-| Section missing                 | Insert empty section |
-| “I think / It seems / Probably” | Warn & retry         |
-| More than 5 bullets per section | Trim or compress     |
-| Total token size too large      | Re-summarize         |
-| No bullets at all               | Force retry          |
-
-So **bad output never enters memory.**
-
----
-
-# ⭐ Phase 2 — Improve Semantic Quality (Make It Smart)
-
-Now synthesis is clean — we make it **actually intelligent.**
-
----
-
-## ✅ Step 5 — Add Redundancy Compression Logic
-
-Tell the LLM:
-
-✔ Merge identical ideas
-✔ Prefer simple declarative sentences
-✔ Remove repeated details
-✔ Keep only core meaning
-
-Example:
+Enhance synthesis bubble:
 
 ```
-Response A:
-Admin users can delete projects.
-
-Response B:
-Only admins should have delete access for projects.
-
-→ Synthesized:
-Admins are the only role allowed to delete projects.
+[SYNTHESIS]
+[Related: 4] [Conflicts: 1] [Depends: 2] [History]
 ```
 
-No repetition.
-No opinion language.
-Just **facts.**
-
----
-
-## ✅ Step 6 — Add “Conflict Awareness”
-
-If replies conflict:
-
-### Example
-
-Reply A:
-
-> Postgres will be used for user auth
-
-Reply B:
-
-> We should use Firebase for auth
-
-### The synthesis MUST produce:
+Side panel shows:
 
 ```
-CONFLICTED POINTS
-• Database choice for authentication is not yet agreed.
-  Suggested options: Postgres vs Firebase.
+This Decision
+├── Supported by: 3 Facts
+├── Conflicts with: 1 Older Decision
+├── Alternatives: 2 Options
+├── Blocked by: 1 Unknown
+└── Version Chain: v1 → v2 → v3
 ```
 
-🚫 NOT silently choose one
-🚫 NOT invent a resolution
-
-This is **safety-critical.**
+Later: force-directed graph view (Obsidian / Roam style).
 
 ---
 
-## ✅ Step 7 — Normalize Tone and Voice
+# ⭐ Phase 3 — Knowledge Cards (After Graph)
 
-Define style rules:
+Goal: **Freeze stable beliefs into editable, versioned, trusted units.**
 
-✔ neutral
-✔ declarative
-✔ short
-✔ present tense
-✔ no hedging
-✔ no storytelling
-✔ no quotes
-✔ no names
+Each synthesis becomes a card:
 
-This makes cards feel **professional — not chatty.**
+* Key Learnings
+* Decisions
+* Conflicts
+* Open Questions
+* Status
+* Confidence
+* Tags
+* Version History
+* Graph Links
 
----
-
-# ⭐ Phase 3 — Make It Trustworthy (Human-Aligned)
-
-Now we reduce failure risk.
+This is your **long-term memory layer**.
 
 ---
 
-## ✅ Step 8 — Keep Accepted Reply Separate From Synthesis
+# ⭐ Phase 4 — Context Engine (Final Intelligence Layer)
 
-Because:
+Goal: **Feed only trusted, structured, relevant knowledge to the model.**
 
-🟢 synthesis = knowledge meaning
-🟢 accepted reply = preferred communication style
+Context stack order:
 
-Never merge them.
+1️⃣ Project Context
+2️⃣ Relevant Knowledge Cards
+3️⃣ Graph Relations (support / conflict)
+4️⃣ Latest Synthesis
+5️⃣ Accepted Replies
+6️⃣ Current User Query
 
-This keeps **traceability & truth correctness.**
+This answers:
+
+> “Given everything we *know*, what is the best possible answer now?”
 
 ---
 
-## ✅ Step 9 — Version the Synthesis
+# 🎯 Why This Order Is Architecturally Correct
 
-Every time synthesis updates:
+Phase-1: Meaning extraction
+Phase-2: Meaning relationships
+Phase-3: Meaning persistence
+Phase-4: Meaning reasoning
+
+Or simply:
 
 ```
-v1.0 — initial synthesis
-v1.1 — minor platform fix
-v2.0 — meaning materially changed
+Chat → Synthesis → Graph → Cards → Context Brain
 ```
 
-So you always know:
+---
 
-✔ when
-✔ why
-✔ by what input
+# ⏱ Time Reality
+
+| Phase             | Time     |
+| ----------------- | -------- |
+| Phase-2 (Graph)   | 3–4 days |
+| Phase-3 (Cards)   | 1–2 days |
+| Phase-4 (Context) | 1–2 days |
+
+In under **one focused week**, you reach:
+
+> A system that **reasons, remembers, and evolves beliefs**.
 
 ---
 
-## ✅ Step 10 — Add Human Override
-
-Sometimes humans know better.
-
-Allow:
-
-✔ editing synthesis
-✔ marking corrections
-✔ flagging hallucinations
-✔ locking a version
-
-This is what makes systems *trusted.*
-
----
-
-# ⭐ Phase 4 — Optimize Context Usage (Future Step)
-
-Once synthesis is stable — only then:
-
-✔ integrate into chat context
-✔ feed project brain
-✔ build reasoning stack
-
-Do NOT rush context streaming until synthesis is strong.
-
-Good systems grow layer-by-layer.
-
----
-
-# 🎯 The “Perfect Synthesis Checklist”
-
-If your synthesis does ALL of this,
-you’ve built something **world-class**:
-
-| Property                     | Status |
-| ---------------------------- | ------ |
-| Removes redundancy           | 🔥     |
-| Structured output            | 🔥     |
-| Neutral tone                 | 🔥     |
-| Semantic meaning merged      | 🔥     |
-| Conflicts detected           | 🔥     |
-| No hallucinations            | 🔥     |
-| Version controlled           | 🔥     |
-| Human overrides              | 🔥     |
-| Linked to chat + reply group | 🔥     |
-| Feeds knowledge cards        | 🔥     |
-
-This is exactly how **Notion AI / Replit / OpenAI memory layers** are built.
+This is no longer “just an AI app”.
+This is a **cognitive architecture**.
 
 ---
 
