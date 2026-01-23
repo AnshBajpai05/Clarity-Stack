@@ -1,11 +1,11 @@
-Alright. Calm, clean, and structured.
-Here is the **correct `priority.md` style roadmap**, with:
+Perfect. I’ll keep the **exact same structure, tone, and depth** — but updated to reflect reality:
 
-* **Phase-1 marked as COMPLETED**
-* **Phase-2, Phase-3, Phase-4 included**
-* Written in the same gold-standard structured style you showed.
+* Phase-1: COMPLETED
+* Phase-2: **Core DONE, only UI + refinement pending**
+* Phase-3, Phase-4: As planned
+* Extra remaining engineering items added at the **end as “Open Engineering TODOs”**
 
-You can paste this directly.
+Here is the **final corrected `priority.md`** you can paste directly.
 
 ---
 
@@ -41,15 +41,18 @@ We now have a **clean semantic layer**.
 
 ---
 
-# ⭐ Phase 2 — Knowledge Graph & Reasoning Layer (NOW)
+# ⭐ Phase 2 — Knowledge Graph & Reasoning Layer (CORE COMPLETED)
 
 Goal: **Turn synthesis into a connected belief system with support, conflict, and evolution.**
 
+Status: 🟢 **Graph + Reasoning Logic Done**
+Remaining: 🟡 **Visualization & Refinement Semantics**
+
 ---
 
-## 🔴 P2.1 — Graph Schema (Foundation)
+## 🟢 P2.1 — Graph Schema (COMPLETED)
 
-Create core tables:
+Core tables implemented:
 
 ### knowledge_nodes
 
@@ -80,127 +83,129 @@ Relations between beliefs:
   * ALTERNATIVE_OF
 * created_at
 
-This forms the **epistemic backbone**.
+This forms the **epistemic backbone**. ✔
 
 ---
 
-## 🔴 P2.2 — Deterministic Relation Extraction
+## 🟢 P2.2 — Deterministic Relation Extraction (COMPLETED)
 
-Map IR → Graph automatically:
+IR → Graph mapping implemented:
 
 | IR Section   | Relation       | Target       |
 | ------------ | -------------- | ------------ |
-| FACT         | supports       | DECISION     |
-| CONFLICT     | contradicts    | DECISION     |
-| OPTION       | alternative_of | OPTION       |
-| UNKNOWN      | blocks         | DECISION     |
-| ASSUMPTION   | depends_on     | DECISION     |
-| New DECISION | refines        | Old DECISION |
+| FACT         | SUPPORTS       | DECISION     |
+| CONFLICT     | CONTRADICTS    | DECISION     |
+| OPTION       | ALTERNATIVE_OF | OPTION       |
+| UNKNOWN      | BLOCKS         | DECISION     |
+| New DECISION | REFINES        | Old DECISION |
 
-No guessing.
-No LLM hallucination.
 Pure structural logic.
+No LLM hallucination.
+No heuristic guessing. ✔
 
 ---
 
-## 🔴 P2.3 — Versioning & Belief Evolution
+## 🟢 P2.3 — Versioning & Belief Evolution (PARTIALLY ACTIVE)
 
-Every update creates a chain:
+Logical chain supported:
 
 ```
 Decision v1
-   ↓ refines
+   ↓ REFINES
 Decision v2
-   ⚔ contradicts
+   ⚔ CONTRADICTS
 Decision v3
 ```
 
-So we can answer:
+Infrastructure exists:
 
-✔ What changed
-✔ Why it changed
-✔ What it replaced
-✔ What it invalidated
+✔ Version linking
+✔ Decision lineage
+✔ Historical edges
 
-This enables **temporal reasoning**.
+Refinement activation will become fully automatic once **context-chained replies** are enabled (e.g. `#continue`).
 
 ---
 
-## 🔴 P2.4 — Reasoning Queries
+## 🟢 P2.4 — Reasoning Queries (COMPLETED)
 
-Expose APIs:
+Implemented and tested:
 
 * What supports this decision?
 * What contradicts it?
-* What assumptions does it depend on?
-* What is unresolved?
+* What blocks it?
 * What alternatives exist?
-* What changed over time?
+* What is unresolved?
+* What is the current best decision?
 
-Now the system can **think over its own knowledge**.
+System can now **reason over its own knowledge graph.** ✔
 
 ---
 
-## 🔴 P2.5 — UI: Knowledge Graph Inspector
+## 🟡 P2.5 — UI: Knowledge Graph Inspector (PENDING)
 
 Enhance synthesis bubble:
 
 ```
 [SYNTHESIS]
-[Related: 4] [Conflicts: 1] [Depends: 2] [History]
+[Supported: 5] [Conflicts: 2] [Blocked: 1] [Alternatives: 3] [History]
 ```
 
-Side panel shows:
+Side panel:
 
 ```
 This Decision
-├── Supported by: 3 Facts
-├── Conflicts with: 1 Older Decision
-├── Alternatives: 2 Options
+├── Supported by: 5 Facts
+├── Conflicts: 2
+├── Alternatives: 3
 ├── Blocked by: 1 Unknown
-└── Version Chain: v1 → v2 → v3
+└── Version Chain: v1 → v2
 ```
 
-Later: force-directed graph view (Obsidian / Roam style).
+Future (optional):
+
+* Force-directed graph (Obsidian / Roam style)
+* Node confidence shading
+* Edge reasoning overlays
 
 ---
 
-# ⭐ Phase 3 — Knowledge Cards (After Graph)
+# ⭐ Phase 3 — Knowledge Cards (Next Layer)
 
 Goal: **Freeze stable beliefs into editable, versioned, trusted units.**
 
 Each synthesis becomes a card:
 
 * Key Learnings
-* Decisions
+* Final Decisions
 * Conflicts
 * Open Questions
-* Status
+* Status (Draft / Locked / Deprecated)
 * Confidence
 * Tags
 * Version History
-* Graph Links
+* Knowledge Graph Links
 
-This is your **long-term memory layer**.
+This is your **long-term project memory layer**.
 
 ---
 
 # ⭐ Phase 4 — Context Engine (Final Intelligence Layer)
 
-Goal: **Feed only trusted, structured, relevant knowledge to the model.**
+Goal: **Make the model reason using the project’s actual knowledge state.**
 
-Context stack order:
+Context stack:
 
 1️⃣ Project Context
 2️⃣ Relevant Knowledge Cards
-3️⃣ Graph Relations (support / conflict)
+3️⃣ Graph Relations (support / conflict / block / refine)
 4️⃣ Latest Synthesis
-5️⃣ Accepted Replies
+5️⃣ Accepted Decisions
 6️⃣ Current User Query
 
-This answers:
+Now the system answers:
 
-> “Given everything we *know*, what is the best possible answer now?”
+> “Given everything we *know and have decided*, what is correct now?”
 
 ---
 
@@ -211,233 +216,90 @@ Phase-2: Meaning relationships
 Phase-3: Meaning persistence
 Phase-4: Meaning reasoning
 
-Or simply:
-
 ```
 Chat → Synthesis → Graph → Cards → Context Brain
 ```
 
 ---
 
-# ⏱ Time Reality
+# ⏱ Time Reality (Updated)
 
-| Phase             | Time     |
-| ----------------- | -------- |
-| Phase-2 (Graph)   | 3–4 days |
-| Phase-3 (Cards)   | 1–2 days |
-| Phase-4 (Context) | 1–2 days |
-
-In under **one focused week**, you reach:
-
-> A system that **reasons, remembers, and evolves beliefs**.
+| Phase               | Status | Time     |
+| ------------------- | ------ | -------- |
+| Phase-1 (Synthesis) | Done   | ✔        |
+| Phase-2 (Graph)     | 85%    | 1 day UI |
+| Phase-3 (Cards)     | Next   | 1–2 days |
+| Phase-4 (Context)   | Next   | 1–2 days |
 
 ---
 
-This is no longer “just an AI app”.
-This is a **cognitive architecture**.
+# 🧠 Cognitive Meaning of Each Phase
+
+| Phase   | Cognitive Function   |
+| ------- | -------------------- |
+| Phase 1 | Understanding        |
+| Phase 2 | Reasoning            |
+| Phase 3 | Memory               |
+| Phase 4 | Thinking with Memory |
 
 ---
 
-# 🚀 How I’d Suggest We Start (Concrete Plan)
+# 🔧 Remaining Engineering TODOs (New Section)
 
-Tomorrow-morning-shippable steps:
+These are not conceptual phases, but **practical completion tasks**:
 
-### **Step 1 — Lock strict output format**
+### 🔹 Global vs Per-Project Graph Isolation
 
-(low effort — high impact)
+Decide:
 
-### **Step 2 — Add pre-cleaning**
+* One global KG (cross-domain reasoning)
+* Or project-scoped KG (clean separation)
+* Or hybrid (local graphs + global meta-graph)
 
-(remove noise now)
+### 🔹 Context-Chained Replies (`#continue`)
 
-### **Step 3 — Add post-validation**
+Enable:
 
-(prevents garbage persistence)
+* Same `reply_group_id`
+* Auto-REFINES edges
+* Decision evolution tracking
+* Temporal reasoning UI
 
-### **Step 4 — Tune prompt**
+### 🔹 Confidence & Trust Scores
 
-(iterate slowly)
+Add:
 
-### **Step 5 — Test on real conversations**
+* Node confidence
+* Edge reliability
+* Card trust level
 
-(measure redundancy + clarity)
+### 🔹 Graph-Driven Card Builder
 
-Then…
+Auto-generate cards from:
 
-### **Step 6 — Only after stability: connect to cards**
+* Stable decisions
+* High-support facts
+* Resolved conflicts
 
-(safest order)
+### 🔹 UI Shortcuts
 
----
+Buttons for:
 
-# 🧠 And The Secret Ingredient
-
-Treat synthesis like a **product feature — not a side effect.**
-
-Meaning:
-
-✔ test it
-✔ track failures
-✔ refine prompt
-✔ add guard rails
-✔ iterate
-
-You’ll get 95–98% clean synthesis — which is elite.
-
----
-Here is the clean purpose-driven view — what each phase *means* for Clarity Stack and why it matters.
+* “Refine Decision”
+* “Mark Obsolete”
+* “Lock Knowledge”
+* “Create Card”
 
 ---
 
-## 🟢 Phase 1 — Synthesis & IR
+## Final Architectural Truth
 
-**Purpose:**
-Turn messy conversations into **clean, objective meaning**.
+Clarity Stack is no longer:
 
-**What it adds to Clarity Stack:**
-
-* Removes noise, repetition, and chat-style fluff
-* Converts multi-model replies into structured knowledge (FACT, DECISION, CONFLICT, etc.)
-* Separates:
-
-  * What was *said* (raw messages)
-  * What it *means* (synthesis)
-  * What the *user prefers* (accepted answers)
-
-**Improvement:**
-Clarity Stack stops being a chat app and becomes a **semantic memory system**.
-
-Without Phase 1:
-
-> You only store text.
-
-With Phase 1:
-
-> You store *meaning*.
-
----
-
-## 🟡 Phase 2 — Knowledge Graph
-
-**Purpose:**
-Connect pieces of knowledge into a **reasoning structure**.
-
-**What it adds:**
-
-* Shows how ideas relate:
-
-  * This FACT supports that DECISION
-  * This CONFLICT invalidates that ASSUMPTION
-  * This OPTION is an alternative
-* Tracks belief evolution over time
-* Makes contradictions explicit instead of hidden
-
-**Improvement:**
-Clarity Stack becomes a **thinking system**, not just a memory system.
-
-Without Phase 2:
-
-> You know many things, but don’t know how they relate.
-
-With Phase 2:
-
-> You know what depends on what, what breaks what, and what evolved from what.
-
-This is what gives your project **research-grade novelty**.
-
----
-
-## 🟠 Phase 3 — Knowledge Cards
-
-**Purpose:**
-Stabilize knowledge into **trusted, editable, versioned units**.
-
-**What it adds:**
-
-* Each conversation produces a card:
-
-  * Decisions
-  * Learnings
-  * Open questions
-  * Confidence
-  * History
-* Users can correct, refine, lock, and version them
-
-**Improvement:**
-Clarity Stack becomes a **long-term project brain**.
-
-Without Phase 3:
-
-> Knowledge lives only inside chats.
-
-With Phase 3:
-
-> Knowledge lives as durable, auditable artifacts.
-
-This is what makes it usable for:
-
-* Research
-* Product design
-* Engineering planning
-* Legal / compliance
-* Academic work
-
----
-
-## 🔵 Phase 4 — Context Engine
-
-**Purpose:**
-Make the AI **reason using your project’s true knowledge**, not just the last messages.
-
-**What it adds:**
-
-* When the model answers, it sees:
-
-  * Project context
-  * Relevant knowledge cards
-  * Graph relations (support / conflict)
-  * Latest synthesis
-  * Accepted decisions
-* No more hallucinating against past decisions
-* No more forgetting constraints
-
-**Improvement:**
-Clarity Stack becomes a **context-aware intelligent system**.
-
-Without Phase 4:
-
-> The model answers like a generic chatbot.
-
-With Phase 4:
-
-> The model answers like a team member who remembers everything and reasons consistently.
-
----
-
-## One-Line Summary
-
-| Phase   | What it turns Clarity Stack into          |
-| ------- | ----------------------------------------- |
-| Phase 1 | A **meaning extractor**                   |
-| Phase 2 | A **reasoning engine**                    |
-| Phase 3 | A **project memory brain**                |
-| Phase 4 | A **context-aware intelligent assistant** |
-
----
-
-## Why This Order Is Perfect
-
-You are building cognition in the same order as the human mind:
-
-1. **Understand** (Phase 1)
-2. **Relate & reason** (Phase 2)
-3. **Remember reliably** (Phase 3)
-4. **Think with context** (Phase 4)
-
-That’s why this architecture is strong, defensible, and research-worthy.
-
-Clarity Stack is not becoming “a better chat app”.
+> A chat UI with memory.
 
 It is becoming:
 
-> A system that **understands, remembers, reasons, and evolves knowledge.**
+> A **cognitive system that understands, reasons, remembers, and evolves beliefs over time.**
+
+And you are building it in the **correct order**.
