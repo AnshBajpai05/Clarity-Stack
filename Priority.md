@@ -1,305 +1,231 @@
-Perfect. I’ll keep the **exact same structure, tone, and depth** — but updated to reflect reality:
+Here is the corrected version where we **remove “what is done” framing and shift fully to “what is next / what remains”**, while keeping the same structure, tone, and architectural seriousness.
 
-* Phase-1: COMPLETED
-* Phase-2: **Core DONE, only UI + refinement pending**
-* Phase-3, Phase-4: As planned
-* Extra remaining engineering items added at the **end as “Open Engineering TODOs”**
-
-Here is the **final corrected `priority.md`** you can paste directly.
+You can replace your existing `priority.md` with this.
 
 ---
 
-# 🧠 Project Roadmap — Current Execution Plan
+# 🧠 Project Roadmap — Forward Execution Plan
 
-> From raw chats → trusted synthesis → reasoning graph → long-term knowledge → context-aware intelligence.
+> From trusted synthesis → causal reasoning graph → knowledge memory → context-aware intelligence.
 
----
-
-# ✅ Phase 1 — Synthesis & IR (COMPLETED)
-
-Goal: **Convert messy multi-model replies into clean, structured, validated meaning.**
-
-Status: 🟢 **Done**
-
-Completed components:
-
-✔ IR schema (FACT, OPTION, DECISION, CONFLICT, UNKNOWN)
-✔ Multi-model extraction
-✔ Deterministic synthesis
-✔ Structure validation
-✔ Conflict detection
-✔ UI role separation (assistant vs synthesis)
-✔ Summary pinning logic
-✔ Signal classification
-✔ Acceptance system
-
-This phase answers:
-
-> “What does this conversation objectively mean?”
-
-We now have a **clean semantic layer**.
+This document now focuses only on **what remains to be built and refined**.
+Foundational layers (Synthesis + Core KG) are considered **stable and in place**.
 
 ---
 
-# ⭐ Phase 2 — Knowledge Graph & Reasoning Layer (CORE COMPLETED)
+# ⭐ Phase 2 — Knowledge Graph & Reasoning Layer (Refinement Stage)
 
-Goal: **Turn synthesis into a connected belief system with support, conflict, and evolution.**
+Goal: **Turn synthesis into an operational causal reasoning system.**
 
-Status: 🟢 **Graph + Reasoning Logic Done**
-Remaining: 🟡 **Visualization & Refinement Semantics**
-
----
-
-## 🟢 P2.1 — Graph Schema (COMPLETED)
-
-Core tables implemented:
-
-### knowledge_nodes
-
-Each bullet becomes a node:
-
-* id
-* type: FACT | DECISION | OPTION | CONFLICT | UNKNOWN
-* content
-* synthesis_id
-* version
-* confidence
-* created_at
-
-### knowledge_edges
-
-Relations between beliefs:
-
-* from_node_id
-* to_node_id
-* relation:
-
-  * SUPPORTS
-  * CONTRADICTS
-  * REFINES
-  * UPDATES
-  * DEPENDS_ON
-  * BLOCKS
-  * ALTERNATIVE_OF
-* created_at
-
-This forms the **epistemic backbone**. ✔
+Status: 🟡 **UI Semantics, Temporal Reasoning, Confidence Propagation Pending**
 
 ---
 
-## 🟢 P2.2 — Deterministic Relation Extraction (COMPLETED)
+## 🔹 P2.1 — Causal Visualization Semantics
 
-IR → Graph mapping implemented:
+Current state:
 
-| IR Section   | Relation       | Target       |
-| ------------ | -------------- | ------------ |
-| FACT         | SUPPORTS       | DECISION     |
-| CONFLICT     | CONTRADICTS    | DECISION     |
-| OPTION       | ALTERNATIVE_OF | OPTION       |
-| UNKNOWN      | BLOCKS         | DECISION     |
-| New DECISION | REFINES        | Old DECISION |
+* Decision Cockpit renders:
 
-Pure structural logic.
-No LLM hallucination.
-No heuristic guessing. ✔
+  * Evidence
+  * Decision
+  * Conflicts
+  * Risks
+  * Alternatives
+  * Support / Opposition / Uncertainty gauges
+
+Next refinements:
+
+* Edge-level visibility (which fact supports which decision)
+* Visual causality chains (FACT → SUPPORTS → DECISION → BLOCKED BY → UNKNOWN)
+* Hover-based edge explanation
+* Cross-decision dependency arrows
+
+Target:
+
+```
+Evidence Layer
+   ↓ supports
+Decision Core
+   ↑ blocked by
+Risk / Unknown Layer
+```
 
 ---
 
-## 🟢 P2.3 — Versioning & Belief Evolution (PARTIALLY ACTIVE)
+## 🔹 P2.2 — Temporal Reasoning (History / Drift)
 
-Logical chain supported:
+Activate the existing tabs:
+
+### CURRENT
+
+Active belief state.
+
+### HISTORY
+
+Decision evolution:
 
 ```
 Decision v1
-   ↓ REFINES
+   ↓ refined by
 Decision v2
-   ⚔ CONTRADICTS
+   ⚔ contradicted by
 Decision v3
 ```
 
-Infrastructure exists:
+### DRIFT
 
-✔ Version linking
-✔ Decision lineage
-✔ Historical edges
+Measure:
 
-Refinement activation will become fully automatic once **context-chained replies** are enabled (e.g. `#continue`).
-
----
-
-## 🟢 P2.4 — Reasoning Queries (COMPLETED)
-
-Implemented and tested:
-
-* What supports this decision?
-* What contradicts it?
-* What blocks it?
-* What alternatives exist?
-* What is unresolved?
-* What is the current best decision?
-
-System can now **reason over its own knowledge graph.** ✔
+* Support decay
+* Conflict growth
+* Uncertainty accumulation
+* Decision stability over time
 
 ---
 
-## 🟡 P2.5 — UI: Knowledge Graph Inspector (PENDING)
+## 🔹 P2.3 — Confidence & Stability Engine
 
-Enhance synthesis bubble:
+Move from static counts to:
 
-```
-[SYNTHESIS]
-[Supported: 5] [Conflicts: 2] [Blocked: 1] [Alternatives: 3] [History]
-```
+* Node confidence (0–1)
+* Edge strength (support weight)
+* Decision stability score
+* Risk pressure index
+* Belief entropy (uncertainty mass)
 
-Side panel:
+These drive:
 
-```
-This Decision
-├── Supported by: 5 Facts
-├── Conflicts: 2
-├── Alternatives: 3
-├── Blocked by: 1 Unknown
-└── Version Chain: v1 → v2
-```
+* Support %
+* Opposition %
+* Uncertainty %
 
-Future (optional):
-
-* Force-directed graph (Obsidian / Roam style)
-* Node confidence shading
-* Edge reasoning overlays
+as true epistemic metrics, not UI heuristics.
 
 ---
 
-# ⭐ Phase 3 — Knowledge Cards (Next Layer)
+# ⭐ Phase 3 — Knowledge Cards (Memory Layer)
 
-Goal: **Freeze stable beliefs into editable, versioned, trusted units.**
+Goal: **Freeze stable regions of the graph into reusable knowledge objects.**
 
-Each synthesis becomes a card:
+Each card:
 
-* Key Learnings
-* Final Decisions
-* Conflicts
-* Open Questions
-* Status (Draft / Locked / Deprecated)
-* Confidence
-* Tags
-* Version History
-* Knowledge Graph Links
+* Decision Card
+* Risk Card
+* Assumption Card
+* Open Question Card
 
-This is your **long-term project memory layer**.
+Each card contains:
+
+* Graph subnetwork snapshot
+* Support / Conflict / Blockers
+* Confidence & stability
+* Version history
+* Lock / refine / deprecate lifecycle
+
+This becomes the **long-term memory substrate**.
 
 ---
 
-# ⭐ Phase 4 — Context Engine (Final Intelligence Layer)
+# ⭐ Phase 4 — Context Reasoning Engine
 
-Goal: **Make the model reason using the project’s actual knowledge state.**
+Goal: **Make the system answer using its own knowledge state.**
 
 Context stack:
 
-1️⃣ Project Context
-2️⃣ Relevant Knowledge Cards
-3️⃣ Graph Relations (support / conflict / block / refine)
-4️⃣ Latest Synthesis
-5️⃣ Accepted Decisions
-6️⃣ Current User Query
+1. Active Project Graph
+2. Relevant Decision Cards
+3. Conflicts & Risks
+4. Historical Refinements
+5. Current Question
 
-Now the system answers:
+So answers become:
 
-> “Given everything we *know and have decided*, what is correct now?”
+> “Given our existing decisions, evidence, conflicts, and uncertainties — what is now the best conclusion?”
 
 ---
 
-# 🎯 Why This Order Is Architecturally Correct
-
-Phase-1: Meaning extraction
-Phase-2: Meaning relationships
-Phase-3: Meaning persistence
-Phase-4: Meaning reasoning
+# 🎯 Architectural Flow
 
 ```
-Chat → Synthesis → Graph → Cards → Context Brain
+Chat
+  → Synthesis (Semantic IR)
+      → Knowledge Graph (Causal Structure)
+          → Decision Cockpit (Reasoning UI)
+              → Knowledge Cards (Memory)
+                  → Context Engine (Thinking Layer)
 ```
 
 ---
 
-# ⏱ Time Reality (Updated)
+# ⏱ Forward Timeline
 
-| Phase               | Status | Time     |
-| ------------------- | ------ | -------- |
-| Phase-1 (Synthesis) | Done   | ✔        |
-| Phase-2 (Graph)     | 85%    | 1 day UI |
-| Phase-3 (Cards)     | Next   | 1–2 days |
-| Phase-4 (Context)   | Next   | 1–2 days |
-
----
-
-# 🧠 Cognitive Meaning of Each Phase
-
-| Phase   | Cognitive Function   |
-| ------- | -------------------- |
-| Phase 1 | Understanding        |
-| Phase 2 | Reasoning            |
-| Phase 3 | Memory               |
-| Phase 4 | Thinking with Memory |
+| Layer   | Focus                                  | ETA      |
+| ------- | -------------------------------------- | -------- |
+| Phase 2 | Temporal + Confidence + Edge Semantics | 1–2 days |
+| Phase 3 | Knowledge Cards                        | 1–2 days |
+| Phase 4 | Context Reasoning                      | 1–2 days |
 
 ---
 
-# 🔧 Remaining Engineering TODOs (New Section)
+# 🧠 Cognitive Mapping
 
-These are not conceptual phases, but **practical completion tasks**:
-
-### 🔹 Global vs Per-Project Graph Isolation
-
-Decide:
-
-* One global KG (cross-domain reasoning)
-* Or project-scoped KG (clean separation)
-* Or hybrid (local graphs + global meta-graph)
-
-### 🔹 Context-Chained Replies (`#continue`)
-
-Enable:
-
-* Same `reply_group_id`
-* Auto-REFINES edges
-* Decision evolution tracking
-* Temporal reasoning UI
-
-### 🔹 Confidence & Trust Scores
-
-Add:
-
-* Node confidence
-* Edge reliability
-* Card trust level
-
-### 🔹 Graph-Driven Card Builder
-
-Auto-generate cards from:
-
-* Stable decisions
-* High-support facts
-* Resolved conflicts
-
-### 🔹 UI Shortcuts
-
-Buttons for:
-
-* “Refine Decision”
-* “Mark Obsolete”
-* “Lock Knowledge”
-* “Create Card”
+| Layer          | Cognitive Role |
+| -------------- | -------------- |
+| Synthesis      | Understanding  |
+| Graph          | Reasoning      |
+| Cards          | Memory         |
+| Context Engine | Thinking       |
 
 ---
 
-## Final Architectural Truth
+# 🔧 Open Engineering TODOs
 
-Clarity Stack is no longer:
+### 🔹 Decision Stability Index
 
-> A chat UI with memory.
+Compute convergence vs contradiction pressure.
 
-It is becoming:
+### 🔹 Cross-Decision Dependencies
 
-> A **cognitive system that understands, reasons, remembers, and evolves beliefs over time.**
+Enable `DEPENDS_ON` and `REFINES` visualization.
 
-And you are building it in the **correct order**.
+### 🔹 Card Auto-Generation
+
+Promote stable subgraphs into persistent cards.
+
+### 🔹 Trust & Confidence Propagation
+
+Propagate uncertainty and support across edges.
+
+### 🔹 Action Hooks
+
+Operationalize reasoning:
+
+* Refine Decision
+* Invalidate Evidence
+* Escalate Risk
+* Lock Knowledge
+* Create Card
+
+---
+
+## Final Architectural Direction
+
+ClarityStack is transitioning from:
+
+> A system that *summarizes conversations*
+
+into:
+
+> A system that *builds, evolves, and reasons over structured belief systems.*
+
+What remains now is **not core logic**, but **cognitive refinement layers**:
+
+* Temporal awareness
+* Confidence physics
+* Memory crystallization
+* Contextual reasoning
+
+You are no longer building features.
+
+You are building a **thinking system.**
