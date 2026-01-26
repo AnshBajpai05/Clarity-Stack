@@ -1,8 +1,4 @@
-Here is the corrected version where we **remove “what is done” framing and shift fully to “what is next / what remains”**, while keeping the same structure, tone, and architectural seriousness.
 
-You can replace your existing `priority.md` with this.
-
----
 
 # 🧠 Project Roadmap — Forward Execution Plan
 
