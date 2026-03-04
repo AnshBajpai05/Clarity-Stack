@@ -1,0 +1,61 @@
+# ClarityStack: Final Feature Priority List
+*Sorted by highest return-on-effort. You have 3 people — split accordingly.*
+
+---
+
+## 🔴 TIER 1: Must-Have (Non-Negotiable — Ship These First)
+
+| # | Feature | Why it's non-negotiable | Effort | Who |
+|---|---------|------------------------|--------|-----|
+| 1 | **Semantic Search** | Without this, the graph is write-only. People will stop using it in week 2. "Show me all decisions about database architecture" must work even if the original text never used those words. Use a vector embedding (e.g., sentence-transformers) over nodes. | Medium | Backend person |
+| 2 | **Decision Provenance Panel** | Every KnowledgeNode must link back to the exact message(s) that created it. This is your Git Blame moment. It is the single feature that makes ClarityStack fundamentally different from Notion AI. Without it, no professional trusts the graph as source of truth. | Medium | Backend + Frontend |
+| 3 | **Visual Graph View** | Right now the graph exists as a database but users see cards/lists. You must render an actual interactive node graph (use `react-force-graph` or `vis-network`). This is the one screenshot that will make investors, professors, and recruiters stop scrolling. | Medium | Frontend person |
+| 4 | **User Auth + Workspaces** | Right now any call to the API exposes all projects. Need JWT-based auth and project-level access roles (Admin, Contributor, Viewer). Without this, no team-use, no B2B pitch, no enterprise conversation. | Medium | Backend |
+| 5 | **Import via Paste** | A dedicated "Import Chat" page where you paste a raw ChatGPT, Claude, or Slack conversation and it automatically splits it into a thread, runs classification, and feeds it through your synthesis pipeline. This reduces the barrier to getting data in to near-zero. | Low-Medium | Backend + Frontend |
+
+---
+
+## 🟡 TIER 2: High Value (Ship These Next — Major Differentiators)
+
+| # | Feature | Why it matters | Effort | Who |
+|---|---------|---------------|--------|-----|
+| 6 | **"Today" Dashboard / Daily Briefing** | On login, show: contested nodes awaiting resolution, stale decisions (not updated in 60+ days), and recent team activity. This creates a daily open-the-app habit, which is the difference between a tool and a workflow. | Medium | Frontend + Backend |
+| 7 | **Conflict Resolution Workflow** | When AI detects a CONFLICT edge between two nodes, it raises a "Resolution Required" flag. A designated owner (PM, lead) sees it on their dashboard and clicks "Approve A / Approve B / Rewrite." This is human-in-the-loop governance — critical for teams and enterprise. | Medium-High | Full stack |
+| 8 | **Chrome Extension (Clip to Graph)** | Highlight any text on any webpage (research paper, documentation, Slack in browser) and right-click → "Add to ClarityStack." It creates a KnowledgeNode instantly. Researchers will never leave after this. | Medium | New frontend skill |
+| 9 | **Export: Audit Pack** | One-click export of all decisions in a project as a structured PDF or JSON-LD, with timestamps, node IDs, source message references, and model used. Essential for compliance, thesis appendices, and board-level reviews. | Low | Backend |
+| 10 | **Temporal Confidence Decay** | A nightly background job that slowly reduces `confidence` on any `KnowledgeNode` not reinforced by new input in 90 days and flags it `STALE`. Shows the graph is a living system, not a dump. Huge for your resume (temporal reasoning in applied systems). | Low | Backend |
+
+---
+
+## 🟢 TIER 3: Optional / Strategic (Great for Resume, Pitch Decks, Version 2)
+
+| # | Feature | Why it matters | Effort |
+|---|---------|---------------|--------|
+| 11 | **Slack Bot** | Post a Slack message, bot synthesizes the thread silently and links the output back. Zero user behaviour change required. The holy grail for enterprise adoption. | High |
+| 12 | **GitHub PR Listener** | Listens to PR review comments, extracts architecture decisions, creates nodes. Engineers never have to open ClarityStack manually. | High |
+| 13 | **ADR Auto-Generation** | Select a set of decision nodes → auto-generates a formatted Architecture Decision Record (ADR) document that can be committed to the repo. Engineers will love this. | Medium |
+| 14 | **"What If" Branching** | Clone the graph, change a root assumption (e.g., "We switch from AWS to GCP"), and ClarityStack traverses all DEPENDS_ON edges to show what breaks. Extraordinary for CTOs and architects. | Very High |
+| 15 | **Notion / Confluence Import** | Accept a Notion export or Confluence XML, parse it into Projects and KnowledgeNodes. Massive adoption unlock for teams already on those platforms. | Medium-High |
+| 16 | **Decision Analytics Dashboard** | Charts: decisions per week, conflict rate, average time-to-resolution, most contested topics. Makes product value visible to leadership. | Medium |
+| 17 | **AI-Powered "Ask the Graph"** | A chat window per project. "Hey ClarityStack, what are all the open risks in Project X?" It traverses the graph and answers in natural language with citations. | High |
+
+---
+
+## Team Split Suggestion
+
+| Person | Focus Area |
+|--------|-----------|
+| **You (Ansh) — Lead** | Architecture oversight, Backend graph APIs, Auth/RBAC, Provenance endpoint |
+| **Teammate 2** | Frontend: Visual Graph View, Today Dashboard, Resolution Workflow UI |
+| **Teammate 3** | Data pipeline: Semantic Search (vector embeddings), Import, Chrome Extension |
+
+---
+
+## The 3-Feature Demo That Will Impress Anyone
+
+When presenting to a recruiter, investor, or professor, demo exactly these 3 things in this order:
+1. **Paste a raw ChatGPT conversation → Graph appears in 10 seconds** (shows ingestion)
+2. **Click a node → Provenance panel shows the exact source message** (shows trust)
+3. **Search "why did we drop X" → Correct node surfaces instantly** (shows utility)
+
+If those 3 flows work flawlessly, the project speaks for itself.
