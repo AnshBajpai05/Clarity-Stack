@@ -1,0 +1,12 @@
+{
+  "manifest_version": 3,
+  "name": "ThreatLens",
+  "version": "1.0",
+  "description": "On-demand Phishing & Threat Analyzer",
+  "permissions": ["activeTab"],
+  "host_permissions": ["http://localhost:8001/*"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Analyze Page"
+  }
+}

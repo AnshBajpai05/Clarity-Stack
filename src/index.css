@@ -1,0 +1,66 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 222 47% 11%;
+    --foreground: 210 40% 98%;
+    --card: 217 33% 17%;
+    --card-foreground: 210 40% 98%;
+    --popover: 217 33% 17%;
+    --popover-foreground: 210 40% 98%;
+    --primary: 239 84% 67%;
+    --primary-foreground: 210 40% 98%;
+    --secondary: 217 33% 17%;
+    --secondary-foreground: 215 20% 65%;
+    --muted: 217 19% 27%;
+    --muted-foreground: 215 20% 65%;
+    --accent: 263 70% 58%;
+    --accent-foreground: 210 40% 98%;
+    --destructive: 0 84% 60%;
+    --destructive-foreground: 210 40% 98%;
+    --border: 215 19% 35%;
+    --input: 215 19% 35%;
+    --ring: 239 84% 67%;
+    --radius: 0.75rem;
+    --safe: 160 84% 39%;
+    --warning: 38 92% 50%;
+    --danger: 0 84% 60%;
+
+    --sidebar-background: 222 47% 11%;
+    --sidebar-foreground: 215 20% 65%;
+    --sidebar-primary: 239 84% 67%;
+    --sidebar-primary-foreground: 210 40% 98%;
+    --sidebar-accent: 217 33% 17%;
+    --sidebar-accent-foreground: 210 40% 98%;
+    --sidebar-border: 215 19% 35%;
+    --sidebar-ring: 239 84% 67%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', sans-serif;
+  }
+}
+
+@layer components {
+  .glass-card {
+    @apply bg-card/60 backdrop-blur-xl border border-border/50 rounded-xl;
+  }
+  .gradient-btn {
+    @apply bg-gradient-to-r from-primary to-accent text-primary-foreground font-semibold rounded-lg
+           hover:shadow-lg hover:shadow-primary/25 transition-all duration-300;
+  }
+  .glow-input {
+    @apply bg-card border border-border rounded-lg px-4 py-3 text-foreground placeholder:text-muted-foreground
+           focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary transition-all duration-300;
+  }
+}

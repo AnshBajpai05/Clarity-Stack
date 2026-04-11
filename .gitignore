@@ -1,0 +1,115 @@
+# -------------------------------
+
+# 🐍 Python
+
+# -------------------------------
+
+**pycache**/
+*.py[cod]
+*$py.class
+*.so
+.Python
+env/
+venv/
+.venv/
+build/
+dist/
+.eggs/
+*.egg-info/
+.installed.cfg
+*.egg
+.pytest_cache/
+
+# -------------------------------
+
+# 🌐 Node.js / Frontend
+
+# -------------------------------
+
+node_modules/
+dist/
+dist-ssr/
+*.local
+.npm
+.eslintcache
+
+# -------------------------------
+
+# ⚡ Vite
+
+# -------------------------------
+
+vite.config.ts.timestamp-*
+
+# -------------------------------
+
+# 🔐 Environment Variables
+
+# -------------------------------
+
+.env
+.env.local
+.env.*.local
+
+# -------------------------------
+
+# 📄 Logs
+
+# -------------------------------
+
+*.log
+logs/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# -------------------------------
+
+# 🧠 ML Models (Selective)
+
+# -------------------------------
+
+# Ignore all large models
+
+models/*.pt
+models/*.pth
+models/*.checkpoint
+models/*.bin
+models/*.onnx
+
+# ✅ BUT include your final model
+
+!models/threatlens_v1.pt
+
+# -------------------------------
+
+# 📊 Data (optional - uncomment if needed)
+
+# -------------------------------
+
+# data/
+
+# datasets/
+
+# -------------------------------
+
+# 🧰 IDE / Editors
+
+# -------------------------------
+
+.vscode/
+!.vscode/extensions.json
+.idea/
+*.swp
+*.swo
+
+# -------------------------------
+
+# 🖥️ OS Files
+
+# -------------------------------
+
+.DS_Store
+Thumbs.db
+desktop.ini

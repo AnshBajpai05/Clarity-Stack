@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+    <div class="container">
+        <!-- Header -->
+        <div class="header">
+            <div class="brand">
+                <div class="logo"></div>
+                <h1>ThreatLens</h1>
+            </div>
+            <div class="pulse-indicator"></div>
+        </div>
+
+        <div class="divider"></div>
+
+        <!-- Input Section -->
+        <div class="input-section">
+            <input type="text" id="manualUrlInput" placeholder="Paste suspicious link here..." autocomplete="off" spellcheck="false">
+            <div class="action-buttons">
+                <button id="scanPastedBtn" class="primary-btn">Analyze Link</button>
+                <button id="scanTabBtn" class="secondary-btn" title="Scan Current Tab">Extract Tab URL</button>
+            </div>
+        </div>
+
+        <!-- Initial/Loading Status -->
+        <div id="loadingState" class="state-container hidden">
+            <div class="spinner"></div>
+            <p>Analyzing zero-day patterns...</p>
+        </div>
+
+        <!-- Result Status -->
+        <div id="resultState" class="state-container hidden">
+            <!-- URL Display -->
+            <div class="url-section">
+                <span class="label">ANALYZED TARGET</span>
+                <div class="url-box" id="targetUrl"></div>
+            </div>
+
+            <!-- Verdict -->
+            <div class="verdict-banner" id="verdictBanner">
+                <div class="icon-verdict" id="verdictIcon"></div>
+                <h2 id="verdictText">SAFE</h2>
+            </div>
+            
+            <!-- Reachability Status -->
+            <div id="reachabilityBanner" class="reachability-banner hidden">
+                <span class="reach-dot">⚫</span>
+                <span>Domain Unreachable / Timeout</span>
+            </div>
+            
+            <!-- Score & Detailed Analysis -->
+            <div class="analysis-box">
+                <div class="score-row">
+                    <span class="label">RISK FACTOR</span>
+                    <span class="score" id="riskScore">--</span>
+                </div>
+                
+                <div class="reasons-list" id="reasonsContainer">
+                    <!-- JS injects reasons here -->
+                </div>
+            </div>
+            
+            <div class="latency" id="latencyDisplay"></div>
+        </div>
+    </div>
+    <script src="popup.js"></script>
+</body>
+</html>
