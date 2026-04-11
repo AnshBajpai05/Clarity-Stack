@@ -43,6 +43,8 @@ Unlike traditional systems, this platform introduces:
 {
   "verdict": "phishing",
   "risk_score": 98.7,
+  "confidence": "high",
+  "resolved_url": "https://paypal.com.secure-update.xyz",
   "reasons": [
     "Suspicious TLD (.xyz)",
     "Brand impersonation: paypal",
@@ -61,6 +63,8 @@ Unlike traditional systems, this platform introduces:
 {
   "verdict": "safe",
   "risk_score": 25.0,
+  "confidence": "high",
+  "resolved_url": "https://dev.to/security/login-handling",
   "reasons": [
     "Recognized trusted domain (Tranco Top 10K)",
     "Contextual match (No structural anomalies)"
@@ -110,10 +114,16 @@ This leads to:
    → Live updating of targeted brands, suspicious TLDs, and stealth keywords via `brands.json` to adapt to evolving attacker strategies without touching core engine logic.
 
 5. **Enterprise Workflow Hardening Layer**  
-   → A strict order-of-operations engine that handles complex real-world conditions: whitelists private subnets (`192.168.x.x`), traps Punycode (`xn--`) IDNA spoofing, detects nested Open Redirects, and forcefully strips Trust overrides if AWS/GCP SaaS platforms are being abused for impersonation.
+   → A strict order-of-operations engine that handles complex real-world conditions: whitelists private subnets (`192.168.x.x`), traps Punycode (`xn--`), and handles NXDOMAINS.
 
 6. **Attack-First Decision Logic**
    → High-confidence attack signals (e.g., open redirects, subdomain impersonation) override all trust assumptions, ensuring trusted infrastructure cannot be abused to bypass detection.
+
+7. **Deep Redirect Resolution (Anti-Masking)**
+   → Seamlessly intercepts shortened links (bit.ly, tinyurl) via `httpx` fallback logic, unpacking stealth routing payloads before passing the final destination to the heuristics engine.
+
+8. **Asymmetric Decision-Theory Confidence Scoring**
+   → Calculates threat confidence not as a flat metric, but through asymmetric mathematical distance from the decision boundary, automatically recognizing that the zero presence of threats grants immediate high-confidence safety.
 
 ---
 
@@ -197,21 +207,15 @@ A hybrid multimodal architecture (Semantic + Graph Topology + Context Rules) is 
 
 ---
 
-## Known Failure Cases
-
-**Case 1: The Redirect Blind Spot**
-**Input:** `https://tinyurl.com/abc123`
-**Result:** Classified as "Suspicious" instead of immediately "Phishing" or "Safe".
-**Reason:** No semantic or structural signal is available without redirect expansion.
-
-### Network-Aware Inference Layer
+## Operational Resilience
 
 ThreatLens decouples structural risk from network reachability:
 
 - **NXDOMAIN** → flagged as unreachable with risk penalty
 - **Timeout** → marked as unreachable without affecting structural score
+- **Redirect Evasion** → 3-phase asynchronous fallback resolver (`HEAD` → `GET (no-follow)` → `GET (follow)`) directly nullifies URL shortener evasion techniques without scraping heavy DOM content.
 
-This ensures robust detection even when phishing infrastructure is offline or ephemeral.
+This ensures robust detection even when phishing infrastructure is offline, masked, or ephemeral.
 
 ---
 

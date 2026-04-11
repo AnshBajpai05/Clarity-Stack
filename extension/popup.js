@@ -9,8 +9,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const verdictBanner = document.getElementById('verdictBanner');
     const verdictText = document.getElementById('verdictText');
     const riskScore = document.getElementById('riskScore');
+    const confidenceScore = document.getElementById('confidenceScore');
     const reasonsContainer = document.getElementById('reasonsContainer');
     const latencyDisplay = document.getElementById('latencyDisplay');
+    const resolvedUrlSection = document.getElementById('resolvedUrlSection');
+    const resolvedUrlEl = document.getElementById('resolvedUrl');
 
     // Automatically focus the input field on open
     manualUrlInput.focus();
@@ -55,6 +58,8 @@ document.addEventListener('DOMContentLoaded', () => {
         resultState.classList.add('hidden');
         loadingState.classList.remove('hidden');
         targetUrlEl.textContent = url;
+        
+        if (resolvedUrlSection) resolvedUrlSection.classList.add('hidden');
 
         try {
             const response = await fetch('http://localhost:8001/predict/batch', {
@@ -121,6 +126,28 @@ document.addEventListener('DOMContentLoaded', () => {
         }
 
         riskScore.textContent = result.risk_score.toFixed(1);
+        
+        // Handle Confidence
+        if (result.confidence) {
+            confidenceScore.textContent = result.confidence;
+            if (result.confidence === 'high') {
+                confidenceScore.style.color = '#e2e8f0';
+            } else if (result.confidence === 'medium') {
+                confidenceScore.style.color = 'var(--suspicious)';
+            } else {
+                confidenceScore.style.color = 'var(--text-dim)';
+            }
+        } else {
+            confidenceScore.textContent = 'N/A';
+        }
+
+        // Handle Resolved URL
+        if (result.resolved_url) {
+            resolvedUrlSection.classList.remove('hidden');
+            resolvedUrlEl.textContent = result.resolved_url;
+        } else {
+            resolvedUrlSection.classList.add('hidden');
+        }
 
         // Populate reasons
         reasonsContainer.innerHTML = '';

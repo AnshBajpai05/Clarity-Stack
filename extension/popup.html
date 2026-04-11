@@ -39,6 +39,11 @@
                 <span class="label">ANALYZED TARGET</span>
                 <div class="url-box" id="targetUrl"></div>
             </div>
+            
+            <div class="url-section hidden" id="resolvedUrlSection" style="margin-top: 8px;">
+                <span class="label" style="color: #64748b;">REDIRECTS TO</span>
+                <div class="url-box" id="resolvedUrl" style="font-size: 0.85em; opacity: 0.8; border-color: #3b82f6;"></div>
+            </div>
 
             <!-- Verdict -->
             <div class="verdict-banner" id="verdictBanner">
@@ -59,7 +64,12 @@
                     <span class="score" id="riskScore">--</span>
                 </div>
                 
-                <div class="reasons-list" id="reasonsContainer">
+                <div class="score-row" style="margin-top: 8px;">
+                    <span class="label">CONFIDENCE</span>
+                    <span class="score" id="confidenceScore" style="font-size: 1.1em; text-transform: uppercase;">--</span>
+                </div>
+                
+                <div class="reasons-list" id="reasonsContainer" style="margin-top: 12px;">
                     <!-- JS injects reasons here -->
                 </div>
             </div>

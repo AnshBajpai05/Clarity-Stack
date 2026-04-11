@@ -324,13 +324,76 @@ async def scrape_url(url: str, check_threat_intel: bool = True) -> URLMetadata:
 
 # ---- Prediction Helper ----
 
+async def resolve_redirect(url: str) -> Optional[str]:
+    try:
+        async with httpx.AsyncClient(timeout=2.0) as client:
+            
+            # 1. Try HEAD
+            res = await client.head(url, follow_redirects=False)
+            if 300 <= res.status_code < 400:
+                return res.headers.get("location")
+
+            # 2. Fallback GET (no auto-follow)
+            res = await client.get(url, follow_redirects=False)
+            if 300 <= res.status_code < 400:
+                return res.headers.get("location")
+
+            # 3. FINAL fallback → follow redirects
+            res = await client.get(url, follow_redirects=True)
+            if str(res.url) != url:
+                return str(res.url)
+
+    except:
+        return None
+
+def get_confidence(score: float, reasons: list) -> str:
+    # Filter out the default message to only count actual threats
+    threat_signals = len([r for r in reasons if r != "Clear URL structure"])
+    distance = abs(score - 50)
+    
+    # 1. Uncertainty Zone (30 to 70 range is tricky)
+    if distance < 20:   
+        return "low"
+        
+    # 2. High Certainty Checks
+    if score < 30 and threat_signals == 0:
+        return "high"   # Deeply safe with absolute zero red flags
+        
+    if score > 80 and (threat_signals >= 2 or score >= 95):
+        return "high"   # Verified attack by heuristics OR overwhelming ML certainty
+
+    # 3. Everything else leaning one way or another
+    return "medium"
+
 async def run_prediction(url: str) -> Dict[str, Any]:
     """Production phishing detection: heuristics → ML → decision override."""
     start_time = time.time()
     reasons = []
 
-    # Flag initialization
+    # --- REDIRECT RESOLUTION (Awareness Layer) ---
+    original_url = url
+    resolved_url = await resolve_redirect(url) or url
+    
     extra_score = 0
+    if resolved_url != original_url:
+        orig_ext = tldextract.extract(original_url)
+        res_ext = tldextract.extract(resolved_url)
+        orig_domain = f"{orig_ext.domain}.{orig_ext.suffix}"
+        res_domain = f"{res_ext.domain}.{res_ext.suffix}"
+        
+        # Only penalize if it jumps to a completely different registered domain
+        if orig_domain != res_domain and res_domain != ".":
+            reasons.append("Redirects to external destination")
+            extra_score += 15
+            
+        # Ensure relative redirects become absolute for the pipeline
+        if not resolved_url.startswith('http'):
+            from urllib.parse import urljoin
+            resolved_url = urljoin(original_url, resolved_url)
+            
+        url = resolved_url  # Use resolved URL for heuristics and ML
+        
+    # Flag initialization
     signal_count = 0.0
     is_ip = is_shortener = is_official = False
     has_mismatch = has_typo = has_keyword = has_subdomain_abuse = False
@@ -637,14 +700,17 @@ async def run_prediction(url: str) -> Dict[str, Any]:
                 risk_score = min(risk_score, 25.0)
 
         # Response
+        final_reasons = reasons if reasons else ["Clear URL structure"]
         return {
-            "url": url,
+            "url": original_url,
+            "resolved_url": url if url != original_url else None,
             "is_phishing": verdict == "phishing",
             "risk_score": round(max(0.1, risk_score), 2),
             "risk_level": verdict,
             "verdict": verdict,
+            "confidence": get_confidence(risk_score, final_reasons),
             "reachability": reachability,
-            "reasons": reasons if reasons else ["Clear URL structure"],
+            "reasons": final_reasons,
             "latency_ms": round((time.time() - start_time) * 1000),
             "scores": {
                 "gnn_score": round(scores.get('gnn_score', 0.5), 4),
@@ -654,10 +720,12 @@ async def run_prediction(url: str) -> Dict[str, Any]:
             "domain_info": {"domain": domain, "status_code": 200}
         }
     except Exception as fatal_e:
-        logger.error(f"FATAL: {url}: {fatal_e}")
+        req_url = original_url if 'original_url' in locals() else url
+        logger.error(f"FATAL: {req_url}: {fatal_e}")
         return {
-            "url": url,
+            "url": req_url,
             "verdict": "error",
+            "confidence": "low",
             "risk_score": -1,
             "reasons": [f"System error: {str(fatal_e)}"]
         }
