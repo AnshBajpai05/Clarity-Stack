@@ -1,7 +1,22 @@
 import { ShieldAlert, ShieldCheck, HelpCircle } from "lucide-react";
 import type { ScanResult } from "@/lib/api";
 
-const ThreatIntel = ({ data }: { data: ScanResult["threatIntel"] }) => {
+const ThreatIntel = ({ data, analysisMode }: { data: ScanResult["threatIntel"], analysisMode?: "OFFLINE" | "RESTRICTED" | "FULL" }) => {
+  if (analysisMode === "OFFLINE") {
+    return (
+      <div className="glass-card p-4 animate-fade-in opacity-70">
+        <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center justify-between">
+          <div className="flex items-center gap-2">
+            <HelpCircle className="h-4 w-4 text-muted-foreground" />
+            Threat Intelligence
+          </div>
+          <span className="px-2 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground">Not Queried (Offline)</span>
+        </h3>
+        <p className="text-xs text-muted-foreground italic">Domain is offline, threat database check skipped.</p>
+      </div>
+    );
+  }
+
   if (!data) {
     return (
       <div className="glass-card p-4 animate-fade-in">

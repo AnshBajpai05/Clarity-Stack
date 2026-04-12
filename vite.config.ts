@@ -11,6 +11,11 @@ export default defineConfig(({ mode }) => ({
     hmr: {
       overlay: false,
     },
+    proxy: {
+      "/health": "http://127.0.0.1:8000",
+      "/predict": "http://127.0.0.1:8000",
+      "/preprocess": "http://127.0.0.1:8000"
+    }
   },
   plugins: [react(), mode === "development" && componentTagger()].filter(Boolean),
   resolve: {

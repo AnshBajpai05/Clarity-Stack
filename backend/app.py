@@ -90,9 +90,11 @@ class BatchURLRequest(BaseModel):
 
 class PredictRequest(BaseModel):
     url: str
+    deep_scan: bool = Field(default=False, description="Whether to perform a full metadata scrape (SSL, headers)")
 
 class BatchPredictRequest(BaseModel):
     urls: List[str]
+    force_deep: bool = Field(default=False, description="Whether to force deep scan on all URLs")
 
 class SSLCertInfo(BaseModel):
     issuer: Dict[str, str]
@@ -274,7 +276,6 @@ async def scrape_url(url: str, check_threat_intel: bool = True) -> URLMetadata:
         }
         
         async with httpx.AsyncClient(verify=True) as client:
-            # OPTIMIZED: Using 5s timeout for production-grade fast inference (Option A)
             response = await client.get(url, headers=headers, timeout=5, follow_redirects=True)
             load_time = time.time() - start_time
             
@@ -327,50 +328,46 @@ async def scrape_url(url: str, check_threat_intel: bool = True) -> URLMetadata:
 async def resolve_redirect(url: str) -> Optional[str]:
     try:
         async with httpx.AsyncClient(timeout=2.0) as client:
-            
-            # 1. Try HEAD
             res = await client.head(url, follow_redirects=False)
             if 300 <= res.status_code < 400:
                 return res.headers.get("location")
-
-            # 2. Fallback GET (no auto-follow)
             res = await client.get(url, follow_redirects=False)
             if 300 <= res.status_code < 400:
                 return res.headers.get("location")
-
-            # 3. FINAL fallback → follow redirects
             res = await client.get(url, follow_redirects=True)
             if str(res.url) != url:
                 return str(res.url)
-
     except:
         return None
 
-def get_confidence(score: float, reasons: list) -> str:
-    # Filter out the default message to only count actual threats
-    threat_signals = len([r for r in reasons if r != "Clear URL structure"])
-    distance = abs(score - 50)
+def get_confidence(score: float, reasons: list, analysis_mode: str, graph_signal: str) -> str:
+    SAFE_SIGNALS = {"Clear URL structure", "Verified Trusted Infrastructure (Fast-Path)"}
+    threat_signals = len([r for r in reasons if r not in SAFE_SIGNALS])
     
-    # 1. Uncertainty Zone (30 to 70 range is tricky)
-    if distance < 20:   
+    if score < 50:
+        if analysis_mode == "FULL" and graph_signal == "strong":
+            return "high"
         return "low"
+    
+    if score >= 65:
+        if threat_signals >= 2 or score >= 90:
+            return "high"
+        if analysis_mode == "OFFLINE" or graph_signal == "weak":
+            return "medium"
+        return "high"
         
-    # 2. High Certainty Checks
-    if score < 30 and threat_signals == 0:
-        return "high"   # Deeply safe with absolute zero red flags
-        
-    if score > 80 and (threat_signals >= 2 or score >= 95):
-        return "high"   # Verified attack by heuristics OR overwhelming ML certainty
-
-    # 3. Everything else leaning one way or another
     return "medium"
 
-async def run_prediction(url: str) -> Dict[str, Any]:
+async def run_prediction(url: str, force_deep: bool = False) -> Dict[str, Any]:
     """Production phishing detection: heuristics → ML → decision override."""
     start_time = time.time()
     reasons = []
 
-    # --- REDIRECT RESOLUTION (Awareness Layer) ---
+    # Ensure URL has protocol to avoid httpx crashes
+    if not url.startswith(('http://', 'https://')):
+        url = f"http://{url}"
+
+    # --- REDIRECT RESOLUTION ---
     original_url = url
     resolved_url = await resolve_redirect(url) or url
     
@@ -380,258 +377,176 @@ async def run_prediction(url: str) -> Dict[str, Any]:
         res_ext = tldextract.extract(resolved_url)
         orig_domain = f"{orig_ext.domain}.{orig_ext.suffix}"
         res_domain = f"{res_ext.domain}.{res_ext.suffix}"
-        
-        # Only penalize if it jumps to a completely different registered domain
         if orig_domain != res_domain and res_domain != ".":
-            reasons.append("Redirects to external destination")
+            reasons.append("Redirects to external destination [+15]")
             extra_score += 15
-            
-        # Ensure relative redirects become absolute for the pipeline
         if not resolved_url.startswith('http'):
             from urllib.parse import urljoin
             resolved_url = urljoin(original_url, resolved_url)
-            
-        url = resolved_url  # Use resolved URL for heuristics and ML
+        url = resolved_url 
         
     # Flag initialization
     signal_count = 0.0
     is_ip = is_shortener = is_official = False
     has_mismatch = has_typo = has_keyword = has_subdomain_abuse = False
     has_bad_tld = has_stealth_pattern = False
-    domain = subdomain = suffix = registered_domain = ""
-    keywords = intel.keywords if intel else []  # Safe fallback for Phase 3
+    keywords = intel.keywords if intel else []
     brands = intel.brands if intel else []
 
+    # ═══════════════════════════════════════
+    # PHASE 1: Structural Heuristics
+    # ═══════════════════════════════════════
     try:
-        # ═══════════════════════════════════════
-        # PHASE 1: Structural Heuristics
-        # ═══════════════════════════════════════
-        try:
-            parsed = urlparse(url if url.startswith('http') else f"http://{url}")
-            host = parsed.netloc.lower()
-            path = parsed.path.lower()
+        parsed = urlparse(url)
+        host = parsed.netloc.lower()
+        path = parsed.path.lower()
+        extracted = tldextract.extract(url)
+        subdomain = extracted.subdomain.lower()
+        domain = extracted.domain.lower()
+        suffix = extracted.suffix.lower()
+        registered_domain = f"{domain}.{suffix}" if suffix else domain
 
-            extracted = tldextract.extract(url)
-            subdomain = extracted.subdomain.lower()
-            domain = extracted.domain.lower()
-            suffix = extracted.suffix.lower()
-            registered_domain = f"{domain}.{suffix}" if suffix else domain
+        # -- Open Redirect --
+        unquoted_url = unquote(url)
+        query_part = unquoted_url.split('?', 1)[-1] if '?' in unquoted_url else ''
+        if "http://" in query_part or "https://" in query_part:
+            extra_score += 45
+            signal_count += 1
+            reasons.append("Open Redirect detected (Nested URL) [+45]")
+            has_stealth_pattern = True 
 
-            # ── [PATCH] Open Redirect Detection ──
-            unquoted_url = unquote(url)
-            query_part = unquoted_url.split('?', 1)[-1] if '?' in unquoted_url else ''
-            if "http://" in query_part or "https://" in query_part:
-                extra_score += 45
-                signal_count += 1
-                reasons.append("Open Redirect detected (Nested URL)")
-                # This ensures `is_official` evaluation below won't strictly protect it if we force it later.
-                has_stealth_pattern = True 
+        # -- Punycode --
+        if domain.startswith("xn--"):
+            extra_score += 50
+            signal_count += 1
+            reasons.append("Punycode (Homograph) Attack Pattern [+50]")
 
-            # ── [PATCH] Punycode / Homograph Trap ──
-            if domain.startswith("xn--"):
-                extra_score += 50
-                signal_count += 1
-                reasons.append("Punycode (Homograph) Attack Pattern")
+        # -- Reachability --
+        reachability = "reachable"
+        if host:
+            host_clean = host.split(':')[0]
+            try:
+                loop = asyncio.get_event_loop()
+                await asyncio.wait_for(loop.getaddrinfo(host_clean, None), timeout=1.5)
+            except (socket.gaierror, asyncio.TimeoutError):
+                reachability = "unreachable"
+                extra_score += 15
+                reasons.append("Domain Unreachable (NXDOMAIN) [+15]")
+            except Exception: pass
 
-            # ── 0. Reachability Check (Fast DNS Ping) ──
-            reachability = "reachable"
-            if host:
-                host_clean = host.split(':')[0]
-                try:
-                    loop = asyncio.get_event_loop()
-                    # 1.5s timeout for fast offline failure
-                    await asyncio.wait_for(
-                        loop.getaddrinfo(host_clean, None), 
-                        timeout=1.5
-                    )
-                except socket.gaierror:
-                    reachability = "unreachable"
-                    extra_score += 15  # Penalty for NXDOMAIN
-                    reasons.append("Domain Unreachable (NXDOMAIN)")
-                except asyncio.TimeoutError:
-                    reachability = "unreachable"
-                    reasons.append("Verification Timeout (Server Unresponsive)")
-                except Exception:
-                    pass
+        # -- Shortener --
+        shorteners = {'bit.ly', 'tinyurl.com', 't.co', 'goo.gl', 'cutt.ly', 'is.gd', 'buff.ly', 'ow.ly'}
+        if host in shorteners or any(host.endswith(f".{s}") for s in shorteners):
+            is_shortener = True
+            signal_count += 1
+            extra_score += 5
+            reasons.append("URL shortener detected [+5]")
 
-            # ── 1. Shortener (suspicious only — not independently phishing) ──
-            shorteners = {'bit.ly', 'tinyurl.com', 't.co', 'goo.gl', 'cutt.ly', 'is.gd', 'buff.ly', 'ow.ly'}
-            if host in shorteners or any(host.endswith(f".{s}") for s in shorteners):
-                is_shortener = True
-                signal_count += 1
-                extra_score += 5  # Minimal — floor handles the rest
-                reasons.append("URL shortener detected")
-
-            # ── 2. IP Host ──
-            if (any(c.isdigit() for c in host.replace('.', '').replace(':', ''))
-                    and len(host.split('.')) == 4
-                    and not any(c.isalpha() for c in host)):
-                is_ip = True
-                try:
-                    ip_obj = ipaddress.ip_address(host.split(':')[0])
-                    if ip_obj.is_private or ip_obj.is_loopback:
-                        is_ip = False
-                        extra_score -= 10  # Baseline safe boost for local
-                        reasons.append("Private/Internal Network IP structure")
-                except ValueError:
-                    pass
-                
-                if is_ip:
+        # -- IP Host --
+        if (any(c.isdigit() for c in host.replace('.', '').replace(':', ''))
+                and len(host.split('.')) == 4
+                and not any(c.isalpha() for c in host)):
+            is_ip = True
+            try:
+                ip_obj = ipaddress.ip_address(host.split(':')[0])
+                if not (ip_obj.is_private or ip_obj.is_loopback):
                     extra_score += 95
-                    reasons.append("IP-based host")
+                    reasons.append("IP-based host [+95]")
+            except ValueError: pass
 
-            # ── 3. Suspicious TLD (config-driven) ──
-            _suspicious_tlds = intel.suspicious_tlds if intel else ['xyz', 'top', 'club', 'ninja', 'online', 'support', 'biz']
-            has_bad_tld = suffix in _suspicious_tlds
-            if has_bad_tld:
-                signal_count += 1
-                extra_score += 30
-                reasons.append(f"Suspicious TLD (.{suffix})")
+        # -- TLD --
+        _suspicious_tlds = intel.suspicious_tlds if intel else ['xyz', 'top', 'club', 'ninja', 'online', 'biz']
+        if suffix in _suspicious_tlds:
+            signal_count += 1
+            extra_score += 30
+            reasons.append(f"Suspicious TLD (.{suffix}) [+30]")
 
-            # ── 4. Brand Protection (config-driven) ──
-            # brands defined at top
-            matched_brand = next((b for b in brands if b in host), None)
+        # -- Brand --
+        matched_brand = next((b for b in brands if b in host), None)
+        if intel and intel.is_popular(registered_domain) and not is_shortener:
+            is_official = True
+        elif not intel and domain in {'google', 'amazon', 'microsoft', 'apple', 'facebook', 'github'} and not is_shortener:
+            is_official = True
 
-            # Dynamic popularity check (Tranco Top 10K) replaces hardcoded whitelist
-            # Explicitly exclude shorteners because even popular shorteners host malware
-            if intel and intel.is_popular(registered_domain) and not is_shortener:
-                is_official = True
-            elif not intel and domain in {'google', 'microsoft', 'microsoftonline', 'apple', 'amazon', 'facebook', 'github', 'dev', 'notion', 'slack', 'zoom', 'medium'} and not is_shortener:
-                is_official = True  # Static fallback
+        if matched_brand and not is_official:
+            if matched_brand in subdomain and matched_brand != domain:
+                has_subdomain_abuse = True
+                extra_score += 50
+                reasons.append(f"Brand in subdomain ({matched_brand}) [+50]")
+            elif matched_brand != domain:
+                has_mismatch = True
+                extra_score += 35
+                reasons.append(f"Brand impersonation ({matched_brand}) [+35]")
 
-            # Unconditionally evaluate subdomain abuse (Attack > Trust)
-            if matched_brand:
-                if matched_brand in subdomain and matched_brand != domain:
-                    has_subdomain_abuse = True
-                    signal_count += 1
-                    extra_score += 50
-                    reasons.append(f"Brand in subdomain ({matched_brand})")
-                elif matched_brand != domain and not is_official:
-                    has_mismatch = True
-                    signal_count += 1
-                    extra_score += 35
-                    reasons.append(f"Brand impersonation ({matched_brand})")
+        # -- Digit Sub --
+        if not is_official and not has_mismatch:
+            digit_map = {'0': 'o', '1': 'l', '3': 'e', '4': 'a', '5': 's', '8': 'b'}
+            normalized = ''.join(digit_map.get(c, c) for c in domain)
+            if normalized != domain and any(b == normalized for b in brands):
+                has_typo = True
+                extra_score += 45
+                reasons.append("Digit substitution attack [+45]")
 
-            # ── Trust Override ──
-            if has_stealth_pattern or has_subdomain_abuse:
-                is_official = False
-            # ── 5a. Digit Substitution Detection (g00gle, paypa1, faceb00k) ──
-            if not is_official and not has_mismatch and not has_subdomain_abuse:
-                digit_map = {'0': 'o', '1': 'l', '3': 'e', '4': 'a', '5': 's', '7': 't', '8': 'b', '9': 'g'}
-                normalized = ''.join(digit_map.get(c, c) for c in domain)
-                if normalized != domain:
-                    for b in brands:
-                        if normalized == b:
-                            has_typo = True
-                            signal_count += 1.5
-                            extra_score += 45
-                            reasons.append(f"Digit substitution attack ({b})")
-                            break
+        # -- Levenshtein --
+        if not is_official and not has_mismatch and not has_typo:
+            def levenshtein(s1, s2):
+                if len(s1) < len(s2): return levenshtein(s2, s1)
+                if len(s2) == 0: return len(s1)
+                prev = range(len(s2) + 1)
+                for i, c1 in enumerate(s1):
+                    curr = [i + 1]
+                    for j, c2 in enumerate(s2):
+                        curr.append(min(prev[j+1]+1, curr[j]+1, prev[j]+(c1!=c2)))
+                    prev = curr
+                return prev[-1]
+            for b in brands:
+                if levenshtein(domain, b) <= 2:
+                    has_typo = True
+                    extra_score += 30
+                    reasons.append(f"Typosquatting detected ({b}) [+30]")
+                    break
 
-            # ── 5b. Levenshtein Typosquatting (fallback) ──
-            if not is_official and not has_mismatch and not has_subdomain_abuse and not has_typo:
-                def levenshtein(s1, s2):
-                    if len(s1) < len(s2): return levenshtein(s2, s1)
-                    if len(s2) == 0: return len(s1)
-                    prev = range(len(s2) + 1)
-                    for i, c1 in enumerate(s1):
-                        curr = [i + 1]
-                        for j, c2 in enumerate(s2):
-                            curr.append(min(prev[j+1]+1, curr[j]+1, prev[j]+(c1!=c2)))
-                        prev = curr
-                    return prev[-1]
+        # -- Keywords --
+        if any(kw in path or kw in host for kw in keywords):
+            signal_count += 0.5
+            if extra_score > 0:
+                extra_score += 20
+                reasons.append("Keywords amplify structural risk [+20]")
 
-                for b in brands:
-                    # Check the whole domain and hyphen-split pieces to catch 'arnazon-secure'
-                    parts = [domain] + domain.split('-')
-                    for part in parts:
-                        dist = levenshtein(part, b)
-                        if dist == 1:
-                            has_typo = True
-                            signal_count += 1
-                            extra_score += 35
-                            reasons.append(f"Typosquatting ({b})")
-                            break
-                        elif dist == 2:
-                            has_typo = True
-                            signal_count += 1
-                            extra_score += 25
-                            reasons.append(f"Deep typosquatting ({b})")
-                            break
-                    if has_typo:
-                        break
+    except Exception as he:
+        logger.warning(f"Heuristics error for {url}: {he}")
 
-            # ── 6. Stealth Phishing Domain Pattern (config-driven) ──
-            # Catches: account-security-center.net, identity-check-service.com
-            if not is_official:
-                sec_terms = intel.sec_terms if intel else [
-                    'login', 'verify', 'auth', 'secure', 'payment',
-                    'billing', 'account', 'signin', 'identity',
-                    'validation', 'confirm', 'access', 'session',
-                    'maintenance', 'update', 'check', 'verification',
-                    'security', 'notification', 'alert', 'resolution',
-                    'subscription'
-                ]
-                stealth_words = intel.stealth_words if intel else ['service', 'center', 'portal', 'support', 'help']
+    # ═══════════════════════════════════════
+    # PHASE 1.5: Trusted Infrastructure Fast-Path
+    # ═══════════════════════════════════════
+    TRUSTED_ROOTS = {
+        "google.com", "github.com", "amazon.com", "microsoft.com", 
+        "apple.com", "linkedin.com", "chatgpt.com", "openai.com", 
+        "cloudflare.com", "youtube.com", "netflix.com"
+    }
+    root_domain = f"{domain}.{suffix}".lower()
+    
+    if root_domain in TRUSTED_ROOTS and signal_count == 0:
+        scores = {"gnn_score": 0.08, "llm_score": 0.05, "fusion_score": 0.06}
+        extra_score = 0
+        has_any_signal = False
+        reasons = ["Verified Trusted Infrastructure (Fast-Path)"]
+        effective_fusion = scores["fusion_score"]
+        risk_score = 1.0
+        goto_phase_3 = True
+    else:
+        goto_phase_3 = False
 
-                sec_count = sum(1 for t in sec_terms if t in domain)
-                has_stealth_word = any(w in domain for w in stealth_words)
-
-                if sec_count >= 2:
-                    has_stealth_pattern = True
-                    signal_count += 2
-                    extra_score += 45
-                    reasons.append(f"Stealth phishing: {sec_count} security terms in domain")
-                elif sec_count == 1 and has_stealth_word:
-                    has_stealth_pattern = True
-                    signal_count += 1.5
-                    extra_score += 40
-                    reasons.append("Stealth phishing domain pattern")
-
-            # ── 7. Keywords (CONTEXT ONLY — config-driven) ──
-            # Keywords like "login" appear in legit URLs constantly.
-            # Only boost score when paired with structural red flags.
-            # keywords defined at top
-            has_structural = (has_bad_tld or has_mismatch or has_subdomain_abuse
-                              or has_typo or is_ip or has_stealth_pattern)
-            if any(kw in path or kw in host for kw in keywords):
-                has_keyword = True
-                signal_count += 0.5
-                if has_structural:
-                    extra_score += 20
-                    reasons.append("Keywords amplify structural risk")
-                # NO boost when keywords appear alone (legit login pages)
-
-            # ── 8. Shortener + Suspicious Content ──
-            if is_shortener:
-                brand_in_path = any(b in path for b in brands)
-                kw_in_path = any(kw in path for kw in keywords)
-                if brand_in_path or kw_in_path:
-                    extra_score += 40
-                    signal_count += 1
-                    reasons.append("Suspicious content in shortened URL")
-
-            # ── 9. Multi-Signal Synergy ──
-            if signal_count >= 2.0:
-                extra_score += 25
-                reasons.append("Multi-signal synergy")
-
-        except Exception as he:
-            logger.warning(f"Heuristics error for {url}: {he}")
-
-        # ═══════════════════════════════════════
-        # PHASE 2: ML Pipeline
-        # ═══════════════════════════════════════
+    # ═══════════════════════════════════════
+    # PHASE 2: ML Pipeline
+    # ═══════════════════════════════════════
+    metadata = None
+    if not goto_phase_3:
         scores = {"fusion_score": 0.5, "llm_score": 0.5, "gnn_score": 0.5}
-        metadata = None
-
         try:
             async with batch_semaphore:
-                try:
-                    metadata = await scrape_url(url, check_threat_intel=True)
-                except:
-                    pass  # Proceed with heuristics — DNS failure is NOT a blocker
-
+                try: metadata = await scrape_url(url, check_threat_intel=True)
+                except: pass
             if detector is not None:
                 formatted_text = f"URL String: {url} Domain: {domain}.{suffix}"
                 url_data = {
@@ -646,272 +561,161 @@ async def run_prediction(url: str) -> Dict[str, Any]:
         except Exception as mle:
             logger.warning(f"ML error for {url}: {mle}")
 
-        # ═══════════════════════════════════════
-        # PHASE 3: Decision Engine
-        # ═══════════════════════════════════════
-        fusion_score = scores.get('fusion_score', 0.5)
-
-        # ML CALIBRATION: When URL has no structural red flags,
-        # cap model contribution to prevent FPR on legit login pages.
-        # The model overfits on "login page" content — this neutralizes that.
+    # ═══════════════════════════════════════
+    # PHASE 3: Decision Engine
+    # ═══════════════════════════════════════
+    if not goto_phase_3:
         has_any_signal = (has_bad_tld or has_mismatch or has_subdomain_abuse
                           or has_typo or is_ip or has_stealth_pattern or is_shortener)
+        gnn_score = scores.get('gnn_score', 0.5)
+        llm_score = scores.get('llm_score', 0.5)
+        fusion_score = scores.get('fusion_score', 0.5)
+        if llm_score < 0.05:
+            effective_fusion = gnn_score * 0.7 + 0.5 * 0.3
+            scores['fusion_score'] = effective_fusion
+            scores['llm_score'] = 0.0
+        else:
+            effective_fusion = fusion_score
+
         if not has_any_signal:
-            fusion_score = min(fusion_score, 0.25)
+            effective_fusion = min(effective_fusion, 0.25)
+        risk_score = (effective_fusion * 100) + extra_score
 
-        risk_score = (fusion_score * 100) + extra_score
+    # Floor / Ceiling
+    if is_shortener:
+        risk_score = max(risk_score, 55)
+        brand_in_path = any(b in path for b in brands)
+        kw_in_path = any(kw in path for kw in keywords)
+        if not brand_in_path and not kw_in_path:
+            risk_score = min(risk_score, 60)
+    if is_ip: risk_score = 99.9
+    risk_score = min(risk_score, 99.9)
 
-        # Floor / Ceiling
-        if is_shortener:
-            risk_score = max(risk_score, 55)  # At least suspicious
-            # Cap shorteners WITHOUT brand/keyword in path to suspicious range
-            brand_in_path = any(b in path for b in brands) if 'path' in dir() else False
-            kw_in_path = any(kw in path for kw in keywords) if 'path' in dir() else False
-            if not brand_in_path and not kw_in_path:
-                risk_score = min(risk_score, 60)  # Stay in suspicious, not phishing
-        if is_ip: risk_score = 99.9
-        risk_score = min(risk_score, 99.9)
+    verdict = "safe"
+    if risk_score < 30: verdict = "safe"
+    elif risk_score < 65: verdict = "suspicious"
+    else: verdict = "phishing"
 
-        # Threshold verdict
-        verdict = "safe"
-        if risk_score < 30: verdict = "safe"
-        elif risk_score < 65: verdict = "suspicious"
-        else: verdict = "phishing"
+    if (has_mismatch or has_typo or has_subdomain_abuse or has_stealth_pattern) and signal_count >= 1.0:
+        verdict = "phishing"
 
-        # Decision Override: structural confirmation → force phishing
-        if ((has_mismatch or has_typo or has_subdomain_abuse or has_stealth_pattern)
-                and signal_count >= 1.0):
-            verdict = "phishing"
+    analysis_mode = "FULL"
+    if reachability == "unreachable":
+        analysis_mode = "OFFLINE"
+    elif not goto_phase_3 and llm_score < 0.05:
+        analysis_mode = "RESTRICTED"
+        
+    unused_signals = []
+    if analysis_mode == "OFFLINE":
+        unused_signals.extend(["Content Intelligence (Offline)", "External Threat Feeds (Offline)", "Network Metatdata (Offline)"])
+    elif analysis_mode == "RESTRICTED":
+        unused_signals.append("Content Intelligence (Bot Blocked)")
+        
+    attack_types = []
+    if verdict == "phishing":
+        if has_mismatch: attack_types.append("Brand Impersonation")
+        if has_typo: attack_types.append("Typosquatting")
+        if has_stealth_pattern: attack_types.append("Redirect-based Phishing")
+        if has_subdomain_abuse: attack_types.append("Subdomain Abuse")
+        if is_shortener: attack_types.append("URL Obfuscation")
+        if not attack_types: attack_types.append("Heuristic Pattern Match")
 
-        # ── [PATCH] File Download Trap ──
-        dangerous_exts = {'.exe', '.zip', '.scr', '.msi', '.sh', '.bat'}
-        has_dangerous_file = any(ext in path for ext in dangerous_exts)
-
-        # ── [PATCH] Hardened FPR Guard ──
-        if is_official:
-            if has_dangerous_file:
-                # E.g. Github, GDrive hosting direct malware
-                verdict = "suspicious" if verdict != "phishing" else "phishing"
-                risk_score = max(risk_score, 64.0)
-                reasons.append("Executable download hosted on trusted infrastructure")
-            else:
-                # Clean official domain
-                verdict = "safe"
-                risk_score = min(risk_score, 25.0)
-
-        # Response
-        final_reasons = reasons if reasons else ["Clear URL structure"]
-        return {
-            "url": original_url,
-            "resolved_url": url if url != original_url else None,
-            "is_phishing": verdict == "phishing",
-            "risk_score": round(max(0.1, risk_score), 2),
-            "risk_level": verdict,
-            "verdict": verdict,
-            "confidence": get_confidence(risk_score, final_reasons),
-            "reachability": reachability,
-            "reasons": final_reasons,
-            "latency_ms": round((time.time() - start_time) * 1000),
-            "scores": {
-                "gnn_score": round(scores.get('gnn_score', 0.5), 4),
-                "llm_score": round(scores.get('llm_score', 0.5), 4),
-                "fusion_score": round(scores.get('fusion_score', 0.5), 4),
-            },
-            "domain_info": {"domain": domain, "status_code": 200}
+    final_reasons = reasons if reasons else ["Clear URL structure"]
+    return {
+        "url": original_url,
+        "resolved_url": url if url != original_url else None,
+        "is_phishing": verdict == "phishing",
+        "risk_score": round(max(0.1, risk_score), 2),
+        "risk_level": verdict,
+        "verdict": verdict,
+        "confidence": get_confidence(risk_score, final_reasons, analysis_mode, scores.get('graph_signal', 'unknown')),
+        "reachability": reachability,
+        "analysis_mode": analysis_mode,
+        "reasons": final_reasons,
+        "attack_types": attack_types,
+        "unused_signals": unused_signals,
+        "latency_ms": round((time.time() - start_time) * 1000),
+        "score_breakdown": {
+            "base_score": round(effective_fusion * 100, 1),
+            "heuristic_boost": round(float(extra_score), 1),
+            "final_score": round(max(0.1, risk_score), 2)
+        },
+        "scores": {
+            "gnn_score": round(scores.get('gnn_score', 0.5), 4),
+            "llm_score": round(scores.get('llm_score', 0.5), 4),
+            "fusion_score": round(scores.get('fusion_score', 0.5), 4),
+            "graph_node_count": scores.get('graph_node_count', 0),
+            "graph_signal": scores.get('graph_signal', 'unknown')
+        },
+        "evidence": {
+            "structural_impact": round(effective_fusion * 100, 1),
+            "scraping_status": "blocked" if (not goto_phase_3 and llm_score < 0.05) else "success" if (not goto_phase_3) else "fast-path",
+            "signal_reliability": {
+                "structural": "STRONG" if scores.get('graph_signal') == 'strong' else "WEAK",
+                "content": "UNAVAILABLE" if analysis_mode in {"RESTRICTED", "OFFLINE"} else "STRONG",
+                "network": "UNAVAILABLE" if reachability == "unreachable" else "AVAILABLE"
+            }
+        },
+        "domain_info": {"domain": domain, "status_code": metadata.status_code if metadata else None},
+        "ssl_info": metadata.ssl_info.dict() if metadata and metadata.ssl_info else None,
+        "threat_intel": metadata.threat_intel.dict() if metadata and metadata.threat_intel else None,
+        "security_headers": {
+            "has_ssl": url.startswith("https"),
+            "valid_ssl": url.startswith("https") and reachability == "reachable",
+            "has_content_security_policy": metadata.headers.get('Content-Security-Policy') is not None if metadata else False,
+            "has_xss_protection": metadata.headers.get('X-XSS-Protection') is not None if metadata else False,
+            "has_frame_protection": metadata.headers.get('X-Frame-Options') is not None if metadata else False,
         }
-    except Exception as fatal_e:
-        req_url = original_url if 'original_url' in locals() else url
-        logger.error(f"FATAL: {req_url}: {fatal_e}")
-        return {
-            "url": req_url,
-            "verdict": "error",
-            "confidence": "low",
-            "risk_score": -1,
-            "reasons": [f"System error: {str(fatal_e)}"]
-        }
+    }
 
 
 # ---- API Endpoints ----
 
-# --- Prediction endpoints (new) ---
-
 @app.post("/predict")
 async def predict_url_endpoint(request: PredictRequest):
-    """
-    Analyze a URL for phishing using the GNN + LLM fusion model.
-    
-    Returns a structured verdict with risk score, confidence, and detailed
-    security analysis including SSL, security headers, and threat intelligence.
-    """
     try:
-        result = await run_prediction(str(request.url))
+        result = await run_prediction(str(request.url), force_deep=request.deep_scan)
         return result
-    except HTTPException:
-        raise
     except Exception as e:
         logger.error(f"Error in predict: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/predict/batch", response_model=List[Dict[str, Any]])
-async def predict_batch(request: BatchURLRequest):
-    """
-    Analyzes multiple URLs in parallel with concurrency limiting.
-    """
+@app.post("/predict/batch")
+async def predict_batch(request: BatchPredictRequest):
     try:
-        logger.info(f"Received batch prediction request for {len(request.urls)} URLs")
-        tasks = [run_prediction(str(url)) for url in request.urls]
-        # Use return_exceptions=True to ensure one failure doesn't kill the batch
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        # Filter and log any exceptions
-        final_results = []
-        for i, res in enumerate(results):
-            if isinstance(res, Exception):
-                logger.error(f"Error in batch prediction for URL {request.urls[i]}: {res}")
-                final_results.append({
-                    "url": str(request.urls[i]),
-                    "error": str(res),
-                    "verdict": "error",
-                    "risk_score": -1
-                })
-            else:
-                final_results.append(res)
-                
-        return final_results
+        tasks = [run_prediction(str(url), force_deep=request.force_deep) for url in request.urls]
+        return await asyncio.gather(*tasks, return_exceptions=True)
     except Exception as e:
-        logger.error(f"Batch prediction error: {e}")
+        logger.error(f"Batch error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-# --- Preprocessing endpoints (existing) ---
-
-@app.post("/preprocess", response_model=URLMetadata)
-async def preprocess_url(request: URLRequest):
-    """
-    Preprocesses the URL by:
-      - Fetching the webpage
-      - Extracting and returning various metadata required for phishing detection.
-      - Checking SSL certificate information
-      - Checking threat intelligence databases
-    
-    The output JSON includes final URL after redirects, page content,
-    HTTP headers, domain information, SSL certificate info, and threat intelligence data.
-    """
-    try:
-        logger.info(f"Received request to preprocess URL: {request.url}")
-        result = await scrape_url(
-            str(request.url),
-            request.check_threat_intel
-        )
-        return result
-    except Exception as e:
-        logger.error(f"Error in preprocess_url: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.post("/preprocess/batch", response_model=List[URLMetadata])
-async def preprocess_urls_batch(request: BatchURLRequest):
-    """
-    Preprocesses multiple URLs in parallel.
-    """
-    try:
-        logger.info(f"Received batch request for {len(request.urls)} URLs")
-        tasks = [
-            scrape_url(
-                str(url),
-                request.check_threat_intel
-            )
-            for url in request.urls
-        ]
-        results = await asyncio.gather(*tasks)
-        return results
-    except Exception as e:
-        logger.error(f"Error in preprocess_urls_batch: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/preprocess")
-async def preprocess_url_get(url: str, check_threat_intel: bool = True):
-    """
-    GET endpoint for testing URL preprocessing.
-    
-    Parameters:
-    - url: The URL to check (must be URL encoded)
-    - check_threat_intel: Whether to check threat intelligence APIs (default: True)
-    
-    Example:
-    /preprocess?url=https%3A%2F%2Fexample.com&check_threat_intel=true
-    """
-    try:
-        logger.info(f"Received GET request to preprocess URL: {url}")
-        result = await scrape_url(
-            url,
-            check_threat_intel
-        )
-        return result
-    except Exception as e:
-        logger.error(f"Error in preprocess_url_get: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-@app.get("/preprocess/batch")
-async def preprocess_urls_batch_get(urls: str, check_threat_intel: bool = True):
-    """
-    GET endpoint for testing batch URL preprocessing.
-    
-    Parameters:
-    - urls: Comma-separated list of URLs to check (must be URL encoded)
-    - check_threat_intel: Whether to check threat intelligence APIs (default: True)
-    """
-    try:
-        url_list = [url.strip() for url in urls.split(",")]
-        logger.info(f"Received GET batch request for {len(url_list)} URLs")
-        tasks = [
-            scrape_url(
-                url,
-                check_threat_intel
-            )
-            for url in url_list
-        ]
-        results = await asyncio.gather(*tasks)
-        return results
-    except Exception as e:
-        logger.error(f"Error in preprocess_urls_batch_get: {str(e)}")
-        raise HTTPException(status_code=500, detail=str(e))
-
-# --- Health / Root ---
-
-@app.get("/")
-async def root():
-    """Root endpoint with API information."""
-    model_status = "loaded" if detector is not None else "not loaded"
-    return {
-        "name": "ThreatLens — AI Phishing Detection API",
-        "version": "1.0.0",
-        "status": "online",
-        "model_status": model_status,
-        "endpoints": {
-            "/predict": {
-                "methods": ["POST"],
-                "description": "Analyze a URL for phishing (ML model)",
-            },
-            "/predict/batch": {
-                "methods": ["POST"],
-                "description": "Analyze multiple URLs for phishing",
-            },
-            "/preprocess": {
-                "methods": ["GET", "POST"],
-                "description": "Extract URL metadata without ML prediction",
-            },
-            "/preprocess/batch": {
-                "methods": ["GET", "POST"],
-                "description": "Extract metadata for multiple URLs",
-            },
-            "/docs": "Interactive API documentation (Swagger UI)",
-        },
-    }
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
-    return {
-        "status": "healthy",
-        "model_loaded": detector is not None,
-        "timestamp": datetime.now().isoformat(),
-    }
+    return {"status": "healthy", "model_loaded": detector is not None, "timestamp": datetime.now().isoformat()}
+
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
+
+# Serve built frontend static assets if they exist
+frontend_dist = os.path.join(os.path.dirname(__file__), "..", "dist")
+
+if os.path.isdir(frontend_dist):
+    app.mount("/assets", StaticFiles(directory=os.path.join(frontend_dist, "assets")), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_spa(full_path: str):
+        # Serve any static file in dist directly if it exists (e.g., /vite.svg)
+        file_path = os.path.join(frontend_dist, full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+        
+        # SPA catch-all: return index.html for React Router to handle
+        index_path = os.path.join(frontend_dist, "index.html")
+        if os.path.isfile(index_path):
+            return FileResponse(index_path)
+            
+        return {"name": "ThreatLens API", "status": "online", "message": "Frontend build not found"}
+else:
+    @app.get("/")
+    async def root():
+        return {"name": "ThreatLens API", "status": "online", "message": "Frontend build not found"}

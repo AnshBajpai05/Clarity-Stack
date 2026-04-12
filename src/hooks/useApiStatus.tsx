@@ -18,8 +18,9 @@ export const ApiStatusProvider = ({ children }: { children: ReactNode }) => {
   const check = useCallback(async () => {
     const isOnline = await checkApiStatus();
     setOnline(isOnline);
-    if (!isOnline && !demoMode) setDemoMode(true);
-  }, [demoMode]);
+    if (!isOnline) setDemoMode(true);
+    else setDemoMode(false);  // Auto-exit demo mode when backend reconnects
+  }, []);
 
   useEffect(() => {
     check();

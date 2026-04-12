@@ -228,6 +228,7 @@ class PSSA(nn.Module):
         gnn_embeddings: torch.Tensor,
         llm_embeddings: torch.Tensor,
         attention_mask: Optional[torch.Tensor] = None,
+        gnn_mask: Optional[torch.Tensor] = None,
     ) -> Tuple[torch.Tensor, torch.Tensor]:
         # Project both to hidden_dim
         gnn_proj = self.gnn_projection(gnn_embeddings)  # [N, hidden_dim]
@@ -250,7 +251,10 @@ class PSSA(nn.Module):
         score = self.fusion(combined)  # [N, 1]
         
         # Pool to single score
-        final_score = score.mean(dim=0)  # [1]
+        if gnn_mask is not None and gnn_mask.any():
+            final_score = (score[gnn_mask].sum(dim=0)) / gnn_mask.sum()
+        else:
+            final_score = score.mean(dim=0)  # [1]
         
         return final_score, attention_weights
 
@@ -280,6 +284,7 @@ class PhishingScoreFusion(nn.Module):
         gnn_output: Dict[str, torch.Tensor],
         llm_output: Dict[str, torch.Tensor],
         metadata: Dict,
+        gnn_mask: Optional[torch.Tensor] = None,
     ) -> Dict[str, torch.Tensor]:
         # Temporal weighting
         temporal_weights = self.temporal_weighting(
@@ -295,6 +300,7 @@ class PhishingScoreFusion(nn.Module):
             gnn_embeddings,
             llm_output['embeddings'],
             llm_output.get('attention_mask'),
+            gnn_mask=gnn_mask,
         )
         
         return {
@@ -430,19 +436,30 @@ class PhishingDetector:
         self.fusion.eval()
         
         with torch.no_grad():
-            # Fusion score (GNN + LLM through PSSA)
-            fusion_result = self.fusion(gnn_output, llm_output, metadata)
-            fusion_score = fusion_result['final_score'].item()
+            # Only process non-padded nodes for the GNN score
+            # A node is padded if its features are all zero
+            mask = (gnn_output['embeddings'].abs().sum(dim=-1) > 0)
             
-            # GNN-only score
+            # GNN-only score (calculated purely from structural features)
             gat_output = self.gat(gnn_output['embeddings'], gnn_output['edge_index'])
-            gnn_probs = F.softmax(gat_output, dim=1)
-            gnn_score = gnn_probs[:, 1].mean().item()
+            
+            num_nodes = mask.sum().item()
+            if mask.any():
+                gnn_probs = F.softmax(gat_output[mask], dim=1)
+                gnn_score = gnn_probs[:, 1].mean().item()
+            else:
+                gnn_score = 0.5
+
+            # Fusion score (GNN + LLM through PSSA)
+            fusion_result = self.fusion(gnn_output, llm_output, metadata, gnn_mask=mask)
+            fusion_score = fusion_result['final_score'].item()
         
         return {
             'fusion_score': fusion_score,
             'gnn_score': gnn_score,
-            'llm_score': fusion_score,  # Fusion inherently includes LLM
+            'llm_score': fusion_score,  # simplified for now
+            'graph_node_count': num_nodes,
+            'graph_signal': 'weak' if num_nodes <= 1 else 'strong',
         }
     
     # --- Save / Load ---

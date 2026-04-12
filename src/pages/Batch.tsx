@@ -2,7 +2,7 @@ import { useState } from "react";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
 import Header from "@/components/Header";
-import { predictUrl, demoPredictUrl, saveScan, isValidUrl, type ScanResult } from "@/lib/api";
+import { predictBatch, demoPredictBatch, saveScan, isValidUrl, type ScanResult } from "@/lib/api";
 import { useApiStatus } from "@/hooks/useApiStatus";
 
 const verdictStyle = (v: ScanResult["verdict"]) =>
@@ -24,21 +24,18 @@ const Batch = () => {
     setLoading(true);
     setResults([]);
     setProgress(0);
-    const scanFn = online && !demoMode ? predictUrl : demoPredictUrl;
-    const res: ScanResult[] = [];
-    for (let i = 0; i < valid.length; i++) {
-      try {
-        const r = await scanFn(valid[i]);
-        res.push(r);
-        saveScan(r);
-        setResults([...res]);
-        setProgress(((i + 1) / valid.length) * 100);
-      } catch (e: any) {
-        toast.error(`Failed: ${valid[i]}`);
-      }
+    try {
+      const scanFn = online && !demoMode ? predictBatch : demoPredictBatch;
+      const res = await scanFn(valid);
+      res.forEach(saveScan);
+      setResults(res);
+      setProgress(100);
+    } catch (e: any) {
+      toast.error(e?.message || "Batch scan failed.");
+    } finally {
+      window.dispatchEvent(new Event("scan-complete"));
+      setLoading(false);
     }
-    window.dispatchEvent(new Event("scan-complete"));
-    setLoading(false);
   };
 
   const safe = results.filter((r) => r.verdict === "SAFE").length;
@@ -105,12 +102,14 @@ const Batch = () => {
                     <th className="text-left pb-2 font-medium">URL</th>
                     <th className="text-center pb-2 font-medium">Risk</th>
                     <th className="text-center pb-2 font-medium">Verdict</th>
+                    <th className="text-center pb-2 font-medium">Confidence</th>
+                    <th className="text-left pb-2 font-medium">Signals</th>
                   </tr>
                 </thead>
                 <tbody>
                   {results.map((r, i) => (
-                    <tr key={i} className="border-b border-border/20">
-                      <td className="py-2 text-foreground truncate max-w-[300px]">{r.url}</td>
+                    <tr key={i} className="border-b border-border/20 hover:bg-muted/20 transition-colors">
+                      <td className="py-2 text-foreground truncate max-w-[220px]" title={r.url}>{r.url}</td>
                       <td className="py-2">
                         <div className="flex items-center gap-2 justify-center">
                           <div className="w-20 h-1.5 rounded-full bg-muted overflow-hidden">
@@ -124,6 +123,18 @@ const Batch = () => {
                       </td>
                       <td className="py-2 text-center">
                         <span className={`px-2 py-0.5 rounded text-[10px] font-semibold ${verdictStyle(r.verdict)}`}>{r.verdict}</span>
+                      </td>
+                      <td className="py-2 text-center">
+                        <span className={`text-[10px] font-semibold uppercase ${
+                          r.confidence === 'high' ? 'text-safe' : r.confidence === 'medium' ? 'text-warning' : 'text-muted-foreground'
+                        }`}>{r.confidence}</span>
+                      </td>
+                      <td className="py-2 text-left">
+                        <div className="flex flex-wrap gap-1">
+                          {(r.reasons || []).slice(0, 2).map((sig, si) => (
+                            <span key={si} className="px-1.5 py-0.5 text-[9px] rounded bg-muted/50 text-muted-foreground border border-border/50">{sig}</span>
+                          ))}
+                        </div>
                       </td>
                     </tr>
                   ))}

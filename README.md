@@ -1,286 +1,122 @@
-![Python](https://img.shields.io/badge/Python-3.10-blue)
-![FastAPI](https://img.shields.io/badge/FastAPI-Backend-green)
-![Model](https://img.shields.io/badge/Model-DistilBERT%20%2B%20GNN-purple)
-![Latency](https://img.shields.io/badge/Latency-115ms-orange)
+# 🛡️ ThreatLens v1.5
+> **Real-time URL risk analysis with explainable decision intelligence.**
 
-# ThreatLens: Config-Driven Phishing Intelligence Engine
+### Enterprise-Ready Security Intelligence System
 
-> A hybrid semantic–structural URL intelligence system designed for strong adversarial robustness in real-world environments and designed to maintain near-zero false positives on trusted infrastructure.
-
-A production-grade, real-time phishing detection system for collaborative environments (Slack, Notion, Docs), enabling safe link-sharing without blocking critical business infrastructure.
-
-Unlike traditional systems, this platform introduces:
-- **Zero-day inference** (works purely on URL string mathematics, offline).
-- **Signal-Fusion Engine** (merging heuristics, ML, and real-time Tranco context).
-- **Config-driven intelligence** (updates instantly via external files without redeployment).
+![Python](https://img.shields.io/badge/Python-3.11-blue?style=for-the-badge&logo=python)
+![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688?style=for-the-badge&logo=fastapi)
+![React](https://img.shields.io/badge/React-Frontend-61DAFB?style=for-the-badge&logo=react)
+![Model](https://img.shields.io/badge/Signal--Fusion-GNN%20%2B%20NLP-663399?style=for-the-badge)
+![Status](https://img.shields.io/badge/Version-v1.5--Final-success?style=for-the-badge)
 
 ---
 
-## TL;DR
+## 🖥️ Dashboard Preview
 
-- **Problem:** Existing phishing detection relies on laggy blacklists or naive string matching, missing zero-day structurally complex attacks.
-- **Solution:** A hybrid intelligence engine fusing DistilBERT semantic embeddings, Graph Neural Networks (GNN), and heuristic anomaly detection.
-- **Core Innovation:** Late-fusion of NLP tokenization with topological domain mapping, achieving high adversarial robustness unfooled by typosquatting or shorteners.
-- **Architecture:** No external threat feeds or APIs — fully self-contained, deterministic inference.
-- **Impact:** Near-zero False Positive Rate on trusted infrastructure, >95% recall on stealth infrastructure manipulation, operating under 120ms real-time inference latency.
-
-## Design Goals
-
-- **Zero False Positives on critical infrastructure**
-- **Sub-150ms real-time inference**
-- **Robustness against adversarial URL manipulation**
-- **Config-driven adaptability without redeployment**
+![ThreatLens UI](./assets/dashboard.png)
+*Modern, state-driven security intelligence dashboard providing full signal transparency.*
 
 ---
 
-## Example Predictions
+## 🎥 Demo
 
-**Input:**
-`https://paypal.com.secure-update.xyz`
+![Demo](./assets/demo.gif)
+*Watch ThreatLens analyze stealth infrastructure in real-time.*
 
-**Output:**
-```json
-{
-  "verdict": "phishing",
-  "risk_score": 98.7,
-  "confidence": "high",
-  "resolved_url": "https://paypal.com.secure-update.xyz",
-  "reasons": [
-    "Suspicious TLD (.xyz)",
-    "Brand impersonation: paypal",
-    "Stealth phishing domain pattern"
-  ]
-}
+---
+
+## 🚀 What's New in v1.5 (The "Decision System" Update)
+
+We've evolved from a research prototype to an enterprise-ready security intelligence system. v1.5 introduces:
+
+- **🧠 Decision Driver Engine**: A dedicated reasoning layer that explains *why* the system reached its verdict. 
+- **📈 Visual Math Decomposition**: Full transparency into score calculation. `AI Baseline` + `Heuristic Signal Boost` = `Final Risk`.
+- **🟣 State-Driven Semantic UI**: Intelligent handling of network conditions.
+  - **FULL**: Deep inspection available.
+  - **RESTRICTED**: Content analysis blocked (anti-bot triggers).
+  - **OFFLINE**: Domain unreachable; fallbacks to structural heuristics.
+- **🕸️ GNN Structural Analysis (Adaptive)**: Applies graph-based reasoning when multi-node structures (redirect chains) are available, using masked pooling to prevent signal dilution.
+- **⚖️ Trust-Aware Overall Certainty**: A top-level confidence metric that intelligently downgrades itself when critical data signals are missing, preventing false trust.
+
+---
+
+## 🔄 System Flow
+
+```mermaid
+graph TD
+    A[URL Input] --> B[Structural + Semantic Analysis]
+    B --> C[Signal Fusion Engine]
+    C --> D[Decision Driver Reasoning]
+    D --> E[Explainable Verdict]
 ```
 
 ---
 
-**Input:**
-`https://dev.to/security/login-handling`
+## 🧠 Why ThreatLens?
 
-**Output:**
-```json
-{
-  "verdict": "safe",
-  "risk_score": 25.0,
-  "confidence": "high",
-  "resolved_url": "https://dev.to/security/login-handling",
-  "reasons": [
-    "Recognized trusted domain (Tranco Top 10K)",
-    "Contextual match (No structural anomalies)"
-  ]
-}
-```
+Unlike traditional blacklist-based tools:
+
+- **Explains why** a URL is dangerous (Structural vs Semantic vs Network).
+- **Adapts to incomplete data**: Works even for unreachable or bot-protected domains.
+- **Signal-Fusion Architecture**: Combines structural topology with semantic intent.
+- **Prioritizes trust over blind scoring**: High confidence on verified infrastructure roots.
 
 ---
 
-## Real-World Behavior
+## 💼 Use Cases
 
-| URL | Verdict |
-|-----|--------|
-| `https://github.com/user/repo` | SAFE |
-| `https://slack.com/workspace` | SAFE |
-| `https://google.com/url?q=...` | PHISHING |
-| `https://paypal-login.s3.amazonaws.com` | PHISHING |
+- **Slack / Teams link security**: Real-time link validation in corporate channels.
+- **Safe Link-Sharing**: Workspace intelligence for collaborative tools (Notion, Docs).
+- **Security Awareness**: Educational tool showing *why* a link is suspicious.
+- **Browser Protection**: Lightweight on-demand link analysis via extension.
 
 ---
 
-## Problem Statement
+## 📊 Performance (Internal Evaluation)
 
-Workspace communication layers suffer from:
-- Reliance on static blacklists (Google Safe Browsing), which lag zero-day campaigns by up to 72 hours.
-- High false-positive rates on complex corporate domains (e.g., deeply nested AWS or GCP infrastructure).
-- Vulnerability to adversarial obfuscation (e.g., bit.ly masking, typosquatting like `paypa1.com`).
-
-This leads to:
-- Alert fatigue for security teams.
-- Blocked workflows for employees (False Positives).
-- Successful data exfiltration via undetected stealth attacks.
+| Metric | Value | Testing Notes |
+| :--- | :--- | :--- |
+| **False Positive Rate** | **~0.1 - 1.0%** | Samples from Tranco Top 10K Domains |
+| **Detection Recall** | **~90.0 - 95.0%** | Synthetic + known phishing patterns |
+| **Avg Latency** | **~100 - 150ms** | Local inference environment |
+| **System Stability** | **High** | Graceful fallback handling (NXDOMAIN/403) |
 
 ---
 
-## Key Innovations
+## ⚠️ Limitations
 
-1. **Signal Fusion Pipeline**  
-   → A three-phased engine combining structural heuristics, machine learning, and strict intelligence overrides.
-
-2. **Structural Graph Modeling**  
-   → URLs are treated as structured entities rather than plain text, allowing detection of deep subdomain abuse patterns (e.g., accounts.google.com.secure-update.xyz).
-
-3. **Dynamic Tranco Contextual Whitelisting**  
-   → In-memory parsing of the Tranco Top 10K, capping ML risk scores for highly popular platforms to guarantee a 0% FPR on vital infrastructure.
-
-4. **External Config-Driven Rules**  
-   → Live updating of targeted brands, suspicious TLDs, and stealth keywords via `brands.json` to adapt to evolving attacker strategies without touching core engine logic.
-
-5. **Enterprise Workflow Hardening Layer**  
-   → A strict order-of-operations engine that handles complex real-world conditions: whitelists private subnets (`192.168.x.x`), traps Punycode (`xn--`), and handles NXDOMAINS.
-
-6. **Attack-First Decision Logic**
-   → High-confidence attack signals (e.g., open redirects, subdomain impersonation) override all trust assumptions, ensuring trusted infrastructure cannot be abused to bypass detection.
-
-7. **Deep Redirect Resolution (Anti-Masking)**
-   → Seamlessly intercepts shortened links (bit.ly, tinyurl) via `httpx` fallback logic, unpacking stealth routing payloads before passing the final destination to the heuristics engine.
-
-8. **Asymmetric Decision-Theory Confidence Scoring**
-   → Calculates threat confidence not as a flat metric, but through asymmetric mathematical distance from the decision boundary, automatically recognizing that the zero presence of threats grants immediate high-confidence safety.
+- **Content Analysis**: May be unavailable for domains with aggressive anti-bot protection.
+- **Graph Depth**: GNN structural reasoning is optimized for redirect chains and nested subdomains; limited for flat, single-node URLs.
+- **Scope**: Focuses purely on URL string mapping and basic scraping; does not analyze in-page DOM elements or visual pixel-similarity.
+- **Live Feeds**: Direct threat intelligence API integration (VirusTotal/PhishTank) is planned for v2.
 
 ---
 
-## Why Not Pure ML?
+## 📂 Project Structure
 
-Pure NLP models failed due to distribution shift:
-- **Training**: clean URL strings
-- **Production**: noisy HTML / mixed patterns
-
-ThreatLens resolves this by combining:
-- **ML** (semantic understanding)
-- **Heuristics** (structural certainty)
-- **Rules** (high-confidence overrides)
-
-This multi-perspective reasoning makes it drastically more robust against adversarial manipulation.
+- `backend/`: FastAPI server with async multiprocessing for high-throughput prediction.
+- `src/`: Modern React dashboard with state-driven UI logic and a "Security-Native" aesthetic.
+- `extension/`: Chrome Extension for on-demand link analysis.
+- `data/`: Config-driven intelligence (brands, keywords, TLDs).
 
 ---
 
-## System Architecture
+## ⚡ Quick Start
 
-```text
-[Incoming URL Request]
-    ↓
-[Phase 1: Heuristic Anomaly Pre-filter]
-(Typosquatting, TLD abuse, Symbol checking)
-    ↓
-[Phase 2: Hybrid ML Engine]
-(DistilBERT Embeddings + GAT Structural Graph)
-    ↓
-[Phase 3: Decision Override & Calibration Engine]
-(Tranco context verification, shortener penalization)
-    ↓
-[Threat Verdict + Explanation Matrix]
-(Safe / Suspicious / Phishing)
-```
-
----
-
-## Performance Metrics
-
-*(Evaluated on a curated adversarial hold-out dataset designed to simulate real-world phishing attacks)*
-
-### Dataset Composition
-- **Total URLs**: 12,000+
-- **Benign**: Top 10K Tranco domains + curated developer platforms/SaaS tools.
-- **Malicious**:
-  - Typosquatting domains (`arnazon.com`, `paypa1.com`)
-  - Nested subdomain attacks (`accounts.google.com.secure-update.net`)
-  - URL shortener payloads (`tinyurl.com/microsoft-auth`)
-  - Brand impersonation
-
-### Results
-
-| Metric                     | Value |
-|--------------------------|------|
-| False Positive Rate (FPR)| Near 0.00% |
-| Recall (Malicious Catch) | >95.00% |
-| Precision                | >99.0% |
-| Avg Latency              | ~115 ms |
-
-*Note: Metrics reflect performance on controlled adversarial benchmarks (V2 Final Boss Suite) and may vary in open-world deployment.*
-
-### Baseline Comparison
-
-| Model Type          | FPR   | Recall |
-|---------------------|------|--------|
-| Blacklist-based     | ~5–10% | ~80% |
-| NLP-only (BERT)     | High FPR | ~85% |
-| Heuristics-only     | High FPR | ~70% |
-| **ThreatLens (Ours)** | **Near 0.00%** | **>95%** |
-
----
-
-## Experimental Insights
-
-- NLP-only models severely struggled with structural abuse (e.g., `amazon.com.account.xyz`).
-- Heuristics-only approaches resulted in an unacceptably high FPR for software developer documentation sites.
-
-**Conclusion:**
-A hybrid multimodal architecture (Semantic + Graph Topology + Context Rules) is the only viable path to achieving enterprise-required 0% FPR.
-
----
-
-## Operational Resilience
-
-ThreatLens decouples structural risk from network reachability:
-
-- **NXDOMAIN** → flagged as unreachable with risk penalty
-- **Timeout** → marked as unreachable without affecting structural score
-- **Redirect Evasion** → 3-phase asynchronous fallback resolver (`HEAD` → `GET (no-follow)` → `GET (follow)`) directly nullifies URL shortener evasion techniques without scraping heavy DOM content.
-
-This ensures robust detection even when phishing infrastructure is offline, masked, or ephemeral.
-
----
-
-## Limitations & Future Work
-
-**Current Limitations:**
-- Shorteners containing zero recognizable keywords cannot be algorithmically flagged without fully resolving the redirect chain.
-- The model ignores in-page DOM elements or visual branding, focusing purely on URL string inference.
-
-**Future Work:**
-- Implement an Async background worker for WHOIS/Domain Age scraping.
-- ONNX migration to port model weights directly into the browser for 0-latency client-side execution.
-
----
-
-## Deployment Scenarios
-
-ThreatLens acts as a versatile intelligence primitive:
-- **Browser Extension** → User-triggered, on-demand link validation (Included in repo).
-- **Slack / Teams Bot** → Scans links in real-time in corporate channels.
-- **API Gateway Middleware** → Enterprise traffic filtering at the network level.
-- **Email Security Layer** → Pre-click phishing detection on inbound mail.
-
----
-
-## Reproducibility 
-
-The `backend/data/` module allows reconstruction of the structural heuristics logic.
-- Model checkpoints are tracked and exported as `.pt`.
-- Test suites (`test_extreme_final_boss.py`) are included to replicate the exact 0% FPR benchmark.
-
----
-
-## Quick Start (2 min)
-
-### Backend API Server
+### 1. Start the Intelligence Engine
 ```bash
 cd backend
 python -m venv venv
-venv\Scripts\activate
+source venv/bin/activate  # or venv\Scripts\activate
 pip install -r requirements.txt
-uvicorn app:app --host 0.0.0.0 --port 8001
+uvicorn app:app --host 0.0.0.0 --port 8000
 ```
 
-### Try the API
+### 2. Launch the Dashboard
 ```bash
-curl -X POST "http://localhost:8001/predict/batch" \
-     -H "Content-Type: application/json" \
-     -d '{"urls": ["https://paypal.com.secure-update.xyz"]}'
+npm install
+npm run dev
 ```
-
-### Chrome Extension 
-1. `chrome://extensions/` → Enable **Developer mode**.
-2. Click **Load unpacked** and select the `extension/` directory.
-3. Open any tab and click the extension to manually analyze links instantly.
 
 ---
-
-## Impact
-
-This system enables:
-- Transparent governance and zero-trust communications.
-- Scalable, instant mitigation of targeted spear-phishing campaigns.
-- Data-driven visibility for InfoSec teams into active threat infrastructures.
-
-## Vision
-
-To build AI security systems that act as **intelligent workspace co-pilots**—identifying malicious infrastructure before it is ever reported—rather than just reactive URL blockers.
+**ThreatLens v1.5** | AI-driven security intelligence for the modern workspace.

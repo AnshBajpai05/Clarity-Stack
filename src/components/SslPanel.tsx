@@ -1,7 +1,19 @@
 import { Lock, Unlock, ShieldOff } from "lucide-react";
 import type { ScanResult } from "@/lib/api";
 
-const SslPanel = ({ ssl }: { ssl: ScanResult["ssl"] }) => {
+const SslPanel = ({ ssl, analysisMode }: { ssl: ScanResult["ssl"], analysisMode: "OFFLINE" | "RESTRICTED" | "FULL" }) => {
+  if (analysisMode === "OFFLINE") {
+    return (
+      <div className="glass-card p-4 animate-fade-in opacity-70">
+        <h3 className="text-sm font-semibold text-foreground mb-3 flex items-center gap-2">
+          <ShieldOff className="h-4 w-4 text-muted-foreground" />
+          SSL Certificate
+          <span className="ml-auto px-2 py-0.5 rounded text-xs font-medium bg-muted text-muted-foreground">Unavailable (Offline)</span>
+        </h3>
+        <p className="text-xs text-muted-foreground italic">No server configuration available to analyze as the domain is unreachable.</p>
+      </div>
+    );
+  }
   if (!ssl) {
     return (
       <div className="glass-card p-4 animate-fade-in">
