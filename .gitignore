@@ -1,0 +1,19 @@
+# Node modules
+node_modules/
+
+# Environment variables
+.env
+.env.local
+
+# Python
+__pycache__/
+*.pyc
+clarityeditor_venv/
+venv/
+env/
+
+# Mac
+.DS_Store
+
+# Frontend
+frontend/build/
