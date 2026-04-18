@@ -191,7 +191,7 @@ function Workspace() {
 
     // ── Helpers ───────────────────────────────────────────────────────────────
     const wordCount = (text) => text.trim() ? text.trim().split(/\s+/).length : 0;
-    const formatTime = (iso) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    // const formatTime = (iso) => new Date(iso).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     const timeAgo = (iso) => {
         const diff = Math.floor((Date.now() - new Date(iso)) / 1000);
         if (diff < 60) return `${diff}s ago`;
