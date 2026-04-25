@@ -62,7 +62,7 @@ const ScoreCard = ({ label, value, desc, delay, icon: Icon, status, weak }: Scor
   );
 };
 
-const ScoreCards = ({ gnn, llm, fusion, evidence, analysisMode, graphSignal }: { gnn: number; llm: number; fusion: number; evidence?: Evidence | null, analysisMode?: string, graphSignal?: string }) => (
+const ScoreCards = ({ gnn, nlp, fusion, evidence, analysisMode, graphSignal }: { gnn: number; nlp: number; fusion: number; evidence?: Evidence | null, analysisMode?: string, graphSignal?: string }) => (
   <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 w-full">
     <ScoreCard 
       label="Structural Analysis" 
@@ -73,9 +73,9 @@ const ScoreCards = ({ gnn, llm, fusion, evidence, analysisMode, graphSignal }: {
       delay={0} 
     />
     <ScoreCard 
-      label="Content Intelligence" 
-      value={llm} 
-      desc={analysisMode === "OFFLINE" ? "Unavailable (Offline)" : evidence?.scraping_status === "blocked" ? "Scraping blocked by target server" : "Visual & text semantic model"} 
+      label="Semantic Analysis" 
+      value={nlp} 
+      desc={analysisMode === "OFFLINE" ? "Unavailable (Offline)" : evidence?.scraping_status === "blocked" ? "Scraping blocked by target server" : "NLP model — rendered page semantics"} 
       icon={Shield}
       status={analysisMode === "OFFLINE" ? "blocked" : evidence?.scraping_status}
       delay={150} 

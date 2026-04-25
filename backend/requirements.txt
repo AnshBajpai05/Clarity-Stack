@@ -9,6 +9,9 @@ pydantic==2.6.1
 requests==2.31.0
 gunicorn==21.2.0
 
+# Browser Engine (Deep Scan)
+playwright>=1.40.0
+
 # ML
 torch>=2.0.0
 transformers>=4.30.0

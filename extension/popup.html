@@ -26,54 +26,61 @@
             </div>
         </div>
 
-        <!-- Initial/Loading Status -->
+        <!-- Loading State -->
         <div id="loadingState" class="state-container hidden">
             <div class="spinner"></div>
             <p>Analyzing zero-day patterns...</p>
         </div>
 
-        <!-- Result Status -->
+        <!-- Result State -->
         <div id="resultState" class="state-container hidden">
+
             <!-- URL Display -->
             <div class="url-section">
                 <span class="label">ANALYZED TARGET</span>
                 <div class="url-box" id="targetUrl"></div>
             </div>
-            
+
             <div class="url-section hidden" id="resolvedUrlSection" style="margin-top: 8px;">
                 <span class="label" style="color: #64748b;">REDIRECTS TO</span>
                 <div class="url-box" id="resolvedUrl" style="font-size: 0.85em; opacity: 0.8; border-color: #3b82f6;"></div>
             </div>
 
-            <!-- Verdict -->
+            <!-- Verdict Banner -->
             <div class="verdict-banner" id="verdictBanner">
                 <div class="icon-verdict" id="verdictIcon"></div>
-                <h2 id="verdictText">SAFE</h2>
+                <div class="verdict-main">
+                    <h2 id="verdictText">SAFE</h2>
+                    <div class="probability-row" id="probabilityRow">
+                        <span class="label">RISK PROBABILITY</span>
+                        <span id="probabilityValue" class="prob-value">—</span>
+                    </div>
+                </div>
             </div>
-            
-            <!-- Reachability Status -->
+
+            <!-- VERIFICATION_REQUIRED State -->
+            <div id="verificationBanner" class="verification-banner hidden">
+                <div class="verify-icon">⚠</div>
+                <div>
+                    <p class="verify-title">Inspection Blocked</p>
+                    <p class="verify-sub">Anti-bot protection prevents automated analysis. Manual verification recommended.</p>
+                </div>
+            </div>
+
+            <!-- Reachability Banner -->
             <div id="reachabilityBanner" class="reachability-banner hidden">
                 <span class="reach-dot">⚫</span>
                 <span>Domain Unreachable / Timeout</span>
             </div>
-            
-            <!-- Score & Detailed Analysis -->
+
+            <!-- Analysis Box -->
             <div class="analysis-box">
-                <div class="score-row">
-                    <span class="label">RISK FACTOR</span>
-                    <span class="score" id="riskScore">--</span>
-                </div>
-                
-                <div class="score-row" style="margin-top: 8px;">
-                    <span class="label">CONFIDENCE</span>
-                    <span class="score" id="confidenceScore" style="font-size: 1.1em; text-transform: uppercase;">--</span>
-                </div>
-                
-                <div class="reasons-list" id="reasonsContainer" style="margin-top: 12px;">
-                    <!-- JS injects reasons here -->
-                </div>
+                <!-- Top Signals (new) -->
+                <div id="signalBars" class="signal-bars"></div>
+
+                <div class="reasons-list" id="reasonsContainer" style="margin-top: 12px;"></div>
             </div>
-            
+
             <div class="latency" id="latencyDisplay"></div>
         </div>
     </div>

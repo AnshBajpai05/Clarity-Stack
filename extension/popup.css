@@ -6,15 +6,21 @@
     --border-card: rgba(255, 255, 255, 0.08);
     --text-primary: #FFFFFF;
     --text-dim: #8B949E;
-    
+
     --safe: #2EA043;
     --safe-bg: rgba(46, 160, 67, 0.15);
-    
+
     --suspicious: #D29922;
     --suspicious-bg: rgba(210, 153, 34, 0.15);
-    
+
+    --high-risk: #E86C00;
+    --high-risk-bg: rgba(232, 108, 0, 0.15);
+
     --phishing: #F85149;
     --phishing-bg: rgba(248, 81, 73, 0.15);
+
+    --verify: #A371F7;
+    --verify-bg: rgba(163, 113, 247, 0.15);
 }
 
 * {
@@ -112,39 +118,56 @@ h1 {
 
 .action-buttons {
     display: flex;
-    gap: 8px;
+    gap: 10px;
+    height: 42px;
 }
 
 .primary-btn {
-    flex: 1;
-    background: #58A6FF;
-    color: #0B0F19;
+    flex: 2;
+    background: linear-gradient(135deg, #58A6FF, #8957E5);
+    color: white;
     border: none;
-    border-radius: 6px;
-    padding: 10px;
+    border-radius: 8px;
+    padding: 0 16px;
     font-size: 13px;
     font-weight: 600;
     cursor: pointer;
-    transition: background 0.2s;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 12px rgba(88, 166, 255, 0.2);
 }
 
 .primary-btn:hover {
-    background: #79B8FF;
+    transform: translateY(-1px);
+    box-shadow: 0 6px 16px rgba(88, 166, 255, 0.3);
+    filter: brightness(1.1);
+}
+
+.primary-btn:active {
+    transform: translateY(0);
 }
 
 .secondary-btn {
-    background: transparent;
+    flex: 1;
+    background: rgba(255, 255, 255, 0.05);
     color: var(--text-dim);
     border: 1px solid var(--border-card);
-    border-radius: 6px;
-    padding: 10px 12px;
+    border-radius: 8px;
+    padding: 0 12px;
     font-size: 11px;
     font-weight: 500;
     cursor: pointer;
     transition: all 0.2s;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
 }
 
 .secondary-btn:hover {
+    background: rgba(255, 255, 255, 0.1);
     color: var(--text-primary);
     border-color: var(--text-dim);
 }
@@ -229,7 +252,6 @@ h1 {
     letter-spacing: 1px;
 }
 
-/* Verdict Colors */
 .is-safe {
     background: var(--safe-bg);
     border-color: var(--safe);
@@ -242,10 +264,22 @@ h1 {
     color: var(--suspicious);
 }
 
+.is-high-risk {
+    background: var(--high-risk-bg);
+    border-color: var(--high-risk);
+    color: var(--high-risk);
+}
+
 .is-phishing {
     background: var(--phishing-bg);
     border-color: var(--phishing);
     color: var(--phishing);
+}
+
+.is-verify {
+    background: var(--verify-bg);
+    border-color: var(--verify);
+    color: var(--verify);
 }
 /* Reachability Banner */
 .reachability-banner {
@@ -314,4 +348,122 @@ h1 {
     color: var(--text-dim);
     text-align: center;
     margin-top: 4px;
+}
+
+/* Probability row inside verdict banner */
+.verdict-main {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+}
+
+.probability-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    opacity: 0.8;
+}
+
+.prob-value {
+    font-size: 12px;
+    font-weight: 700;
+    font-family: monospace;
+}
+
+/* Signal bars */
+.signal-bars {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding-bottom: 10px;
+    border-bottom: 1px solid var(--border-card);
+    margin-bottom: 4px;
+}
+
+.signal-row {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.signal-label {
+    font-size: 10px;
+    color: var(--text-dim);
+    width: 72px;
+    flex-shrink: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 500;
+}
+
+.signal-track {
+    flex: 1;
+    height: 4px;
+    background: rgba(255,255,255,0.08);
+    border-radius: 2px;
+    overflow: hidden;
+}
+
+.signal-fill {
+    height: 100%;
+    border-radius: 2px;
+    transition: width 0.5s ease;
+}
+
+.signal-val {
+    font-size: 10px;
+    font-family: monospace;
+    color: var(--text-primary);
+    width: 28px;
+    text-align: right;
+    flex-shrink: 0;
+}
+
+.signal-divider {
+    height: 1px;
+    background: var(--border-card);
+    margin: 2px 0;
+}
+
+.explanation-line {
+    font-size: 11px;
+    color: var(--text-dim);
+    font-style: italic;
+    line-height: 1.4;
+    padding: 0 2px 6px;
+    border-bottom: 1px solid var(--border-card);
+    margin-bottom: 4px;
+}
+
+/* Verification banner */
+.verification-banner {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    padding: 10px 12px;
+    background: var(--verify-bg);
+    border: 1px solid var(--verify);
+    border-radius: 8px;
+    font-size: 11px;
+    color: var(--verify);
+}
+
+.verify-icon {
+    font-size: 16px;
+    flex-shrink: 0;
+    margin-top: 1px;
+}
+
+.verify-title {
+    font-weight: 700;
+    font-size: 11px;
+    color: var(--verify);
+    margin-bottom: 3px;
+}
+
+.verify-sub {
+    font-size: 10px;
+    color: var(--text-dim);
+    line-height: 1.4;
 }

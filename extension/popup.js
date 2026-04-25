@@ -1,147 +1,202 @@
 document.addEventListener('DOMContentLoaded', () => {
     const manualUrlInput = document.getElementById('manualUrlInput');
-    const scanPastedBtn = document.getElementById('scanPastedBtn');
-    const scanTabBtn = document.getElementById('scanTabBtn');
-    
-    const targetUrlEl = document.getElementById('targetUrl');
-    const loadingState = document.getElementById('loadingState');
-    const resultState = document.getElementById('resultState');
-    const verdictBanner = document.getElementById('verdictBanner');
-    const verdictText = document.getElementById('verdictText');
-    const riskScore = document.getElementById('riskScore');
-    const confidenceScore = document.getElementById('confidenceScore');
-    const reasonsContainer = document.getElementById('reasonsContainer');
-    const latencyDisplay = document.getElementById('latencyDisplay');
-    const resolvedUrlSection = document.getElementById('resolvedUrlSection');
-    const resolvedUrlEl = document.getElementById('resolvedUrl');
+    const scanPastedBtn  = document.getElementById('scanPastedBtn');
+    const scanTabBtn     = document.getElementById('scanTabBtn');
 
-    // Automatically focus the input field on open
+    const targetUrlEl        = document.getElementById('targetUrl');
+    const loadingState       = document.getElementById('loadingState');
+    const resultState        = document.getElementById('resultState');
+    const verdictBanner      = document.getElementById('verdictBanner');
+    const verdictText        = document.getElementById('verdictText');
+    const probabilityRow     = document.getElementById('probabilityRow');
+    const probabilityValue   = document.getElementById('probabilityValue');
+    const signalBarsEl       = document.getElementById('signalBars');
+    const reasonsContainer   = document.getElementById('reasonsContainer');
+    const latencyDisplay     = document.getElementById('latencyDisplay');
+    const resolvedUrlSection = document.getElementById('resolvedUrlSection');
+    const resolvedUrlEl      = document.getElementById('resolvedUrl');
+    const verificationBanner = document.getElementById('verificationBanner');
+    const reachabilityBanner = document.getElementById('reachabilityBanner');
+
     manualUrlInput.focus();
 
-    // 1. Scan Pasted Link
+    // ─── Scan pasted URL ────────────────────────────────────────
     scanPastedBtn.addEventListener('click', () => {
         let url = manualUrlInput.value.trim();
         if (!url) return;
-        
-        // Auto-prepend http if missing for valid parsing by backend
-        if (!url.startsWith('http://') && !url.startsWith('https://')) {
-            url = 'http://' + url;
-        }
-        
+        if (!url.startsWith('http://') && !url.startsWith('https://')) url = 'http://' + url;
         analyzeUrl(url);
     });
 
-    // Handle Enter key for fast scanning
     manualUrlInput.addEventListener('keypress', (e) => {
-        if (e.key === 'Enter') {
-            scanPastedBtn.click();
-        }
+        if (e.key === 'Enter') scanPastedBtn.click();
     });
 
-    // 2. Extract Current Tab URL
+    // ─── Extract current tab URL ────────────────────────────────
     scanTabBtn.addEventListener('click', async () => {
         try {
             const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-            if (tab && tab.url && !tab.url.startsWith('chrome://')) {
-                manualUrlInput.value = tab.url;
-            } else {
-                manualUrlInput.value = "Cannot scan this internal page";
-            }
+            manualUrlInput.value = (tab && tab.url && !tab.url.startsWith('chrome://'))
+                ? tab.url
+                : 'Cannot scan this internal page';
         } catch (err) {
-            console.error("Tab query failed:", err);
+            console.error('Tab query failed:', err);
         }
     });
 
-    // 3. Call local ThreatLens API
+    // ─── Call backend ────────────────────────────────────────────
     async function analyzeUrl(url) {
-        // Reset UI
         resultState.classList.add('hidden');
         loadingState.classList.remove('hidden');
         targetUrlEl.textContent = url;
-        
-        if (resolvedUrlSection) resolvedUrlSection.classList.add('hidden');
+        resolvedUrlSection.classList.add('hidden');
+        verificationBanner.classList.add('hidden');
 
         try {
-            const response = await fetch('http://localhost:8001/predict/batch', {
+            const res = await fetch('http://localhost:8000/predict/batch', {
                 method: 'POST',
-                headers: {
-                    'Content-Type': 'application/json',
-                },
+                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ urls: [url] })
             });
-
-            if (!response.ok) {
-                throw new Error(`API error: ${response.status}`);
-            }
-
-            const data = await response.json();
-            
+            if (!res.ok) throw new Error(`API error: ${res.status}`);
+            const data = await res.json();
             if (Array.isArray(data) && data.length > 0) {
                 showResult(data[0]);
             } else {
                 throw new Error('Invalid response format');
             }
-
         } catch (err) {
-            console.error("Analysis Error:", err);
+            console.error('Analysis Error:', err);
             showResult({
                 verdict: 'error',
-                risk_score: 0.0,
-                reasons: [`Connection failed: Ensure ThreatLens backend is running on port 8001. Raw error: ${err.message}`],
+                risk_score: 0,
+                risk_probability: 0,
+                reasons: [`Connection failed — ensure backend is running on port 8000. (${err.message})`],
                 latency_ms: 0
             });
         }
     }
 
-    // 3. Display Results
+    // ─── Verdict config ──────────────────────────────────────────
+    const VERDICT_CONFIG = {
+        'SAFE':                  { cls: 'is-safe',         label: 'SAFE',                  scoreColor: 'var(--safe)'       },
+        'SUSPICIOUS':            { cls: 'is-suspicious',   label: 'SUSPICIOUS',             scoreColor: 'var(--suspicious)' },
+        'HIGH_RISK':             { cls: 'is-high-risk',    label: 'HIGH RISK',              scoreColor: 'var(--high-risk)'  },
+        'PHISHING':              { cls: 'is-phishing',     label: 'PHISHING',               scoreColor: 'var(--phishing)'   },
+        'VERIFICATION_REQUIRED': { cls: 'is-verify',       label: 'VERIFY',                 scoreColor: 'var(--verify)'     },
+        'error':                 { cls: 'is-suspicious',   label: 'ERROR',                  scoreColor: 'var(--text-dim)'   },
+    };
+
+    // ─── Signal weights (mirror compute_logit in app.py) ─────────
+    const SIGNAL_WEIGHTS = {
+        uncertainty:        2.5,
+        is_unreachable:     2.5,
+        visual_score:       2.5,
+        namespace_risk:     2.0,
+        access_friction:    2.0,
+        is_shortener:       2.0,
+        gnn_score:          2.0,
+        nlp_score:          1.8,
+        redirect_depth:     1.5,
+        has_ip_pattern:     1.5,
+        structural_anomaly: 1.5,
+    };
+
+    const SIGNAL_LABELS = {
+        uncertainty:        'Uncertainty',
+        namespace_risk:     'Namespace',
+        access_friction:    'Access Block',
+        structural_anomaly: 'Structure',
+        gnn_score:          'Graph (GNN)',
+        nlp_score:          'Semantic',
+        is_unreachable:     'NXDOMAIN',
+        is_shortener:       'Shortener',
+        redirect_depth:     'Redirect',
+        visual_score:       'Visual Sim',
+        has_ip_pattern:     'IP Pattern',
+    };
+
+    // ─── 1-line explanation generator ────────────────────────────
+    function generateExplanation(verdictKey, signals, reasons) {
+        if (verdictKey === 'SAFE') return 'No significant threat signals detected.';
+        if (verdictKey === 'VERIFICATION_REQUIRED') return null;
+        if (signals) {
+            const top = Object.entries(signals)
+                .filter(([k]) => SIGNAL_LABELS[k])
+                .map(([k, v]) => ({ key: k, importance: (SIGNAL_WEIGHTS[k] || 1) * v }))
+                .sort((a, b) => b.importance - a.importance)
+                .slice(0, 2)
+                .map(({ key }) => SIGNAL_LABELS[key].toLowerCase());
+            if (top.length > 0) {
+                const prefix = verdictKey === 'PHISHING' ? 'Flagged as phishing'
+                             : verdictKey === 'HIGH_RISK' ? 'High risk'
+                             : 'Suspicious';
+                return `${prefix} due to ${top.join(' and ')}.`;
+            }
+        }
+        if (reasons && reasons.length > 0) return reasons[0].split(' [')[0];
+        return null;
+    }
+
+    // ─── Display result ──────────────────────────────────────────
     function showResult(result) {
-        // Hide loading, show results
         loadingState.classList.add('hidden');
         resultState.classList.remove('hidden');
 
-        // Apply classes based on verdict
-        const v = result.verdict.toLowerCase();
-        
-        verdictBanner.classList.remove('is-safe', 'is-suspicious', 'is-phishing');
-        
-        if (v === 'safe') {
-            verdictBanner.classList.add('is-safe');
-            verdictText.textContent = 'SAFE';
-            riskScore.style.color = 'var(--safe)';
-        } else if (v === 'suspicious') {
-            verdictBanner.classList.add('is-suspicious');
-            verdictText.textContent = 'SUSPICIOUS';
-            riskScore.style.color = 'var(--suspicious)';
-        } else if (v === 'phishing') {
-            verdictBanner.classList.add('is-phishing');
-            verdictText.textContent = 'PHISHING';
-            riskScore.style.color = 'var(--phishing)';
-            // Make pulse indicator red for danger
-            document.querySelector('.pulse-indicator').style.backgroundColor = 'var(--phishing)';
-            document.querySelector('.pulse-indicator').style.animation = 'none';
+        const verdictKey = (result.verdict || 'error').toUpperCase().replace(/ /g, '_');
+        const cfg = VERDICT_CONFIG[verdictKey] || VERDICT_CONFIG['error'];
+
+        // Verdict banner
+        verdictBanner.className = 'verdict-banner ' + cfg.cls;
+        verdictText.textContent = cfg.label;
+
+        // Risk probability — color-coded with contextual label
+        const prob = result.risk_probability;
+        if (prob != null) {
+          const probPct = (prob * 100).toFixed(1);
+          let probColor, probLabel;
+          if (prob >= 0.8)      { probColor = 'var(--phishing)';   probLabel = 'Critical'; }
+          else if (prob >= 0.6) { probColor = 'var(--high-risk)';  probLabel = 'High';     }
+          else if (prob >= 0.4) { probColor = 'var(--suspicious)'; probLabel = 'Moderate'; }
+          else                  { probColor = 'var(--safe)';        probLabel = 'Low';      }
+          probabilityValue.textContent = `${probPct}% — ${probLabel}`;
+          probabilityValue.style.color = probColor;
+          probabilityRow.style.display = 'flex';
         } else {
-            verdictBanner.classList.add('is-suspicious');
-            verdictText.textContent = 'ERROR';
-            riskScore.style.color = 'var(--text-dim)';
+          probabilityValue.textContent = 'N/A';
+          probabilityValue.style.color = 'var(--text-dim)';
+          probabilityRow.style.display = verdictKey === 'VERIFICATION_REQUIRED' ? 'none' : 'flex';
         }
 
-        riskScore.textContent = result.risk_score.toFixed(1);
-        
-        // Handle Confidence
-        if (result.confidence) {
-            confidenceScore.textContent = result.confidence;
-            if (result.confidence === 'high') {
-                confidenceScore.style.color = '#e2e8f0';
-            } else if (result.confidence === 'medium') {
-                confidenceScore.style.color = 'var(--suspicious)';
+        // Pulse indicator color
+        const pulseEl = document.querySelector('.pulse-indicator');
+        if (verdictKey === 'PHISHING') {
+            pulseEl.style.backgroundColor = 'var(--phishing)';
+            pulseEl.style.animation = 'none';
+        } else if (verdictKey === 'HIGH_RISK') {
+            pulseEl.style.backgroundColor = 'var(--high-risk)';
+        } else {
+            pulseEl.style.backgroundColor = '';
+            pulseEl.style.animation = '';
+        }
+
+        // VERIFICATION_REQUIRED state banner — context-aware
+        if (verdictKey === 'VERIFICATION_REQUIRED') {
+            verificationBanner.classList.remove('hidden');
+            const verifyTitle = verificationBanner.querySelector('.verify-title');
+            const verifySub = verificationBanner.querySelector('.verify-sub');
+            if (result.reachability === 'unreachable') {
+                if (verifyTitle) verifyTitle.textContent = 'Domain Unreachable';
+                if (verifySub) verifySub.textContent = 'Cannot resolve domain (NXDOMAIN/Timeout). No data to verify safety. Exercise caution.';
             } else {
-                confidenceScore.style.color = 'var(--text-dim)';
+                if (verifyTitle) verifyTitle.textContent = 'Inspection Blocked';
+                if (verifySub) verifySub.textContent = 'Anti-bot protection prevents automated analysis. Manual verification recommended.';
             }
         } else {
-            confidenceScore.textContent = 'N/A';
+            verificationBanner.classList.add('hidden');
         }
 
-        // Handle Resolved URL
+        // Resolved URL
         if (result.resolved_url) {
             resolvedUrlSection.classList.remove('hidden');
             resolvedUrlEl.textContent = result.resolved_url;
@@ -149,25 +204,65 @@ document.addEventListener('DOMContentLoaded', () => {
             resolvedUrlSection.classList.add('hidden');
         }
 
-        // Populate reasons
-        reasonsContainer.innerHTML = '';
-        if (result.reasons && result.reasons.length > 0) {
-            result.reasons.forEach(reason => {
-                const div = document.createElement('div');
-                div.className = 'reason-item';
-                div.textContent = reason;
-                reasonsContainer.appendChild(div);
+        // Explanation line
+        const explanation = generateExplanation(verdictKey, result.signals, result.reasons);
+        let explanationEl = document.getElementById('explanationLine');
+        if (!explanationEl) {
+            explanationEl = document.createElement('p');
+            explanationEl.id = 'explanationLine';
+            explanationEl.className = 'explanation-line';
+            signalBarsEl.parentNode.insertBefore(explanationEl, signalBarsEl);
+        }
+        explanationEl.textContent = explanation || '';
+        explanationEl.style.display = explanation ? 'block' : 'none';
+
+        // Signal bars — sorted by importance (weight × value), top 5
+        signalBarsEl.innerHTML = '';
+        if (result.signals) {
+            const sorted = Object.entries(result.signals)
+                .filter(([k]) => SIGNAL_LABELS[k])
+                .map(([k, v]) => ({ key: k, value: v, importance: (SIGNAL_WEIGHTS[k] || 1) * v }))
+                .sort((a, b) => b.importance - a.importance)
+                .slice(0, 5);
+
+            sorted.forEach(({ key, value }) => {
+                const pct = Math.round(value * 100);
+                const barColor = pct <= 25 ? '#2ea043' : pct <= 50 ? '#d29922' : pct <= 75 ? '#e86c00' : '#f85149';
+                const row = document.createElement('div');
+                row.className = 'signal-row';
+                row.innerHTML = `
+                    <span class="signal-label">${SIGNAL_LABELS[key]}</span>
+                    <div class="signal-track">
+                        <div class="signal-fill" style="width:${pct}%; background:${barColor};"></div>
+                    </div>
+                    <span class="signal-val">${value.toFixed(2)}</span>
+                `;
+                signalBarsEl.appendChild(row);
             });
+
+            const divider = document.createElement('div');
+            divider.className = 'signal-divider';
+            signalBarsEl.appendChild(divider);
         }
 
-        // Handle Reachability Display Separately
-        const reachabilityBanner = document.getElementById('reachabilityBanner');
+        // Reasons
+        reasonsContainer.innerHTML = '';
+        (result.reasons || []).forEach(reason => {
+            const clean = reason.split(' [')[0];
+            const div = document.createElement('div');
+            div.className = 'reason-item';
+            div.textContent = clean;
+            reasonsContainer.appendChild(div);
+        });
+
+        // Reachability
         if (result.reachability === 'unreachable') {
             reachabilityBanner.classList.remove('hidden');
         } else {
             reachabilityBanner.classList.add('hidden');
         }
 
+        // Latency
         if (result.latency_ms > 0) {
             latencyDisplay.textContent = `Analyzed in ${result.latency_ms}ms`;
         }

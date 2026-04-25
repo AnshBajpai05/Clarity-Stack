@@ -1,0 +1,680 @@
+[
+  {
+    "url": "https://microsoft-auth-user.vercel.app",
+    "verdict": "HIGH_RISK",
+    "risk_probability": 0.6674,
+    "signals": {
+      "namespace_risk": 0.25,
+      "structural_anomaly": 1.0,
+      "brand_mismatch": 0.8667,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 0.0
+    },
+    "derived": {
+      "impersonation_target": "microsoft",
+      "reachability": "reachable",
+      "analysis_mode": "FULL"
+    },
+    "reasons": [
+      "Domain structural anomaly (excessive tokens) [+10]",
+      "Namespace risk (nested/entropy) [+3.75]",
+      "Trusted Infrastructure Context (Benign Reward)",
+      "Subdomain keyword stuffing detected [+10]",
+      "Brand/Infra mismatch detected (microsoft on vercel)"
+    ]
+  },
+  {
+    "url": "https://secure-paypal-login.netlify.app",
+    "verdict": "PHISHING",
+    "risk_probability": 0.9707,
+    "signals": {
+      "namespace_risk": 0.5,
+      "structural_anomaly": 1.0,
+      "brand_mismatch": 0.8462,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 0.0
+    },
+    "derived": {
+      "impersonation_target": "paypal",
+      "reachability": "reachable",
+      "analysis_mode": "FULL"
+    },
+    "reasons": [
+      "Suspicious token pattern [+10]",
+      "Domain structural anomaly (excessive tokens) [+10]",
+      "Namespace risk (nested/entropy) [+7.5]",
+      "Trusted Infrastructure Context (Benign Reward)",
+      "Subdomain keyword stuffing detected [+10]",
+      "Brand/Infra mismatch detected (paypal on netlify)"
+    ]
+  },
+  {
+    "url": "https://google-account-recovery.firebaseapp.com",
+    "verdict": "PHISHING",
+    "risk_probability": 0.9794,
+    "signals": {
+      "namespace_risk": 0.5,
+      "structural_anomaly": 1.0,
+      "brand_mismatch": 0.8824,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 0.0
+    },
+    "derived": {
+      "impersonation_target": "google",
+      "reachability": "reachable",
+      "analysis_mode": "FULL"
+    },
+    "reasons": [
+      "Suspicious token pattern [+5]",
+      "Domain structural anomaly (excessive tokens) [+10]",
+      "Namespace risk (nested/entropy) [+7.5]",
+      "Trusted Infrastructure Context (Benign Reward)",
+      "Subdomain keyword stuffing detected [+10]",
+      "Brand/Infra mismatch detected (google on firebaseapp)"
+    ]
+  },
+  {
+    "url": "https://amazon-login-authentication.pages.dev",
+    "verdict": "VERIFICATION_REQUIRED",
+    "risk_probability": null,
+    "signals": {
+      "namespace_risk": 0.5,
+      "structural_anomaly": 1.0,
+      "brand_mismatch": 0.8182,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 1.0
+    },
+    "derived": {
+      "impersonation_target": "amazon",
+      "reachability": "unreachable",
+      "analysis_mode": "OFFLINE"
+    },
+    "reasons": [
+      "Domain Unreachable (NXDOMAIN) [+15]",
+      "Suspicious token pattern [+5]",
+      "Domain structural anomaly (excessive tokens) [+10]",
+      "Namespace risk (nested/entropy) [+7.5]",
+      "Subdomain keyword stuffing detected [+10]",
+      "NXDOMAIN Penalty [+20]",
+      "NXDOMAIN + Suspicious Token Synergy [+20]",
+      "Brand/Infra mismatch detected (amazon on pages)",
+      "Domain unreachable (NXDOMAIN/Timeout) \u2014 prediction untrustworthy"
+    ]
+  },
+  {
+    "url": "https://appleid-verify-session.s3.amazonaws.com",
+    "verdict": "SAFE",
+    "risk_probability": 0.0069,
+    "signals": {
+      "namespace_risk": 0.5,
+      "structural_anomaly": 1.0,
+      "brand_mismatch": 0.0,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 0.0
+    },
+    "derived": {
+      "impersonation_target": "none",
+      "reachability": "reachable",
+      "analysis_mode": "FULL"
+    },
+    "reasons": [
+      "Suspicious token pattern [+5]",
+      "Domain structural anomaly (excessive tokens) [+10]",
+      "Namespace risk (nested/entropy) [+7.5]",
+      "Trusted Infrastructure Context (Benign Reward)",
+      "Subdomain keyword stuffing detected [+10]"
+    ]
+  },
+  {
+    "url": "http://paypal-google-security-alert.com",
+    "verdict": "VERIFICATION_REQUIRED",
+    "risk_probability": null,
+    "signals": {
+      "namespace_risk": 0.0,
+      "structural_anomaly": 1.0,
+      "brand_mismatch": 0.6471,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 1.0
+    },
+    "derived": {
+      "impersonation_target": "paypal",
+      "reachability": "unreachable",
+      "analysis_mode": "OFFLINE"
+    },
+    "reasons": [
+      "Domain Unreachable (NXDOMAIN) [+15]",
+      "Domain structural anomaly (excessive tokens) [+10]",
+      "Subdomain keyword stuffing detected [+10]",
+      "NXDOMAIN Penalty [+20]",
+      "Brand/Infra mismatch detected (paypal on paypal-google-security-alert)",
+      "Domain unreachable (NXDOMAIN/Timeout) \u2014 prediction untrustworthy"
+    ]
+  },
+  {
+    "url": "http://amazon-microsoft-login.net",
+    "verdict": "VERIFICATION_REQUIRED",
+    "risk_probability": null,
+    "signals": {
+      "namespace_risk": 0.0,
+      "structural_anomaly": 1.0,
+      "brand_mismatch": 0.5714,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 1.0
+    },
+    "derived": {
+      "impersonation_target": "amazon",
+      "reachability": "unreachable",
+      "analysis_mode": "OFFLINE"
+    },
+    "reasons": [
+      "Domain Unreachable (NXDOMAIN) [+15]",
+      "Suspicious token pattern [+5]",
+      "Domain structural anomaly (excessive tokens) [+10]",
+      "Subdomain keyword stuffing detected [+10]",
+      "NXDOMAIN Penalty [+20]",
+      "NXDOMAIN + Suspicious Token Synergy [+20]",
+      "Brand/Infra mismatch detected (amazon on amazon-microsoft-login)",
+      "Domain unreachable (NXDOMAIN/Timeout) \u2014 prediction untrustworthy"
+    ]
+  },
+  {
+    "url": "http://apple-paypal-verification.org",
+    "verdict": "VERIFICATION_REQUIRED",
+    "risk_probability": null,
+    "signals": {
+      "namespace_risk": 0.0,
+      "structural_anomaly": 1.0,
+      "brand_mismatch": 0.6667,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 1.0
+    },
+    "derived": {
+      "impersonation_target": "apple",
+      "reachability": "unreachable",
+      "analysis_mode": "OFFLINE"
+    },
+    "reasons": [
+      "Domain Unreachable (NXDOMAIN) [+15]",
+      "Domain structural anomaly (excessive tokens) [+10]",
+      "Subdomain keyword stuffing detected [+10]",
+      "NXDOMAIN Penalty [+20]",
+      "Brand/Infra mismatch detected (apple on apple-paypal-verification)",
+      "Domain unreachable (NXDOMAIN/Timeout) \u2014 prediction untrustworthy"
+    ]
+  },
+  {
+    "url": "http://secure-google-amazon-auth.com",
+    "verdict": "VERIFICATION_REQUIRED",
+    "risk_probability": null,
+    "signals": {
+      "namespace_risk": 0.0,
+      "structural_anomaly": 1.0,
+      "brand_mismatch": 0.6129,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 1.0
+    },
+    "derived": {
+      "impersonation_target": "google",
+      "reachability": "unreachable",
+      "analysis_mode": "OFFLINE"
+    },
+    "reasons": [
+      "Domain Unreachable (NXDOMAIN) [+15]",
+      "Suspicious token pattern [+5]",
+      "Domain structural anomaly (excessive tokens) [+10]",
+      "Subdomain keyword stuffing detected [+10]",
+      "NXDOMAIN Penalty [+20]",
+      "NXDOMAIN + Suspicious Token Synergy [+20]",
+      "Brand/Infra mismatch detected (google on secure-google-amazon-auth)",
+      "Domain unreachable (NXDOMAIN/Timeout) \u2014 prediction untrustworthy"
+    ]
+  },
+  {
+    "url": "http://bank-secure-login-microsoft.com",
+    "verdict": "VERIFICATION_REQUIRED",
+    "risk_probability": null,
+    "signals": {
+      "namespace_risk": 0.0,
+      "structural_anomaly": 1.0,
+      "brand_mismatch": 0.5,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 1.0
+    },
+    "derived": {
+      "impersonation_target": "microsoft",
+      "reachability": "unreachable",
+      "analysis_mode": "OFFLINE"
+    },
+    "reasons": [
+      "Domain Unreachable (NXDOMAIN) [+15]",
+      "Suspicious token pattern [+15]",
+      "Domain structural anomaly (excessive tokens) [+10]",
+      "Trusted Infrastructure Context (Benign Reward)",
+      "Subdomain keyword stuffing detected [+10]",
+      "NXDOMAIN Penalty [+20]",
+      "NXDOMAIN + Suspicious Token Synergy [+20]",
+      "Brand/Infra mismatch detected (microsoft on bank-secure-login-microsoft)",
+      "Domain unreachable (NXDOMAIN/Timeout) \u2014 prediction untrustworthy"
+    ]
+  },
+  {
+    "url": "http://secure-auth-user-login.com",
+    "verdict": "VERIFICATION_REQUIRED",
+    "risk_probability": null,
+    "signals": {
+      "namespace_risk": 0.0,
+      "structural_anomaly": 1.0,
+      "brand_mismatch": 0.0,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 1.0
+    },
+    "derived": {
+      "impersonation_target": "none",
+      "reachability": "unreachable",
+      "analysis_mode": "OFFLINE"
+    },
+    "reasons": [
+      "Domain Unreachable (NXDOMAIN) [+15]",
+      "Suspicious token pattern [+10]",
+      "Domain structural anomaly (excessive tokens) [+10]",
+      "Subdomain keyword stuffing detected [+10]",
+      "NXDOMAIN Penalty [+20]",
+      "NXDOMAIN + Suspicious Token Synergy [+20]",
+      "Domain unreachable (NXDOMAIN/Timeout) \u2014 prediction untrustworthy"
+    ]
+  },
+  {
+    "url": "http://account-verification-required.net",
+    "verdict": "VERIFICATION_REQUIRED",
+    "risk_probability": null,
+    "signals": {
+      "namespace_risk": 0.0,
+      "structural_anomaly": 1.0,
+      "brand_mismatch": 0.0,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 1.0
+    },
+    "derived": {
+      "impersonation_target": "none",
+      "reachability": "unreachable",
+      "analysis_mode": "OFFLINE"
+    },
+    "reasons": [
+      "Domain Unreachable (NXDOMAIN) [+15]",
+      "Suspicious token pattern [+5]",
+      "Domain structural anomaly (excessive tokens) [+10]",
+      "Subdomain keyword stuffing detected [+10]",
+      "NXDOMAIN Penalty [+20]",
+      "NXDOMAIN + Suspicious Token Synergy [+20]",
+      "Domain unreachable (NXDOMAIN/Timeout) \u2014 prediction untrustworthy"
+    ]
+  },
+  {
+    "url": "http://update-security-details.info",
+    "verdict": "VERIFICATION_REQUIRED",
+    "risk_probability": null,
+    "signals": {
+      "namespace_risk": 0.0,
+      "structural_anomaly": 1.0,
+      "brand_mismatch": 0.0,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 1.0
+    },
+    "derived": {
+      "impersonation_target": "none",
+      "reachability": "unreachable",
+      "analysis_mode": "OFFLINE"
+    },
+    "reasons": [
+      "Domain Unreachable (NXDOMAIN) [+15]",
+      "Suspicious token pattern [+5]",
+      "Domain structural anomaly (excessive tokens) [+10]",
+      "Subdomain keyword stuffing detected [+10]",
+      "NXDOMAIN Penalty [+20]",
+      "NXDOMAIN + Suspicious Token Synergy [+20]",
+      "Domain unreachable (NXDOMAIN/Timeout) \u2014 prediction untrustworthy"
+    ]
+  },
+  {
+    "url": "http://confirm-identity-access.org",
+    "verdict": "VERIFICATION_REQUIRED",
+    "risk_probability": null,
+    "signals": {
+      "namespace_risk": 0.0,
+      "structural_anomaly": 1.0,
+      "brand_mismatch": 0.0,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 1.0
+    },
+    "derived": {
+      "impersonation_target": "none",
+      "reachability": "unreachable",
+      "analysis_mode": "OFFLINE"
+    },
+    "reasons": [
+      "Domain Unreachable (NXDOMAIN) [+15]",
+      "Domain structural anomaly (excessive tokens) [+10]",
+      "Subdomain keyword stuffing detected [+10]",
+      "NXDOMAIN Penalty [+20]",
+      "Domain unreachable (NXDOMAIN/Timeout) \u2014 prediction untrustworthy"
+    ]
+  },
+  {
+    "url": "http://login-user-authenticate.co",
+    "verdict": "VERIFICATION_REQUIRED",
+    "risk_probability": null,
+    "signals": {
+      "namespace_risk": 0.0,
+      "structural_anomaly": 1.0,
+      "brand_mismatch": 0.0,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 1.0
+    },
+    "derived": {
+      "impersonation_target": "none",
+      "reachability": "unreachable",
+      "analysis_mode": "OFFLINE"
+    },
+    "reasons": [
+      "Domain Unreachable (NXDOMAIN) [+15]",
+      "Suspicious token pattern [+5]",
+      "Domain structural anomaly (excessive tokens) [+10]",
+      "Subdomain keyword stuffing detected [+10]",
+      "NXDOMAIN Penalty [+20]",
+      "NXDOMAIN + Suspicious Token Synergy [+20]",
+      "Domain unreachable (NXDOMAIN/Timeout) \u2014 prediction untrustworthy"
+    ]
+  },
+  {
+    "url": "https://bit.ly/3FakeLinkTest",
+    "verdict": "SAFE",
+    "risk_probability": 0.0021,
+    "signals": {
+      "namespace_risk": 0.0,
+      "structural_anomaly": 0.0,
+      "brand_mismatch": 0.0,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 0.0
+    },
+    "derived": {
+      "impersonation_target": "none",
+      "reachability": "reachable",
+      "analysis_mode": "FULL"
+    },
+    "reasons": [
+      "URL shortener detected [+5]"
+    ]
+  },
+  {
+    "url": "https://tinyurl.com/secure-auth-check",
+    "verdict": "SAFE",
+    "risk_probability": 0.0021,
+    "signals": {
+      "namespace_risk": 0.0,
+      "structural_anomaly": 0.0,
+      "brand_mismatch": 0.0,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 0.0
+    },
+    "derived": {
+      "impersonation_target": "none",
+      "reachability": "reachable",
+      "analysis_mode": "FULL"
+    },
+    "reasons": [
+      "URL shortener detected [+5]",
+      "Trusted Infrastructure Context (Benign Reward)"
+    ]
+  },
+  {
+    "url": "https://cutt.ly/login-verify-user",
+    "verdict": "SAFE",
+    "risk_probability": 0.0021,
+    "signals": {
+      "namespace_risk": 0.0,
+      "structural_anomaly": 0.0,
+      "brand_mismatch": 0.0,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 0.0
+    },
+    "derived": {
+      "impersonation_target": "none",
+      "reachability": "reachable",
+      "analysis_mode": "FULL"
+    },
+    "reasons": [
+      "URL shortener detected [+5]"
+    ]
+  },
+  {
+    "url": "https://t.co/security-check-redirect",
+    "verdict": "SAFE",
+    "risk_probability": 0.0021,
+    "signals": {
+      "namespace_risk": 0.0,
+      "structural_anomaly": 0.0,
+      "brand_mismatch": 0.0,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 0.0
+    },
+    "derived": {
+      "impersonation_target": "none",
+      "reachability": "reachable",
+      "analysis_mode": "FULL"
+    },
+    "reasons": [
+      "URL shortener detected [+5]",
+      "Trusted Infrastructure Context (Benign Reward)"
+    ]
+  },
+  {
+    "url": "https://goo.gl/account-update",
+    "verdict": "SAFE",
+    "risk_probability": 0.0021,
+    "signals": {
+      "namespace_risk": 0.0,
+      "structural_anomaly": 0.0,
+      "brand_mismatch": 0.0,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 0.0
+    },
+    "derived": {
+      "impersonation_target": "none",
+      "reachability": "reachable",
+      "analysis_mode": "FULL"
+    },
+    "reasons": [
+      "URL shortener detected [+5]"
+    ]
+  },
+  {
+    "url": "http://login.secure.account.microsoft.verify-user.com",
+    "verdict": "VERIFICATION_REQUIRED",
+    "risk_probability": null,
+    "signals": {
+      "namespace_risk": 0.5,
+      "structural_anomaly": 1.0,
+      "brand_mismatch": 0.8,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 1.0
+    },
+    "derived": {
+      "impersonation_target": "microsoft",
+      "reachability": "unreachable",
+      "analysis_mode": "OFFLINE"
+    },
+    "reasons": [
+      "Domain Unreachable (NXDOMAIN) [+15]",
+      "Suspicious token pattern [+20]",
+      "Domain structural anomaly (excessive tokens) [+10]",
+      "Namespace risk (nested/entropy) [+7.5]",
+      "Subdomain keyword stuffing detected [+10]",
+      "NXDOMAIN Penalty [+20]",
+      "NXDOMAIN + Suspicious Token Synergy [+20]",
+      "Brand/Infra mismatch detected (microsoft on verify-user)",
+      "Domain unreachable (NXDOMAIN/Timeout) \u2014 prediction untrustworthy"
+    ]
+  },
+  {
+    "url": "http://auth.google.com.secure-login-user.net",
+    "verdict": "VERIFICATION_REQUIRED",
+    "risk_probability": null,
+    "signals": {
+      "namespace_risk": 0.5,
+      "structural_anomaly": 1.0,
+      "brand_mismatch": 0.7391,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 1.0
+    },
+    "derived": {
+      "impersonation_target": "google",
+      "reachability": "unreachable",
+      "analysis_mode": "OFFLINE"
+    },
+    "reasons": [
+      "Domain Unreachable (NXDOMAIN) [+15]",
+      "Suspicious token pattern [+10]",
+      "Domain structural anomaly (excessive tokens) [+10]",
+      "Namespace risk (nested/entropy) [+7.5]",
+      "Subdomain keyword stuffing detected [+10]",
+      "NXDOMAIN Penalty [+20]",
+      "NXDOMAIN + Suspicious Token Synergy [+20]",
+      "Brand/Infra mismatch detected (google on secure-login-user)",
+      "Domain unreachable (NXDOMAIN/Timeout) \u2014 prediction untrustworthy"
+    ]
+  },
+  {
+    "url": "http://paypal.com.user-authentication-secure.net",
+    "verdict": "VERIFICATION_REQUIRED",
+    "risk_probability": null,
+    "signals": {
+      "namespace_risk": 0.5,
+      "structural_anomaly": 1.0,
+      "brand_mismatch": 0.875,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 1.0
+    },
+    "derived": {
+      "impersonation_target": "paypal",
+      "reachability": "unreachable",
+      "analysis_mode": "OFFLINE"
+    },
+    "reasons": [
+      "Domain Unreachable (NXDOMAIN) [+15]",
+      "Suspicious token pattern [+5]",
+      "Domain structural anomaly (excessive tokens) [+10]",
+      "Namespace risk (nested/entropy) [+7.5]",
+      "Subdomain keyword stuffing detected [+10]",
+      "NXDOMAIN Penalty [+20]",
+      "NXDOMAIN + Suspicious Token Synergy [+20]",
+      "Brand/Infra mismatch detected (paypal on user-authentication-secure)",
+      "Domain unreachable (NXDOMAIN/Timeout) \u2014 prediction untrustworthy"
+    ]
+  },
+  {
+    "url": "http://amazon.com.secure-login.verify-account.org",
+    "verdict": "VERIFICATION_REQUIRED",
+    "risk_probability": null,
+    "signals": {
+      "namespace_risk": 0.5,
+      "structural_anomaly": 1.0,
+      "brand_mismatch": 0.7,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 1.0
+    },
+    "derived": {
+      "impersonation_target": "amazon",
+      "reachability": "unreachable",
+      "analysis_mode": "OFFLINE"
+    },
+    "reasons": [
+      "Domain Unreachable (NXDOMAIN) [+15]",
+      "Suspicious token pattern [+20]",
+      "Domain structural anomaly (excessive tokens) [+10]",
+      "Namespace risk (nested/entropy) [+7.5]",
+      "Subdomain keyword stuffing detected [+10]",
+      "NXDOMAIN Penalty [+20]",
+      "NXDOMAIN + Suspicious Token Synergy [+20]",
+      "Brand/Infra mismatch detected (amazon on verify-account)",
+      "Domain unreachable (NXDOMAIN/Timeout) \u2014 prediction untrustworthy"
+    ]
+  },
+  {
+    "url": "http://microsoft.com.security-update-login.net",
+    "verdict": "VERIFICATION_REQUIRED",
+    "risk_probability": null,
+    "signals": {
+      "namespace_risk": 0.5,
+      "structural_anomaly": 1.0,
+      "brand_mismatch": 0.8667,
+      "redirect_depth": 0.0,
+      "redirect_trust": 1.0,
+      "is_ip": 0.0,
+      "is_unreachable": 1.0
+    },
+    "derived": {
+      "impersonation_target": "microsoft",
+      "reachability": "unreachable",
+      "analysis_mode": "OFFLINE"
+    },
+    "reasons": [
+      "Domain Unreachable (NXDOMAIN) [+15]",
+      "Suspicious token pattern [+10]",
+      "Domain structural anomaly (excessive tokens) [+10]",
+      "Namespace risk (nested/entropy) [+7.5]",
+      "Subdomain keyword stuffing detected [+10]",
+      "NXDOMAIN Penalty [+20]",
+      "NXDOMAIN + Suspicious Token Synergy [+20]",
+      "Brand/Infra mismatch detected (microsoft on security-update-login)",
+      "Domain unreachable (NXDOMAIN/Timeout) \u2014 prediction untrustworthy"
+    ]
+  }
+]

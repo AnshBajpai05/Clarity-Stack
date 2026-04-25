@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Search, Loader2, Info, Shield, Zap } from "lucide-react";
+import { Search, Loader2, Shield, Zap } from "lucide-react";
 import { toast } from "sonner";
 import Header from "@/components/Header";
 import RiskGauge from "@/components/RiskGauge";
@@ -10,6 +10,8 @@ import ThreatIntel from "@/components/ThreatIntel";
 import DomainInfo from "@/components/DomainInfo";
 import RecentScans from "@/components/RecentScans";
 import DecisionDriver from "@/components/DecisionDriver";
+import SignalBars from "@/components/SignalBars";
+import VerificationCard from "@/components/VerificationCard";
 import { predictUrl, demoPredictUrl, saveScan, isValidUrl, type ScanResult } from "@/lib/api";
 import { useApiStatus } from "@/hooks/useApiStatus";
 
@@ -68,7 +70,7 @@ const Index = () => {
             </button>
           </div>
           <p className="text-xs text-muted-foreground">
-            Powered by GNN + LLM Fusion Architecture
+            Powered by GNN + NLP Fusion Architecture
             {demoMode && <span className="ml-2 text-warning">• Demo Mode</span>}
           </p>
         </div>
@@ -87,11 +89,12 @@ const Index = () => {
           <div className="space-y-4">
             <div className="flex gap-2 items-center mb-4">
               <div className={`px-3 py-1 rounded border text-xs font-bold tracking-widest ${
+                result.verdict === "VERIFICATION_REQUIRED" ? "bg-purple-500/10 border-purple-500/20 text-purple-400" :
                 result.analysisMode === "OFFLINE" ? "bg-purple-500/10 border-purple-500/20 text-purple-400" :
                 result.analysisMode === "RESTRICTED" ? "bg-yellow-500/10 border-yellow-500/20 text-yellow-400" :
                 "bg-green-500/10 border-green-500/20 text-green-400"
               }`}>
-                MODE: {result.analysisMode} ANALYSIS
+                {result.verdict === "VERIFICATION_REQUIRED" ? "ABSTAINED" : `MODE: ${result.analysisMode} ANALYSIS`}
               </div>
               {result.analysisMode !== "FULL" && (
                 <span className="text-xs text-muted-foreground italic">Analysis based on available signals</span>
@@ -103,7 +106,7 @@ const Index = () => {
               <div className="space-y-4">
                 <ScoreCards 
                   gnn={result.gnnScore} 
-                  llm={result.llmScore} 
+                  nlp={result.nlpScore} 
                   fusion={result.fusionScore} 
                   evidence={result.evidence} 
                   analysisMode={result.analysisMode}
@@ -117,7 +120,25 @@ const Index = () => {
               <SecurityHeaders headers={result.headers} hasDetailedData={result.hasDetailedData} analysisMode={result.analysisMode} />
               <ThreatIntel data={result.threatIntel} analysisMode={result.analysisMode} />
             </div>
-            {result.reasons && result.reasons.length > 0 && (
+            {/* VERIFICATION_REQUIRED state */}
+            {result.verdict === "VERIFICATION_REQUIRED" && (
+              <VerificationCard
+                reasons={result.reasons}
+                reachability={result.reachability}
+                onDeepScan={() => handleScan(true)}
+                loading={loading}
+              />
+            )}
+
+            {/* Signal Breakdown (always show when signals available) */}
+            {result.signals && result.verdict !== "VERIFICATION_REQUIRED" && (
+              <SignalBars
+                signals={result.signals}
+                riskProbability={result.riskProbability}
+              />
+            )}
+
+            {result.reasons && result.reasons.length > 0 && result.verdict !== "VERIFICATION_REQUIRED" && (
               <div className="glass-card p-6 space-y-4 relative overflow-hidden group">
                 {/* Background pulse for suspicious findings */}
                 <div className="absolute top-0 right-0 p-8 opacity-[0.03] pointer-events-none transition-opacity group-hover:opacity-10">

@@ -1,8 +1,23 @@
+export interface ApiSignals {
+  namespace_risk: number;
+  access_friction: number;
+  structural_anomaly: number;
+  uncertainty: number;
+  is_shortener: number;
+  has_ip_pattern: number;
+  is_unreachable: number;
+  gnn_score: number;
+  nlp_score: number;
+  visual_score: number;
+  redirect_depth: number;
+}
+
 export interface ApiPrediction {
   url: string;
   resolved_url?: string | null;
   is_phishing: boolean;
   risk_score: number;
+  risk_probability?: number;
   risk_level: string;
   verdict: string;
   confidence: string;  // "high" | "medium" | "low"
@@ -12,18 +27,27 @@ export interface ApiPrediction {
   attack_types?: string[];
   unused_signals?: string[];
   latency_ms?: number;
+  signals?: ApiSignals;
   score_breakdown?: {
     base_score: number;
-    heuristic_boost: number;
+    heuristic_boost?: number;
     final_score: number;
   };
   scores: {
-    gnn_score: number; 
-    llm_score: number; 
+    gnn_score: number;
+    nlp_score: number;
+    llm_score: number;
     fusion_score: number;
     graph_node_count?: number;
     graph_signal?: "strong" | "weak" | "unknown";
   };
+  deep_scan?: {
+    enabled: boolean;
+    external_scripts_count: number;
+    redirect_count: number;
+    screenshot_available: boolean;
+    render_error: string | null;
+  } | null;
   evidence?: {
     structural_impact: number;
     scraping_status: "success" | "blocked" | "fast-path";
@@ -48,9 +72,10 @@ export interface ScanResult {
   finalUrl: string;
   domain: string;
   riskScore: number;
-  verdict: "SAFE" | "SUSPICIOUS" | "PHISHING";
-  confidence: string; // "high" | "medium" | "low"
-  confidenceNum: number; // 0-100 for display gauges
+  riskProbability: number | null;
+  verdict: "SAFE" | "SUSPICIOUS" | "HIGH_RISK" | "PHISHING" | "VERIFICATION_REQUIRED";
+  confidence: string;
+  confidenceNum: number;
   reasons: string[];
   attackTypes: string[];
   unusedSignals: string[];
@@ -59,11 +84,14 @@ export interface ScanResult {
   analysisMode: "OFFLINE" | "RESTRICTED" | "FULL";
   hasDetailedData: boolean;
   scoreBreakdown: ApiPrediction["score_breakdown"] | null;
+  signals: ApiSignals | null;
   gnnScore: number;
+  nlpScore: number;
   llmScore: number;
   fusionScore: number;
   graphSignal: "strong" | "weak" | "unknown";
   evidence: ApiPrediction["evidence"] | null;
+  deepScan: ApiPrediction["deep_scan"] | null;
   ssl: { issuer: string; validFrom: string; validTo: string; valid: boolean } | null;
   headers: { csp: boolean; xssProtection: boolean; frameProtection: boolean; hasSsl: boolean; validSsl: boolean };
   threatIntel: { isMalicious: boolean; threatTypes: string[]; confidence: number; sources: string[]; lastUpdated: string } | null;
@@ -97,7 +125,14 @@ async function fetchWithTimeout(url: string, options: RequestInit, timeoutMs = 3
 }
 
 function mapApiToScanResult(api: ApiPrediction): ScanResult {
-  const verdictMap: Record<string, ScanResult["verdict"]> = { safe: "SAFE", suspicious: "SUSPICIOUS", phishing: "PHISHING", error: "SUSPICIOUS" };
+  const verdictMap: Record<string, ScanResult["verdict"]> = {
+    safe: "SAFE", SAFE: "SAFE",
+    suspicious: "SUSPICIOUS", SUSPICIOUS: "SUSPICIOUS",
+    high_risk: "HIGH_RISK", HIGH_RISK: "HIGH_RISK",
+    phishing: "PHISHING", PHISHING: "PHISHING",
+    verification_required: "VERIFICATION_REQUIRED", VERIFICATION_REQUIRED: "VERIFICATION_REQUIRED",
+    error: "SUSPICIOUS"
+  };
   const confidenceToNum = (c: string) => c === "high" ? 95 : c === "medium" ? 65 : 35;
   const hasDetailedData = !!(api.security_headers);
 
@@ -107,6 +142,7 @@ function mapApiToScanResult(api: ApiPrediction): ScanResult {
     resolvedUrl: api.resolved_url || null,
     domain: api.domain_info?.domain || new URL(api.url.startsWith("http") ? api.url : `https://${api.url}`).hostname,
     riskScore: Math.max(1, Math.round(api.risk_score)),
+    riskProbability: api.risk_probability != null ? api.risk_probability : null,
     verdict: verdictMap[api.verdict || api.risk_level] || "SUSPICIOUS",
     confidence: api.confidence as string,
     confidenceNum: typeof api.confidence === "string" ? confidenceToNum(api.confidence) : 50,
@@ -117,11 +153,14 @@ function mapApiToScanResult(api: ApiPrediction): ScanResult {
     analysisMode: api.analysis_mode || "FULL",
     hasDetailedData,
     scoreBreakdown: api.score_breakdown || null,
+    signals: api.signals || null,
     gnnScore: Math.round((api.scores?.gnn_score ?? 0.5) * 100),
-    llmScore: Math.round((api.scores?.llm_score ?? 0.5) * 100),
+    nlpScore: Math.round((api.scores?.nlp_score ?? api.scores?.llm_score ?? 0.5) * 100),
+    llmScore: Math.round((api.scores?.nlp_score ?? api.scores?.llm_score ?? 0.5) * 100),
     fusionScore: Math.round((api.scores?.fusion_score ?? 0.5) * 100),
     graphSignal: api.scores?.graph_signal || "unknown",
     evidence: api.evidence || null,
+    deepScan: api.deep_scan || null,
     ssl: api.ssl_info
       ? {
           issuer: typeof api.ssl_info.issuer === 'string'
@@ -205,6 +244,8 @@ function makeDemoResult(url: string, riskScore: number, riskLevel: "safe" | "sus
     resolvedUrl: null,
     domain,
     riskScore,
+    riskProbability: riskScore / 100.0,
+    signals: null,
     verdict: verdictMap[riskLevel],
     confidence: confidenceLabel,
     confidenceNum,
@@ -216,6 +257,7 @@ function makeDemoResult(url: string, riskScore: number, riskLevel: "safe" | "sus
     hasDetailedData: true,
     scoreBreakdown: { base_score: baseScore, heuristic_boost: heuristicBoost, final_score: riskScore },
     gnnScore: Math.round(riskScore * 0.9 + Math.random() * 10),
+    nlpScore: Math.round(riskScore * 1.05 + Math.random() * 5),
     llmScore: Math.round(riskScore * 1.05 + Math.random() * 5),
     fusionScore: riskScore,
     graphSignal: "strong",
@@ -224,6 +266,7 @@ function makeDemoResult(url: string, riskScore: number, riskLevel: "safe" | "sus
       scraping_status: "success" as const,
       signal_reliability: { structural: "STRONG", content: "STRONG", network: "AVAILABLE" },
     },
+    deepScan: null,
     ssl: isSafe
       ? { issuer: "DigiCert Inc", validFrom: "2024-03-01", validTo: "2025-03-01", valid: true }
       : isDangerous ? null : { issuer: "Let's Encrypt", validFrom: "2024-06-15", validTo: "2024-09-15", valid: false },

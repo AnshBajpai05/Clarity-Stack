@@ -3,7 +3,7 @@ import { Server } from "lucide-react";
 
 interface RiskGaugeProps {
   score: number;
-  verdict: "SAFE" | "SUSPICIOUS" | "PHISHING";
+  verdict: "SAFE" | "SUSPICIOUS" | "HIGH_RISK" | "PHISHING" | "VERIFICATION_REQUIRED";
   confidence: string;   // "high" | "medium" | "low"
   confidenceNum: number; // 0-100
   scoreBreakdown: { base_score: number; heuristic_boost: number; final_score: number } | null;
@@ -39,9 +39,13 @@ const RiskGauge = ({ score, verdict, confidence, confidenceNum, scoreBreakdown }
   const circumference = 2 * Math.PI * radius;
   const offset = circumference - (animated / 100) * circumference;
 
-  const colorClass = score <= 30 ? "text-safe" : score <= 70 ? "text-warning" : "text-danger";
-  const strokeColor = score <= 30 ? "hsl(160 84% 39%)" : score <= 70 ? "hsl(38 92% 50%)" : "hsl(0 84% 60%)";
-  const verdictBg = score <= 30 ? "bg-safe/15 text-safe" : score <= 70 ? "bg-warning/15 text-warning" : "bg-danger/15 text-danger";
+  const isVerify = verdict === "VERIFICATION_REQUIRED";
+
+  const colorClass = isVerify ? "text-purple-400" : score <= 30 ? "text-safe" : score <= 70 ? "text-warning" : "text-danger";
+  const strokeColor = isVerify ? "hsl(270 70% 65%)" : score <= 30 ? "hsl(160 84% 39%)" : score <= 70 ? "hsl(38 92% 50%)" : "hsl(0 84% 60%)";
+  const verdictBg = isVerify ? "bg-purple-500/15 text-purple-400"
+    : verdict === "HIGH_RISK" ? "bg-orange-500/15 text-orange-400"
+    : score <= 30 ? "bg-safe/15 text-safe" : score <= 70 ? "bg-warning/15 text-warning" : "bg-danger/15 text-danger";
 
   return (
     <div className="glass-card p-6 flex flex-col items-center gap-4 animate-fade-in">
@@ -56,8 +60,17 @@ const RiskGauge = ({ score, verdict, confidence, confidenceNum, scoreBreakdown }
           />
         </svg>
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <span className={`text-3xl font-bold ${colorClass}`}>{animated}</span>
-          <span className="text-xs text-muted-foreground">Risk Score</span>
+          {isVerify ? (
+            <>
+              <span className="text-2xl">⚠</span>
+              <span className="text-xs text-purple-400 font-bold mt-1">VERIFY</span>
+            </>
+          ) : (
+            <>
+              <span className={`text-3xl font-bold ${colorClass}`}>{animated}</span>
+              <span className="text-xs text-muted-foreground">Risk Score</span>
+            </>
+          )}
         </div>
       </div>
       <span

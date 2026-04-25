@@ -6,7 +6,11 @@ import { predictBatch, demoPredictBatch, saveScan, isValidUrl, type ScanResult }
 import { useApiStatus } from "@/hooks/useApiStatus";
 
 const verdictStyle = (v: ScanResult["verdict"]) =>
-  v === "SAFE" ? "bg-safe/15 text-safe" : v === "SUSPICIOUS" ? "bg-warning/15 text-warning" : "bg-danger/15 text-danger";
+  v === "SAFE" ? "bg-safe/15 text-safe"
+  : v === "SUSPICIOUS" ? "bg-warning/15 text-warning"
+  : v === "HIGH_RISK" ? "bg-orange-500/15 text-orange-400"
+  : v === "VERIFICATION_REQUIRED" ? "bg-purple-500/15 text-purple-400"
+  : "bg-danger/15 text-danger";
 
 const Batch = () => {
   const [input, setInput] = useState("");
@@ -38,9 +42,6 @@ const Batch = () => {
     }
   };
 
-  const safe = results.filter((r) => r.verdict === "SAFE").length;
-  const suspicious = results.filter((r) => r.verdict === "SUSPICIOUS").length;
-  const phishing = results.filter((r) => r.verdict === "PHISHING").length;
 
   return (
     <div className="min-h-screen">
@@ -76,22 +77,30 @@ const Batch = () => {
 
         {results.length > 0 && (
           <>
-            <div className="grid grid-cols-4 gap-3">
+            <div className="grid grid-cols-3 sm:grid-cols-6 gap-3">
               <div className="glass-card p-3 text-center">
                 <p className="text-xl font-bold text-foreground">{results.length}</p>
                 <p className="text-[10px] text-muted-foreground">Total Scanned</p>
               </div>
               <div className="glass-card p-3 text-center">
-                <p className="text-xl font-bold text-safe">{safe}</p>
+                <p className="text-xl font-bold text-safe">{results.filter((r) => r.verdict === "SAFE").length}</p>
                 <p className="text-[10px] text-muted-foreground">Safe</p>
               </div>
               <div className="glass-card p-3 text-center">
-                <p className="text-xl font-bold text-warning">{suspicious}</p>
+                <p className="text-xl font-bold text-warning">{results.filter((r) => r.verdict === "SUSPICIOUS").length}</p>
                 <p className="text-[10px] text-muted-foreground">Suspicious</p>
               </div>
               <div className="glass-card p-3 text-center">
-                <p className="text-xl font-bold text-danger">{phishing}</p>
+                <p className="text-xl font-bold text-orange-400">{results.filter((r) => r.verdict === "HIGH_RISK").length}</p>
+                <p className="text-[10px] text-muted-foreground">High Risk</p>
+              </div>
+              <div className="glass-card p-3 text-center">
+                <p className="text-xl font-bold text-danger">{results.filter((r) => r.verdict === "PHISHING").length}</p>
                 <p className="text-[10px] text-muted-foreground">Phishing</p>
+              </div>
+              <div className="glass-card p-3 text-center">
+                <p className="text-xl font-bold text-purple-400">{results.filter((r) => r.verdict === "VERIFICATION_REQUIRED").length}</p>
+                <p className="text-[10px] text-muted-foreground">Verify</p>
               </div>
             </div>
 

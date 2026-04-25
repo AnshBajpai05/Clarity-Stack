@@ -27,53 +27,106 @@ class URLGraphBuilder:
         self.graph = nx.MultiDiGraph()
         self.scaler = StandardScaler()
     
+    # Removed 4-dim scalar encoding; now using 5-dim one-hot directly in get_node_features
+
     def add_url(self, url_data: Dict):
-        """Add a URL and its metadata to the graph."""
-        metadata = url_data.get('metadata')
-        if not metadata:
+        """Build a multi-node graph from URL + browser behavioral data.
+
+        Node types: url, domain, redirect, script_host, ip
+        Edges:      url→domain, url→redirect, url→script_host, domain→ip
+        """
+        from urllib.parse import urlparse
+        try:
+            import tldextract
+        except ImportError:
+            tldextract = None
+
+        url = url_data.get('url', '')
+        if not url:
             return
 
-        # Handle both Pydantic model and dict
-        if hasattr(metadata, 'domain_info'):
-            domain_info = metadata.domain_info
-        elif isinstance(metadata, dict):
-            domain_info = metadata.get('domain_info', {})
+        # --- Node 1: Root URL ---
+        if url not in self.graph:
+            self.graph.add_node(url, type='url')
+
+        # --- Node 2: Registered Domain ---
+        domain = ''
+        if tldextract:
+            ext = tldextract.extract(url)
+            domain = f"{ext.domain}.{ext.suffix}" if ext.suffix else ext.domain
         else:
-            return
-
-        if isinstance(domain_info, dict):
-            domain = domain_info.get('domain', '')
-        elif hasattr(domain_info, 'domain'):
-            domain = domain_info.domain
-        else:
-            domain = str(domain_info)
-
-        if not domain:
-            return
-        
-        if domain not in self.graph:
+            domain = urlparse(url).netloc
+        if domain and domain not in self.graph:
             self.graph.add_node(domain, type='domain')
-        
-        target = url_data.get('target')
-        if target and target != 'benign':
-            self.graph.add_edge(domain, target, type='targets')
+        if domain:
+            self.graph.add_edge(url, domain, type='url_to_domain')
+
+        # --- Nodes 3+: Browser behavioral data (Playwright) ---
+        browser = url_data.get('browser', {})
+
+        # Redirect hops
+        for hop in browser.get('redirect_chain', []):
+            if hop and hop != url:
+                if hop not in self.graph:
+                    self.graph.add_node(hop, type='redirect')
+                self.graph.add_edge(url, hop, type='redirects_to')
+
+        # External script hosts
+        for src in browser.get('external_scripts', []):
+            if not src:
+                continue
+            if src.startswith('//'):
+                src = 'https:' + src
+            script_host = urlparse(src).netloc
+            if script_host and script_host != urlparse(url).netloc:
+                if script_host not in self.graph:
+                    self.graph.add_node(script_host, type='script_host')
+                self.graph.add_edge(url, script_host, type='loads_script')
+
+        # Resolved IP
+        ip = url_data.get('ip') or browser.get('ip')
+        if ip and domain:
+            if ip not in self.graph:
+                self.graph.add_node(ip, type='ip')
+            self.graph.add_edge(domain, ip, type='resolves_to')
+
+        # Legacy: metadata domain_info fallback (keeps non-browser path working)
+        if not browser and not domain:
+            metadata = url_data.get('metadata')
+            if metadata:
+                domain_info = getattr(metadata, 'domain_info', None) or (metadata.get('domain_info', {}) if isinstance(metadata, dict) else {})
+                fb_domain = (domain_info.get('domain', '') if isinstance(domain_info, dict) else getattr(domain_info, 'domain', ''))
+                if fb_domain and fb_domain not in self.graph:
+                    self.graph.add_node(fb_domain, type='domain')
     
     def get_node_features(self, node: str) -> torch.Tensor:
-        """Extract features for a node in the graph."""
+        """Extract 5-dim one-hot feature vector for a graph node.
+        
+        Features: [is_url, is_domain, is_redirect, is_script_host, is_ip]
+        """
+        node_type = self.graph.nodes[node].get('type', 'url')
         features = [
-            1.0 if self.graph.nodes[node].get('type', 'unknown') == 'domain' else 0.0,
-            float(self.graph.degree(node)),
-            float(self.graph.in_degree(node)),
-            float(self.graph.out_degree(node)),
+            1.0 if node_type == 'url' else 0.0,
+            1.0 if node_type == 'domain' else 0.0,
+            1.0 if node_type == 'redirect' else 0.0,
+            1.0 if node_type == 'script_host' else 0.0,
+            1.0 if node_type == 'ip' else 0.0,
         ]
         return torch.tensor(features, dtype=torch.float)
     
-    def build_graph_tensors(self) -> Tuple[torch.Tensor, torch.Tensor]:
+    def build_graph_tensors(self) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
         """Build tensors for graph neural network input."""
-        if len(self.graph.nodes()) == 0:
+        num_nodes = len(self.graph.nodes())
+        num_edges = len(self.graph.edges())
+        num_scripts = sum(1 for n, d in self.graph.nodes(data=True) if d.get('type') == 'script_host')
+        num_redirects = sum(1 for n, d in self.graph.nodes(data=True) if d.get('type') == 'redirect')
+        graph_features = torch.tensor([[num_nodes, num_edges, num_scripts, num_redirects]], dtype=torch.float)
+
+        if num_nodes == 0:
             return (
-                torch.zeros((1, 4), dtype=torch.float),
+                torch.zeros((1, 5), dtype=torch.float),
                 torch.zeros((2, 0), dtype=torch.long),
+                graph_features
             )
         
         node_features = []
@@ -91,7 +144,7 @@ class URLGraphBuilder:
         else:
             edge_index = torch.zeros((2, 0), dtype=torch.long)
         
-        return x, edge_index
+        return x, edge_index, graph_features
 
 
 # --- GNN with PyG or MLP fallback ---
@@ -104,15 +157,24 @@ if HAS_PYG:
             super().__init__()
             self.conv1 = GATConv(in_channels, hidden_channels, heads=heads)
             self.conv2 = GATConv(hidden_channels * heads, hidden_channels, heads=heads)
-            self.conv3 = GATConv(hidden_channels * heads, out_channels, heads=1)
+            self.conv3 = GATConv(hidden_channels * heads, hidden_channels, heads=1)
+            self.classifier = nn.Linear(hidden_channels + 4, out_channels)
         
-        def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
+        def forward(self, x: torch.Tensor, edge_index: torch.Tensor, graph_features: torch.Tensor, batch: Optional[torch.Tensor] = None) -> torch.Tensor:
             x = F.relu(self.conv1(x, edge_index))
             x = F.dropout(x, p=0.2, training=self.training)
             x = F.relu(self.conv2(x, edge_index))
             x = F.dropout(x, p=0.2, training=self.training)
             x = self.conv3(x, edge_index)
-            return x
+            
+            if batch is not None:
+                from torch_geometric.nn import global_mean_pool
+                x = global_mean_pool(x, batch)
+            else:
+                x = x.mean(dim=0, keepdim=True)
+                
+            x = torch.cat([x, graph_features], dim=-1)
+            return self.classifier(x)
 else:
     class PhishingGAT(nn.Module):
         """MLP fallback when PyG is not installed."""
@@ -126,11 +188,18 @@ else:
                 nn.Linear(hidden_channels, hidden_channels),
                 nn.ReLU(),
                 nn.Dropout(0.2),
-                nn.Linear(hidden_channels, out_channels),
+                nn.Linear(hidden_channels, hidden_channels),
             )
+            self.classifier = nn.Linear(hidden_channels + 4, out_channels)
         
-        def forward(self, x: torch.Tensor, edge_index: torch.Tensor) -> torch.Tensor:
-            return self.mlp(x)
+        def forward(self, x: torch.Tensor, edge_index: torch.Tensor, graph_features: torch.Tensor, batch: Optional[torch.Tensor] = None) -> torch.Tensor:
+            x = self.mlp(x)
+            if batch is not None:
+                pass # Unused in MLP fallback
+            else:
+                x = x.mean(dim=0, keepdim=True)
+            x = torch.cat([x, graph_features], dim=-1)
+            return self.classifier(x)
 
 
 class TextEncoder:
@@ -264,7 +333,7 @@ class PhishingScoreFusion(nn.Module):
     
     def __init__(
         self,
-        gnn_dim: int = 4,
+        gnn_dim: int = 5,
         llm_dim: int = 768,
         hidden_dim: int = 256,
         dropout: float = 0.1,
@@ -320,13 +389,13 @@ class PhishingDetector:
     def __init__(self, model_path: Optional[str] = None, load_bert: bool = True):
         self.graph_builder = URLGraphBuilder()
         self.gat = PhishingGAT(
-            in_channels=4,
+            in_channels=5,
             hidden_channels=64,
-            out_channels=2,
+            out_channels=1,
             heads=4,
         )
         self.fusion = PhishingScoreFusion(
-            gnn_dim=4,
+            gnn_dim=5,
             llm_dim=768,
             hidden_dim=256,
         )
@@ -392,11 +461,11 @@ class PhishingDetector:
         try:
             self.graph_builder = URLGraphBuilder()  # Fresh graph per URL
             self.graph_builder.add_url(url_data)
-            x, edge_index = self.graph_builder.build_graph_tensors()
+            x, edge_index, graph_features = self.graph_builder.build_graph_tensors()
             
             # Pad or truncate to PAD_NODES
             if x.size(0) < PAD_NODES:
-                padding = torch.zeros((PAD_NODES - x.size(0), 4), dtype=torch.float)
+                padding = torch.zeros((PAD_NODES - x.size(0), 5), dtype=torch.float)
                 x = torch.cat([x, padding], dim=0)
             else:
                 x = x[:PAD_NODES]
@@ -404,13 +473,15 @@ class PhishingDetector:
             return {
                 'embeddings': x,
                 'edge_index': edge_index,
+                'graph_features': graph_features,
                 'edge_weights': torch.ones(PAD_NODES, dtype=torch.float),
             }
         except Exception as e:
             logger.error(f"Error preprocessing URL: {str(e)}")
             return {
-                'embeddings': torch.zeros((PAD_NODES, 4), dtype=torch.float),
+                'embeddings': torch.zeros((PAD_NODES, 5), dtype=torch.float),
                 'edge_index': torch.zeros((2, 0), dtype=torch.long),
+                'graph_features': torch.zeros((1, 4), dtype=torch.float),
                 'edge_weights': torch.ones(PAD_NODES, dtype=torch.float),
             }
     
@@ -439,14 +510,15 @@ class PhishingDetector:
             # Only process non-padded nodes for the GNN score
             # A node is padded if its features are all zero
             mask = (gnn_output['embeddings'].abs().sum(dim=-1) > 0)
-            
-            # GNN-only score (calculated purely from structural features)
-            gat_output = self.gat(gnn_output['embeddings'], gnn_output['edge_index'])
-            
             num_nodes = mask.sum().item()
-            if mask.any():
-                gnn_probs = F.softmax(gat_output[mask], dim=1)
-                gnn_score = gnn_probs[:, 1].mean().item()
+            
+            if num_nodes > 0:
+                gat_output = self.gat(
+                    gnn_output['embeddings'][mask], 
+                    gnn_output['edge_index'], 
+                    gnn_output['graph_features']
+                )
+                gnn_score = torch.sigmoid(gat_output).item()
             else:
                 gnn_score = 0.5
 
