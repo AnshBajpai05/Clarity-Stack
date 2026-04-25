@@ -200,13 +200,14 @@ http://192.168.0.1.verify-login.secure-update.ru
 ```bash
 cd backend
 python -m venv venv
-source venv/bin/activate
+source venv/bin/activate  # or venv\Scripts\activate on Windows
 pip install -r requirements.txt
-uvicorn app:app --port 8000 --host 0.0.0.0
+uvicorn app:app --port 8000 --reload
 ```
 
 ### Setup Frontend
 ```bash
+# In a new terminal (at root)
 npm install
 npm run dev
 ```
