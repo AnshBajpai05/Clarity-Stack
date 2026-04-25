@@ -21,6 +21,8 @@ Unlike traditional approaches, this system:
   - Zero hallucinated "Safe" verdicts on unreachable/dead links
   - Cross-surface integration (React Dashboard + Chrome Extension)
 
+*More than just a phishing detector, it is a system that knows when it might be wrong and acts accordingly.*
+
 ---
 
 ## 🎯 Problem Statement
@@ -112,7 +114,7 @@ This system succeeds because it models:
 - **Output:** 5-tier ordinal risk mapping with null-safe probability
 
 ### Design Choice
-- **Logistic Regression Meta-Classifier:** We intentionally chose logistic regression over a black-box deep learning model to guarantee interpretability and calibrated probability outputs necessary for our downstream rule overrides.
+- **Logistic Regression Meta-Classifier:** We intentionally chose logistic regression over a black-box deep learning model to guarantee **interpretability and calibrated probability outputs** necessary for our downstream rule overrides.
 - **Ordinal Mapping Layer:** Ensures monotonic risk interpretation across UI surfaces (Dashboard, API, Extension), preventing conflicting verdicts during state transitions.
 
 ---
@@ -156,44 +158,18 @@ http://192.168.0.1.verify-login.secure-update.ru
 
 ---
 
-## 🧪 Experimental Insights
-
-- **Finding 1:** 30% of highly complex, legitimate cloud portals triggered false positives under linear regression.
-- **Finding 2:** Attackers aggressively use NXDOMAIN states to hide from automated testing.
-
-**Conclusion:**
-→ Adding non-linear feature interaction solved the SaaS false positive issue, and implementing the `VERIFICATION_REQUIRED` state neutralized the NXDOMAIN evasion tactic.
-
----
-
 ## ⚠️ Limitations & Failure Cases
 
 ### Limitations
 - **Homograph & Typosquatting:** The system relies on its NLP model and exact string matching. It currently lacks a dedicated Levenshtein-distance or homograph-normalization layer. Target for v2.
-- **Weights Calibration:** Logistic weights are initially heuristic-tuned based on adversarial testing. The pipeline supports future automated data-driven calibration once a larger dataset is gathered.
-
-### Failure Case Example
-
-**Input:**
-`https://appleid-verify-session.s3.amazonaws.com`
-
-**Issue:**
-The string matcher tokenizes at hyphens, evaluating "appleid" instead of "apple", resulting in a missed brand mismatch signal.
-
----
-
-## 🚀 Deployment Scenarios
-
-- Integrated enterprise workspace security.
-- SOC analyst triage and batch URL validation.
-- End-user real-time browser protection.
+- **Weights Calibration:** Logistic weights are initially heuristic-tuned based on adversarial testing. The pipeline is architected to support future automated data-driven calibration via `calibrate.py` once a larger dataset is gathered.
 
 ---
 
 ## 🔁 Reproducibility
 
-- Data pipeline and evaluation scripts (`evaluate_hard_mode.py`) are fully documented.
-- Models and weights are available in the repository.
+- Data pipeline and evaluation scripts are fully documented in the `backend/` sub-directories.
+- Models and weights are available as `.pt` binaries.
 
 ---
 
@@ -202,15 +178,17 @@ The string matcher tokenizes at hyphens, evaluating "appleid" instead of "apple"
 ```text
 .
 ├── backend/
-│   ├── app.py
-│   ├── evaluate_hard_mode.py
-│   └── models/
-├── src/
-│   ├── components/
-│   └── pages/
-├── extension/
-│   ├── popup.js
-│   └── popup.html
+│   ├── app.py              # API Entry Point
+│   ├── model.py            # ML Architecture
+│   ├── threat_intel.py     # Intel Engine
+│   ├── data/               # Brands & Tranco lists
+│   ├── models/             # Production Weights (threatlens_v1.pt)
+│   ├── tests/              # Unit & Integration tests
+│   ├── training/           # Training & LoRA scripts
+│   ├── evaluation/         # Adversarial & Stress testing
+│   └── data_pipeline/      # Dataset generation scripts
+├── src/                    # React/Vite Dashboard
+├── extension/              # Chrome Extension
 └── README.md
 ```
 
@@ -218,21 +196,17 @@ The string matcher tokenizes at hyphens, evaluating "appleid" instead of "apple"
 
 ## ⚙️ Quick Start
 
-### Setup
+### Setup Backend
 ```bash
 cd backend
 python -m venv venv
 source venv/bin/activate
 pip install -r requirements.txt
-```
-
-### Run
-```bash
 uvicorn app:app --port 8000 --host 0.0.0.0
 ```
 
+### Setup Frontend
 ```bash
-# In a new terminal
 npm install
 npm run dev
 ```

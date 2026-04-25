@@ -54,26 +54,22 @@ backend/*.json
 backend/*.csv
 backend/*.txt
 !backend/requirements.txt
-!backend/requirements_dev.txt
 
 # -------------------------------
 # 🧠 ML Models & Checkpoints
 # -------------------------------
-# Root models folder
-models/*.pt
-models/*.pth
-models/*.checkpoint
-models/*.bin
-models/*.onnx
-!models/threatlens_v1.pt
+# Ignore all large model binaries by default
+*.pt
+*.pth
+*.checkpoint
+*.bin
+*.onnx
 
-# Backend specific models folder
-backend/models/*.pt
-backend/models/*.pth
-backend/models/*.checkpoint
-backend/models/*.bin
-backend/models/*.onnx
+# ✅ Force-include ONLY the production model weight in the backend folder
 !backend/models/threatlens_v1.pt
+
+# Ignore redundant folders
+models/
 
 # -------------------------------
 # 🧰 IDE / Editors
