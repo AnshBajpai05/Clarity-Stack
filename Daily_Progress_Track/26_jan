@@ -1,0 +1,255 @@
+
+
+# 🧠 ClarityStack — Knowledge Graph Stabilization Update
+
+## Release Summary
+
+This update completes the transition of ClarityStack’s reasoning system from a **global experimental Knowledge Graph** to a **production-ready, per-chat isolated causal graph** with structured decision visualization.
+
+The system now maintains **one clean reasoning universe per chat**, enabling accurate decision tracing, conflict analysis, and future context-aware intelligence.
+
+---
+
+## 1. What Changed
+
+### 1.1 From Global KG → Per-Chat KG
+
+**Before**
+
+* All synthesis nodes from all chats were stored in a single global graph.
+* Caused:
+
+  * Cross-topic contamination
+  * False conflicts
+  * Incorrect alternative linking
+  * Broken temporal reasoning
+
+**Now**
+
+* Every Knowledge Graph is strictly scoped by `chat_id`.
+* Each chat maintains its own:
+
+  * Nodes (FACT, DECISION, CONFLICT, UNKNOWN, OPTION)
+  * Edges (SUPPORTS, CONTRADICTS, BLOCKS, REFINES, ALTERNATIVE_OF)
+
+This guarantees:
+
+> One chat = One coherent belief system.
+
+---
+
+### 1.2 Synthesis-Scoped Reasoning View
+
+Clicking a synthesis message now:
+
+1. Resolves its `synthesis_id`
+2. Loads the chat KG via:
+   `GET /api/reasoning/chat/{chat_id}`
+3. Filters nodes by `synthesis_id`
+4. Renders only the relevant causal subgraph
+
+Result:
+
+* No duplicated nodes
+* No leakage from other synthesis
+* No mixing of historical decisions
+* Clean causal snapshot per synthesis
+
+---
+
+### 1.3 Decision Cockpit (Visual Causal Layer)
+
+The RHS panel is now a **Decision Cockpit** instead of a text dump.
+
+It renders:
+
+#### Layers
+
+1. **Incoming Evidence**
+
+   * FACT → SUPPORTS → DECISION
+
+2. **Core Decision**
+
+   * Active DECISION nodes (versioned)
+
+3. **Pressure Layer**
+
+   * CONFLICT → Opposition
+   * UNKNOWN → Risk / Blockers
+
+4. **Lateral Space**
+
+   * OPTION / ALTERNATIVE_OF → Discarded paths
+
+#### Metrics
+
+| Metric        | Source Nodes         |
+| ------------- | -------------------- |
+| Support %     | FACT + SUPPORT edges |
+| Opposition %  | CONFLICT nodes       |
+| Uncertainty % | UNKNOWN / BLOCKERS   |
+
+These are computed structurally from the KG, not from LLM text.
+
+---
+
+### 1.4 Versioning & Evolution
+
+Graph already supports:
+
+```
+Decision v1
+   ↓ REFINES
+Decision v2
+   ⚔ CONTRADICTS
+Decision v3
+```
+
+Infrastructure in place:
+
+* Decision lineage
+* Refinement edges
+* Historical slicing (UI pending)
+
+---
+
+## 2. Why This Matters
+
+ClarityStack has crossed a key architectural boundary:
+
+From:
+
+> A chat app with structured summaries
+
+To:
+
+> A persistent causal reasoning system with evolving beliefs
+
+Now the system can:
+
+* Track why a decision was made
+* Show what supported it
+* Show what opposed it
+* Show what remains unknown
+* Show how it evolved over time
+
+This is the foundation for:
+
+* Decision auditability
+* Knowledge reuse
+* Long-term project memory
+* Context-aware future reasoning
+
+---
+
+## 3. What Is Complete
+
+### Phase-1: Semantic Synthesis ✔
+
+* IR extraction
+* FACT / OPTION / DECISION / CONFLICT / UNKNOWN
+* Validation & acceptance
+* Summary pinning
+
+### Phase-2: Knowledge Graph Core ✔
+
+* Per-chat isolated KG
+* Deterministic node & edge creation
+* Relation typing
+* Synthesis-scoped subgraph rendering
+* Decision Cockpit UI
+* Support / Opposition / Risk metrics
+
+---
+
+## 4. What Is Pending (Next Iteration)
+
+### 4.1 Temporal Reasoning UI
+
+Activate:
+
+* `CURRENT` — active belief state
+* `HISTORY` — decision evolution chain
+* `DRIFT` — contradiction growth & uncertainty trends
+
+### 4.2 Confidence Propagation
+
+Move from flat confidence to:
+
+* Edge-weighted belief strength
+* Node centrality
+* Decision stability index
+* Trust decay over time
+
+### 4.3 Knowledge Cards
+
+Auto-generate persistent cards from stable graph regions:
+
+* Decision Cards
+* Risk Cards
+* Assumption Cards
+* Open Question Cards
+
+Each card will have:
+
+* Graph linkage
+* Version history
+* Confidence score
+* Lock / refine lifecycle
+
+### 4.4 Context Engine Integration
+
+Inject into LLM context:
+
+* Accepted decisions
+* Supporting evidence
+* Known conflicts
+* Active unknowns
+
+So answers become:
+
+> “Given what we already know and have decided, what is correct now?”
+
+---
+
+## 5. Architectural State
+
+ClarityStack is now structured as:
+
+```
+Chat
+  → Synthesis (IR)
+      → Knowledge Graph (Per-Chat)
+          → Decision Cockpit (Causal UI)
+              → Knowledge Cards (Next)
+                  → Context Reasoning Engine (Final)
+```
+
+Cognitively:
+
+| Layer          | Function             |
+| -------------- | -------------------- |
+| Synthesis      | Understanding        |
+| Graph          | Reasoning            |
+| Cards          | Memory               |
+| Context Engine | Thinking with Memory |
+
+---
+
+## 6. Final Note
+
+The Knowledge Graph is no longer experimental.
+
+It is now:
+
+* Scoped
+* Deterministic
+* Causally typed
+* Versioned
+* Visualized
+* Decision-centric
+
+ClarityStack has crossed from **conversation system** into **epistemic system**.
+
+The remaining work is refinement, not re-architecture.
