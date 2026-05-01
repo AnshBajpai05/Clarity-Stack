@@ -1,0 +1,187 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+
+@layer base {
+  :root {
+    /* Core palette - Deep navy to violet to cyan */
+    --background: 222 47% 6%;
+    --foreground: 210 40% 96%;
+
+    --card: 222 47% 10%;
+    --card-foreground: 210 40% 96%;
+
+    --popover: 222 47% 8%;
+    --popover-foreground: 210 40% 96%;
+
+    --primary: 192 91% 55%;
+    --primary-foreground: 222 47% 6%;
+
+    --secondary: 270 60% 60%;
+    --secondary-foreground: 210 40% 98%;
+
+    --muted: 222 30% 18%;
+    --muted-foreground: 215 20% 55%;
+
+    --accent: 270 60% 50%;
+    --accent-foreground: 210 40% 98%;
+
+    --destructive: 0 72% 51%;
+    --destructive-foreground: 210 40% 98%;
+
+    --border: 222 30% 20%;
+    --input: 222 30% 15%;
+    --ring: 192 91% 55%;
+
+    --radius: 0.75rem;
+
+    /* Custom theme colors */
+    --neon-cyan: 192 91% 55%;
+    --neon-violet: 270 60% 60%;
+    --neon-peach: 25 95% 70%;
+    --neon-mint: 160 60% 55%;
+    
+    /* Glass effect */
+    --glass-bg: 222 47% 11%;
+    --glass-border: 222 30% 25%;
+    
+    /* Role colors for chat */
+    --role-user: 192 91% 55%;
+    --role-assistant: 270 60% 60%;
+    --role-system: 215 20% 55%;
+    --role-moderator: 25 95% 70%;
+
+    /* Gradients */
+    --gradient-primary: linear-gradient(135deg, hsl(270 60% 50%), hsl(192 91% 55%));
+    --gradient-hero: linear-gradient(135deg, hsl(222 47% 6%), hsl(270 40% 15%), hsl(222 47% 8%));
+    --gradient-glow: radial-gradient(circle at 50% 50%, hsl(192 91% 55% / 0.15), transparent 70%);
+    --gradient-card: linear-gradient(145deg, hsl(222 47% 12%), hsl(222 47% 8%));
+    
+    /* Shadows */
+    --shadow-glow: 0 0 30px hsl(192 91% 55% / 0.2);
+    --shadow-glow-sm: 0 0 15px hsl(192 91% 55% / 0.15);
+    --shadow-card: 0 8px 32px hsl(222 47% 4% / 0.4);
+  }
+
+  .dark {
+    --background: 222 47% 6%;
+    --foreground: 210 40% 96%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    font-family: 'Inter', sans-serif;
+    background: var(--gradient-hero);
+    min-height: 100vh;
+  }
+
+  h1, h2, h3, h4, h5, h6 {
+    @apply font-semibold tracking-tight;
+  }
+
+  code, pre {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+@layer components {
+  .glass-panel {
+    @apply bg-card/80 backdrop-blur-xl border border-glass rounded-xl;
+    background: linear-gradient(145deg, hsl(var(--glass-bg) / 0.8), hsl(var(--glass-bg) / 0.4));
+    border-color: hsl(var(--glass-border) / 0.5);
+  }
+
+  .glass-panel-hover {
+    @apply glass-panel transition-all duration-300;
+  }
+
+  .glass-panel-hover:hover {
+    @apply border-primary/30;
+    box-shadow: var(--shadow-glow-sm);
+  }
+
+  .neon-text {
+    @apply text-primary;
+    text-shadow: 0 0 20px hsl(var(--primary) / 0.5);
+  }
+
+  .neon-border {
+    @apply border-primary/50;
+    box-shadow: var(--shadow-glow-sm);
+  }
+
+  .gradient-text {
+    @apply bg-clip-text text-transparent;
+    background-image: var(--gradient-primary);
+  }
+
+  .glow-orb {
+    position: absolute;
+    border-radius: 50%;
+    filter: blur(80px);
+    opacity: 0.3;
+    pointer-events: none;
+  }
+}
+
+@layer utilities {
+  .animate-float {
+    animation: float 6s ease-in-out infinite;
+  }
+
+  .animate-pulse-slow {
+    animation: pulse 4s ease-in-out infinite;
+  }
+
+  .animate-glow {
+    animation: glow 2s ease-in-out infinite alternate;
+  }
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0px); }
+    50% { transform: translateY(-10px); }
+  }
+
+  @keyframes glow {
+    from { box-shadow: 0 0 10px hsl(var(--primary) / 0.3); }
+    to { box-shadow: 0 0 25px hsl(var(--primary) / 0.5); }
+  }
+
+  .scrollbar-thin {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--muted)) transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-thin::-webkit-scrollbar-thumb {
+    background: hsl(var(--muted));
+    border-radius: 3px;
+  }
+}
+
+.summary-bar-text {
+  max-width: 180px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+details summary span:last-child {
+  transition: transform 0.5s ease;
+}

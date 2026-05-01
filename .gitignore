@@ -1,0 +1,17 @@
+# User requested excludes
+Mobile/
+Daily_Progress_Track/
+c1.txt
+
+# Common excludes
+__pycache__/
+*.pyc
+node_modules/
+.env
+venv/
+.DS_Store
+*.db
+*.log
+*.safetensors
+env/
+Backend/env/
