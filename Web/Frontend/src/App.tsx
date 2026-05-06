@@ -14,6 +14,21 @@ import SettingsPage from "./pages/SettingsPage";
 import MessagesPage from "./pages/MessagesPage";
 import NotFound from "./pages/NotFound";
 
+import KnowledgeGraphPage from "./pages/KnowledgeGraphPage";
+import DeltaTimelinePage from "./pages/DeltaTimelinePage";
+import TemporalCardsPage from "./pages/TemporalCardsPage";
+import DiscoveryPage from "./pages/DiscoveryPage";
+
+// SRS-Clarity Pages
+import SRSDashboard from "./pages/srs/Dashboard";
+import SRSIssuesPage from "./pages/srs/IssuesPage";
+import { WorkspacePage as SRSWorkspace } from "./pages/srs/WorkspacePage";
+
+// Collaborative Editor Pages
+import EditorDashboard from "./pages/editor/Dashboard";
+import EditorWorkspace from "./pages/editor/Workspace";
+import EditorSnapshot from "./pages/editor/Snapshot";
+
 const queryClient = new QueryClient();
 
 const App = () => (
@@ -29,6 +44,9 @@ const App = () => (
 
         <Route path="/projects" element={<ProjectsPage />} />
         <Route path="/projects/search" element={<ProjectSearch />} />
+        
+        {/* Discovery Feed */}
+        <Route path="/discovery" element={<DiscoveryPage />} />
 
         <Route
           path="/projects/:projectId/chats"
@@ -40,6 +58,22 @@ const App = () => (
           element={<MessagesPage />}
         />
 
+        {/* Satellite Features per project */}
+        <Route path="/projects/:projectId/kg" element={<KnowledgeGraphPage />} />
+        <Route path="/projects/:projectId/delta" element={<DeltaTimelinePage />} />
+        <Route path="/projects/:projectId/cards" element={<TemporalCardsPage />} />
+
+        {/* SRS-Clarity Feature */}
+        <Route path="/srs/dashboard" element={<SRSDashboard />} />
+        <Route path="/srs/issues" element={<SRSIssuesPage />} />
+        <Route path="/srs/workspace" element={<SRSWorkspace />} />
+
+        {/* Collaborative Editor Feature */}
+        <Route path="/editor/dashboard" element={<EditorDashboard />} />
+        <Route path="/editor/workspace/:id" element={<EditorWorkspace />} />
+        <Route path="/editor/snapshot/:id" element={<EditorSnapshot />} />
+
+        {/* Legacy global cards */}
         <Route path="/cards" element={<CardsPage />} />
         <Route path="/settings" element={<SettingsPage />} />
 

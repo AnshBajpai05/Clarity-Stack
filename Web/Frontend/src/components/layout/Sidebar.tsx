@@ -1,10 +1,13 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { FolderKanban, Layers, Settings, Sparkles } from 'lucide-react';
+import { FolderKanban, Layers, Settings, Sparkles, Globe, FileSearch, Edit3 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navItems = [
   { to: '/projects', icon: FolderKanban, label: 'Projects' },
-  { to: '/cards', icon: Layers, label: 'Cards' },
+  { to: '/discovery', icon: Globe, label: 'Discovery Hub' },
+  { to: '/srs/dashboard', icon: FileSearch, label: 'SRS Analysis' },
+  { to: '/editor/dashboard', icon: Edit3, label: 'Collab Editor' },
+  { to: '/cards', icon: Layers, label: 'Global Cards' },
   { to: '/settings', icon: Settings, label: 'Settings' },
 ];
 

@@ -1,0 +1,27 @@
+{
+  "brands": [
+    "paypal", "amazon", "apple", "microsoft", "netflix",
+    "bankofamerica", "chase", "wellsfargo", "google",
+    "facebook", "instagram", "whatsapp", "telegram",
+    "coinbase", "binance", "stripe", "dhl", "fedex",
+    "usps", "icloud", "office365", "slack", "linkedin"
+  ],
+  "keywords": [
+    "login", "verify", "auth", "secure", "payment",
+    "update", "billing", "verification", "account", "signin"
+  ],
+  "sec_terms": [
+    "login", "verify", "auth", "secure", "payment",
+    "billing", "account", "signin", "identity",
+    "validation", "confirm", "access", "session",
+    "maintenance", "update", "check", "verification",
+    "security", "notification", "alert", "resolution",
+    "subscription"
+  ],
+  "stealth_words": [
+    "service", "center", "portal", "support", "help"
+  ],
+  "suspicious_tlds": [
+    "xyz", "top", "club", "ninja", "online", "support", "biz"
+  ]
+}

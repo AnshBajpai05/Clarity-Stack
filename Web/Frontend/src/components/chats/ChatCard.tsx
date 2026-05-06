@@ -4,11 +4,14 @@ import {
   MoreVertical,
   Star,
   Archive,
-  Trash2
+  Trash2,
+  Brain,
+  Loader2
 } from "lucide-react";
 
 import { Link } from "react-router-dom";
-import { Chat, deleteChat, togglePinChat } from "@/lib/api";
+import { Chat, deleteChat, togglePinChat, generateCardFromChat } from "@/lib/api";
+import { useState } from "react";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
@@ -26,7 +29,8 @@ import { Button } from "@/components/ui/button";
 interface ChatCardProps {
   chat: Chat;
   onDeleted?: () => void;
-  onUpdated?: () => void;   // <-- tell parent to refresh
+  onUpdated?: () => void;
+  projectId?: string;
 }
 
 const sourceTypeColors: Record<string, string> = {
@@ -36,8 +40,25 @@ const sourceTypeColors: Record<string, string> = {
   user: "bg-neon-violet/20 text-neon-violet border-neon-violet/30"
 };
 
-export function ChatCard({ chat, onDeleted, onUpdated }: ChatCardProps) {
+export function ChatCard({ chat, onDeleted, onUpdated, projectId }: ChatCardProps) {
   const { toast } = useToast();
+  const [generatingCard, setGeneratingCard] = useState(false);
+
+  const handleGenerateCard = async (e: React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!projectId) return;
+    setGeneratingCard(true);
+    try {
+      const card = await generateCardFromChat(projectId, chat.id);
+      toast({ title: `🃏 Card generated: ${card.title}`, description: `Label: ${card.label} v${card.version}` });
+    } catch (err: any) {
+      toast({ title: "Card generation failed", description: err.message, variant: "destructive" });
+    } finally {
+      setGeneratingCard(false);
+    }
+  };
+
   const sourceStyle =
     sourceTypeColors[chat.source_type] || sourceTypeColors.user;
 
@@ -115,6 +136,22 @@ export function ChatCard({ chat, onDeleted, onUpdated }: ChatCardProps) {
                 </span>
               </div>
             </div>
+
+            {/* Generate Card button */}
+            {projectId && (
+              <button
+                onClick={handleGenerateCard}
+                disabled={generatingCard}
+                className="mt-2 inline-flex items-center gap-1.5 text-xs px-3 py-1.5 rounded-lg bg-neon-violet/10 text-neon-violet border border-neon-violet/20 hover:bg-neon-violet/20 transition-colors disabled:opacity-50"
+              >
+                {generatingCard ? (
+                  <Loader2 className="w-3 h-3 animate-spin" />
+                ) : (
+                  <Brain className="w-3 h-3" />
+                )}
+                {generatingCard ? "Generating..." : "Generate Card"}
+              </button>
+            )}
           </div>
         </div>
       </div>

@@ -1,4 +1,5 @@
 const API_BASE_URL = 'http://127.0.0.1:8000';
+const SATELLITE_BASE_URL = 'http://127.0.0.1:4000/api/satellite';
 import { api } from "./http";
 
 
@@ -635,4 +636,126 @@ export async function generateSynthesis(
   }
 
   return res.json();
+}
+
+/* ===================== SATELLITE SERVICE ===================== */
+
+async function fetchSatellite<T>(endpoint: string, options?: RequestInit): Promise<T> {
+  const token = localStorage.getItem("token");
+  const response = await fetch(`${SATELLITE_BASE_URL}${endpoint}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: token ? `Bearer ${token}` : "",
+      ...options?.headers,
+    },
+  });
+
+  if (!response.ok) {
+    const err = await response.text();
+    throw new Error(`Satellite Error: ${response.status} ${err}`);
+  }
+
+  return response.json();
+}
+
+// -- Knowledge Graph --
+export async function getKnowledgeGraph(projectId: string) {
+  return fetchSatellite<any>(`/kg/${projectId}`);
+}
+
+export async function snapshotKnowledgeGraph(projectId: string) {
+  return fetchSatellite<any>(`/kg/${projectId}/snapshot`, { method: "POST" });
+}
+
+export async function getKnowledgeGraphFocus(projectId: string, nodeId: string) {
+  return fetchSatellite<any>(`/kg/${projectId}/focus/${nodeId}`);
+}
+
+// -- Deltas --
+export async function getDeltas(projectId: string) {
+  return fetchSatellite<any[]>(`/delta/${projectId}`);
+}
+
+export async function computeDelta(projectId: string) {
+  return fetchSatellite<any>(`/delta/${projectId}/compute`, { method: "POST" });
+}
+
+export async function getLatestDelta(projectId: string) {
+  return fetchSatellite<any>(`/delta/${projectId}/latest`);
+}
+
+// -- Temporal Cards --
+export async function getTemporalCards(projectId: string) {
+  return fetchSatellite<any[]>(`/cards/${projectId}`);
+}
+
+export async function generateTemporalCard(projectId: string) {
+  return fetchSatellite<any>(`/cards/${projectId}/generate`, { method: "POST" });
+}
+
+export async function generateCardFromChat(projectId: string, chatId: string, label?: string) {
+  return fetchSatellite<any>(`/cards/${projectId}/generate/chat/${chatId}`, {
+    method: "POST",
+    body: JSON.stringify(label ? { label } : {}),
+  });
+}
+
+export async function generateCardByLabel(projectId: string, label: string) {
+  return fetchSatellite<any>(`/cards/${projectId}/generate/label/${label}`, { method: "POST" });
+}
+
+export async function autoGenerateCards(projectId: string) {
+  return fetchSatellite<any>(`/cards/${projectId}/auto-generate`, { method: "POST" });
+}
+
+export async function getCardsByLabel(projectId: string, label: string) {
+  return fetchSatellite<any[]>(`/cards/${projectId}/label/${label}`);
+}
+
+export async function getExpiredCards(projectId: string) {
+  return fetchSatellite<any[]>(`/cards/${projectId}/expired`);
+}
+
+export async function refreshCard(projectId: string, cardId: string) {
+  return fetchSatellite<any>(`/cards/${projectId}/${cardId}/refresh`, { method: "POST" });
+}
+
+export async function applyKGUpdates(projectId: string, cardId: string) {
+  return fetchSatellite<any>(`/cards/${projectId}/${cardId}/update-kg`, { method: "POST" });
+}
+
+// -- Export (README, UML, PPT) --
+export async function exportReadme(projectId: string) {
+  return fetchSatellite<{content: string}>(`/export/${projectId}/readme`);
+}
+
+export async function exportUml(projectId: string) {
+  return fetchSatellite<{content: string}>(`/export/${projectId}/uml`);
+}
+
+export async function exportPpt(projectId: string) {
+  return fetchSatellite<{content: string}>(`/export/${projectId}/ppt`);
+}
+
+// -- Discovery & Social --
+export async function getFollowing() {
+  return fetchSatellite<string[]>(`/discovery/following`);
+}
+
+export async function followProject(projectId: string) {
+  return fetchSatellite<any>(`/discovery/follow/${projectId}`, { method: "POST" });
+}
+
+export async function unfollowProject(projectId: string) {
+  return fetchSatellite<any>(`/discovery/unfollow/${projectId}`, { method: "DELETE" });
+}
+
+export async function getDiscoveryFeed() {
+  return fetchSatellite<any[]>(`/discovery/feed`);
+}
+
+// -- Join Flow --
+export async function sendJoinEmail(projectId: string) {
+  return fetchSatellite<any>(`/join/${projectId}/email`, { method: "POST" });
 }

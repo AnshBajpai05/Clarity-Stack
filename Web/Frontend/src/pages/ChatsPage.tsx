@@ -467,9 +467,40 @@ const handleCreateChat = async (
   </div>
 )}
 
-
-
-
+{/* --- Satellite Service Navigation --- */}
+{project && (
+  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-8">
+    <Link to={`/projects/${project.id}/kg`} className="glass-panel p-4 rounded-xl border border-neon-cyan/30 hover:border-neon-cyan transition-colors flex items-center gap-3 group">
+      <div className="w-10 h-10 rounded-lg bg-neon-cyan/20 flex items-center justify-center group-hover:bg-neon-cyan/30 transition-colors">
+        <span className="text-neon-cyan font-bold text-xl">⎈</span>
+      </div>
+      <div>
+        <h3 className="font-semibold text-slate-200">Knowledge Graph</h3>
+        <p className="text-xs text-muted-foreground">Interactive Subgraphs</p>
+      </div>
+    </Link>
+    
+    <Link to={`/projects/${project.id}/delta`} className="glass-panel p-4 rounded-xl border border-neon-peach/30 hover:border-neon-peach transition-colors flex items-center gap-3 group">
+      <div className="w-10 h-10 rounded-lg bg-neon-peach/20 flex items-center justify-center group-hover:bg-neon-peach/30 transition-colors">
+        <span className="text-neon-peach font-bold text-xl">∆</span>
+      </div>
+      <div>
+        <h3 className="font-semibold text-slate-200">Delta Engine</h3>
+        <p className="text-xs text-muted-foreground">Time-series tracking</p>
+      </div>
+    </Link>
+    
+    <Link to={`/projects/${project.id}/cards`} className="glass-panel p-4 rounded-xl border border-neon-violet/30 hover:border-neon-violet transition-colors flex items-center gap-3 group">
+      <div className="w-10 h-10 rounded-lg bg-neon-violet/20 flex items-center justify-center group-hover:bg-neon-violet/30 transition-colors">
+        <span className="text-neon-violet font-bold text-xl">🃏</span>
+      </div>
+      <div>
+        <h3 className="font-semibold text-slate-200">Temporal Cards</h3>
+        <p className="text-xs text-muted-foreground">AI Chained Summaries</p>
+      </div>
+    </Link>
+  </div>
+)}
 
       {isLoading ? (
         <LoadingSpinner className="py-20" text="Loading chats..." />
@@ -493,7 +524,7 @@ const handleCreateChat = async (
           {chats.map((chat) => (
             <div key={chat.id} className="relative">
 
-              <ChatCard chat={chat} onDeleted={fetchChats} />
+              <ChatCard chat={chat} onDeleted={fetchChats} projectId={projectId} />
 
               <div className="absolute right-4 top-4">
                 <DropdownMenu>

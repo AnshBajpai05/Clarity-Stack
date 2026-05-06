@@ -15,3 +15,5 @@ venv/
 *.safetensors
 env/
 Backend/env/
+SRS_Service/data/
+temp_threatlens/
