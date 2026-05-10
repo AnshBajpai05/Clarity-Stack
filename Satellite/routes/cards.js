@@ -1,4 +1,5 @@
-// routes/cards.js — Temporal Card routes (v2)
+// routes/cards.js — v4 Temporal Card routes
+// Adds: card history endpoint, category-based queries, v4 pipeline trigger
 const express = require("express");
 const TemporalCard = require("../models/TemporalCard");
 const GraphDelta = require("../models/GraphDelta");
@@ -11,6 +12,8 @@ const {
   updateKGFromCard,
   getChainedCards,
   getCardsByLabel,
+  getCardsByCategory,
+  getCardHistory,
   getExpiredCards,
 } = require("../services/cardChainer");
 const { requireAuth } = require("../middleware/auth");
@@ -29,15 +32,18 @@ router.get("/:projectId", requireAuth, async (req, res) => {
 });
 
 // ─── GET /api/satellite/cards/:projectId/label/:label ───────────────────────
-// Get all versions of a specific label card.
+// Get all versions of a specific label/category card.
 router.get("/:projectId/label/:label", requireAuth, async (req, res) => {
   try {
     const { projectId, label } = req.params;
-    const validLabels = ["risk", "decision", "architecture", "progress", "conflict", "general"];
+    const validLabels = [
+      "risk", "decision", "architecture", "action", "insight",
+      "progress", "conflict", "question", "general",
+    ];
     if (!validLabels.includes(label)) {
       return res.status(400).json({ error: `Invalid label. Valid: ${validLabels.join(", ")}` });
     }
-    const cards = await getCardsByLabel(projectId, label);
+    const cards = await getCardsByCategory(projectId, label);
     res.json(cards);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -45,11 +51,22 @@ router.get("/:projectId/label/:label", requireAuth, async (req, res) => {
 });
 
 // ─── GET /api/satellite/cards/:projectId/expired ────────────────────────────
-// Get expired cards.
+// Get stale/expired cards.
 router.get("/:projectId/expired", requireAuth, async (req, res) => {
   try {
     const cards = await getExpiredCards(req.params.projectId);
     res.json(cards);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+// ─── GET /api/satellite/cards/:projectId/history/:cardId ────────────────────
+// Get the full version history chain for a card.
+router.get("/:projectId/history/:cardId", requireAuth, async (req, res) => {
+  try {
+    const history = await getCardHistory(req.params.cardId);
+    res.json(history);
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -82,32 +99,34 @@ router.post("/:projectId/generate", requireAuth, async (req, res) => {
 });
 
 // ─── POST /api/satellite/cards/:projectId/generate/chat/:chatId ─────────────
-// Generate a card from a specific chat's messages.
+// v4: Generate cards from a specific chat (one message → N cards).
 router.post("/:projectId/generate/chat/:chatId", requireAuth, async (req, res) => {
   try {
     const { projectId, chatId } = req.params;
-    const { label } = req.body || {};
     const token = req.headers.authorization?.split(" ")[1];
 
     if (!token) {
       return res.status(401).json({ error: "Authorization token required" });
     }
 
-    const card = await generateCardFromChat(projectId, chatId, token, label || null);
-    res.json(card);
+    const cards = await generateCardFromChat(projectId, chatId, token);
+    res.json({ cards, count: cards.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // ─── POST /api/satellite/cards/:projectId/generate/label/:label ─────────────
-// Generate a new version of a labeled card from all project messages.
+// v4: Generate cards for a specific category from all project messages.
 router.post("/:projectId/generate/label/:label", requireAuth, async (req, res) => {
   try {
     const { projectId, label } = req.params;
     const token = req.headers.authorization?.split(" ")[1];
 
-    const validLabels = ["risk", "decision", "architecture", "progress", "conflict", "general"];
+    const validLabels = [
+      "risk", "decision", "architecture", "action", "insight",
+      "progress", "conflict", "question", "general",
+    ];
     if (!validLabels.includes(label)) {
       return res.status(400).json({ error: `Invalid label. Valid: ${validLabels.join(", ")}` });
     }
@@ -116,15 +135,15 @@ router.post("/:projectId/generate/label/:label", requireAuth, async (req, res) =
       return res.status(401).json({ error: "Authorization token required" });
     }
 
-    const card = await generateCardByLabel(projectId, label, token);
-    res.json(card);
+    const cards = await generateCardByLabel(projectId, label, token);
+    res.json({ cards, count: cards.length });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
 // ─── POST /api/satellite/cards/:projectId/auto-generate ─────────────────────
-// Trigger the 3-day auto-generation check.
+// Trigger the auto-generation check (scheduler-style).
 router.post("/:projectId/auto-generate", requireAuth, async (req, res) => {
   try {
     const { projectId } = req.params;
@@ -142,7 +161,7 @@ router.post("/:projectId/auto-generate", requireAuth, async (req, res) => {
 });
 
 // ─── POST /api/satellite/cards/:projectId/:cardId/refresh ───────────────────
-// Refresh an expired card (creates a new version).
+// Refresh a stale card (creates a new version).
 router.post("/:projectId/:cardId/refresh", requireAuth, async (req, res) => {
   try {
     const { projectId, cardId } = req.params;
@@ -160,7 +179,7 @@ router.post("/:projectId/:cardId/refresh", requireAuth, async (req, res) => {
 });
 
 // ─── POST /api/satellite/cards/:projectId/:cardId/update-kg ─────────────────
-// Apply this card's KG suggestions to the Knowledge Graph.
+// Manually flush KG diff for this card.
 router.post("/:projectId/:cardId/update-kg", requireAuth, async (req, res) => {
   try {
     const { projectId, cardId } = req.params;

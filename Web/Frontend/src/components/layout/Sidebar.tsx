@@ -5,7 +5,7 @@ import { cn } from '@/lib/utils';
 const navItems = [
   { to: '/projects', icon: FolderKanban, label: 'Projects' },
   { to: '/discovery', icon: Globe, label: 'Discovery Hub' },
-  { to: '/srs/dashboard', icon: FileSearch, label: 'SRS Analysis' },
+  { to: '/srs/dashboard', icon: FileSearch, label: 'Analyse SRS Document' },
   { to: '/editor/dashboard', icon: Edit3, label: 'Collab Editor' },
   { to: '/cards', icon: Layers, label: 'Global Cards' },
   { to: '/settings', icon: Settings, label: 'Settings' },

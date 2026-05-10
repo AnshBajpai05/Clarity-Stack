@@ -1,0 +1,236 @@
+{
+  "document_name": "1_Logbook_User_Stories",
+  "total_ambiguities": 8,
+  "total_conflicts": 0,
+  "total_gaps": 17,
+  "ambiguities": [
+    {
+      "id": "AMB-001",
+      "story_id": "US001",
+      "text": "I can quickly submit the initial attendance to the faculty for review",
+      "term": "quickly",
+      "category": "vague_term",
+      "severity": "high",
+      "explanation": "No measurable time constraint defined",
+      "suggested_rewrite": "within [X] milliseconds/seconds"
+    },
+    {
+      "id": "AMB-002",
+      "story_id": "US003",
+      "text": "the administration and faculty-in-charge are immediately aware of schedule changes",
+      "term": "immediately",
+      "category": "vague_term",
+      "severity": "high",
+      "explanation": "No specific time bound — 'immediately' is subjective",
+      "suggested_rewrite": "within [X] seconds of the triggering event"
+    },
+    {
+      "id": "AMB-003",
+      "story_id": "US004",
+      "text": "If attendance is submitted by the CR, the card shows \"Pending Review\" with counts (e.g., \"Present: 45 / Absent: 5\").",
+      "term": "e.g.",
+      "category": "vague_term",
+      "severity": "low",
+      "explanation": "Example given but exhaustive list may be needed",
+      "suggested_rewrite": "[confirm if this is exhaustive or provide complete list]"
+    },
+    {
+      "id": "AMB-004",
+      "story_id": "US005",
+      "text": "Faculty can override any student's status (e.g., change \"Absent\" to \"Present\").",
+      "term": "e.g.",
+      "category": "vague_term",
+      "severity": "low",
+      "explanation": "Example given but exhaustive list may be needed",
+      "suggested_rewrite": "[confirm if this is exhaustive or provide complete list]"
+    },
+    {
+      "id": "AMB-005",
+      "story_id": "US006",
+      "text": "I can quickly understand my teaching progress and engagement",
+      "term": "quickly",
+      "category": "vague_term",
+      "severity": "high",
+      "explanation": "No measurable time constraint defined",
+      "suggested_rewrite": "within [X] milliseconds/seconds"
+    },
+    {
+      "id": "AMB-006",
+      "story_id": "US008",
+      "text": "For each individual student, shows a detailed, date-wise attendance record along with a summary count (e.g., \"Attended 8 out of 12 classes\").",
+      "term": "e.g.",
+      "category": "vague_term",
+      "severity": "low",
+      "explanation": "Example given but exhaustive list may be needed",
+      "suggested_rewrite": "[confirm if this is exhaustive or provide complete list]"
+    },
+    {
+      "id": "AMB-007",
+      "story_id": "US012",
+      "text": "view real-time engagement metrics for all classes",
+      "term": "real-time",
+      "category": "vague_term",
+      "severity": "high",
+      "explanation": "No latency bound defined for 'real-time'",
+      "suggested_rewrite": "with updates pushed within [X] seconds"
+    },
+    {
+      "id": "AMB-008",
+      "story_id": "US012",
+      "text": "The dashboard displays real-time engagement percentage (e.g., \"85% engaged\").",
+      "term": "e.g.",
+      "category": "vague_term",
+      "severity": "low",
+      "explanation": "Example given but exhaustive list may be needed",
+      "suggested_rewrite": "[confirm if this is exhaustive or provide complete list]"
+    }
+  ],
+  "conflicts": [],
+  "gaps": [
+    {
+      "id": "GAP-001",
+      "story_id": "US001",
+      "severity": "low",
+      "category": "no_testable_ac",
+      "description": "US001 has 5 ACs but none contain testable conditions (If/When/Then)",
+      "recommendation": "Add conditional logic (e.g., 'If X, then the system shall Y') to make ACs verifiable"
+    },
+    {
+      "id": "GAP-002",
+      "story_id": "US001",
+      "severity": "low",
+      "category": "missing_error_handling",
+      "description": "US001 has no ACs covering error/failure scenarios",
+      "recommendation": "Add ACs for edge cases: What happens on network failure? Invalid input? Timeout?"
+    },
+    {
+      "id": "GAP-003",
+      "story_id": "US002",
+      "severity": "low",
+      "category": "no_testable_ac",
+      "description": "US002 has 3 ACs but none contain testable conditions (If/When/Then)",
+      "recommendation": "Add conditional logic (e.g., 'If X, then the system shall Y') to make ACs verifiable"
+    },
+    {
+      "id": "GAP-004",
+      "story_id": "US002",
+      "severity": "low",
+      "category": "missing_error_handling",
+      "description": "US002 has no ACs covering error/failure scenarios",
+      "recommendation": "Add ACs for edge cases: What happens on network failure? Invalid input? Timeout?"
+    },
+    {
+      "id": "GAP-005",
+      "story_id": "US003",
+      "severity": "low",
+      "category": "missing_error_handling",
+      "description": "US003 has no ACs covering error/failure scenarios",
+      "recommendation": "Add ACs for edge cases: What happens on network failure? Invalid input? Timeout?"
+    },
+    {
+      "id": "GAP-006",
+      "story_id": "US004",
+      "severity": "low",
+      "category": "missing_error_handling",
+      "description": "US004 has no ACs covering error/failure scenarios",
+      "recommendation": "Add ACs for edge cases: What happens on network failure? Invalid input? Timeout?"
+    },
+    {
+      "id": "GAP-007",
+      "story_id": "US005",
+      "severity": "low",
+      "category": "no_testable_ac",
+      "description": "US005 has 3 ACs but none contain testable conditions (If/When/Then)",
+      "recommendation": "Add conditional logic (e.g., 'If X, then the system shall Y') to make ACs verifiable"
+    },
+    {
+      "id": "GAP-008",
+      "story_id": "US005",
+      "severity": "low",
+      "category": "missing_error_handling",
+      "description": "US005 has no ACs covering error/failure scenarios",
+      "recommendation": "Add ACs for edge cases: What happens on network failure? Invalid input? Timeout?"
+    },
+    {
+      "id": "GAP-009",
+      "story_id": "US006",
+      "severity": "low",
+      "category": "no_testable_ac",
+      "description": "US006 has 4 ACs but none contain testable conditions (If/When/Then)",
+      "recommendation": "Add conditional logic (e.g., 'If X, then the system shall Y') to make ACs verifiable"
+    },
+    {
+      "id": "GAP-010",
+      "story_id": "US006",
+      "severity": "low",
+      "category": "missing_error_handling",
+      "description": "US006 has no ACs covering error/failure scenarios",
+      "recommendation": "Add ACs for edge cases: What happens on network failure? Invalid input? Timeout?"
+    },
+    {
+      "id": "GAP-011",
+      "story_id": "US007",
+      "severity": "low",
+      "category": "no_testable_ac",
+      "description": "US007 has 3 ACs but none contain testable conditions (If/When/Then)",
+      "recommendation": "Add conditional logic (e.g., 'If X, then the system shall Y') to make ACs verifiable"
+    },
+    {
+      "id": "GAP-012",
+      "story_id": "US007",
+      "severity": "low",
+      "category": "missing_error_handling",
+      "description": "US007 has no ACs covering error/failure scenarios",
+      "recommendation": "Add ACs for edge cases: What happens on network failure? Invalid input? Timeout?"
+    },
+    {
+      "id": "GAP-013",
+      "story_id": "US008",
+      "severity": "low",
+      "category": "missing_error_handling",
+      "description": "US008 has no ACs covering error/failure scenarios",
+      "recommendation": "Add ACs for edge cases: What happens on network failure? Invalid input? Timeout?"
+    },
+    {
+      "id": "GAP-014",
+      "story_id": "US011",
+      "severity": "low",
+      "category": "no_testable_ac",
+      "description": "US011 has 4 ACs but none contain testable conditions (If/When/Then)",
+      "recommendation": "Add conditional logic (e.g., 'If X, then the system shall Y') to make ACs verifiable"
+    },
+    {
+      "id": "GAP-015",
+      "story_id": "US011",
+      "severity": "low",
+      "category": "missing_error_handling",
+      "description": "US011 has no ACs covering error/failure scenarios",
+      "recommendation": "Add ACs for edge cases: What happens on network failure? Invalid input? Timeout?"
+    },
+    {
+      "id": "GAP-016",
+      "story_id": "US012",
+      "severity": "low",
+      "category": "no_testable_ac",
+      "description": "US012 has 3 ACs but none contain testable conditions (If/When/Then)",
+      "recommendation": "Add conditional logic (e.g., 'If X, then the system shall Y') to make ACs verifiable"
+    },
+    {
+      "id": "GAP-017",
+      "story_id": "US012",
+      "severity": "low",
+      "category": "missing_error_handling",
+      "description": "US012 has no ACs covering error/failure scenarios",
+      "recommendation": "Add ACs for edge cases: What happens on network failure? Invalid input? Timeout?"
+    }
+  ],
+  "metadata": {
+    "stories_scanned": 10,
+    "actors": [
+      "Admin",
+      "Class Representative",
+      "Faculty"
+    ],
+    "source_file": "F:\\AMRITA ALL SEMESTER\\projects\\SRS Clarity\\backend\\data\\raw_SRS_processed\\stage5_intelligence\\1_Logbook_User_Stories_intelligence.json"
+  }
+}

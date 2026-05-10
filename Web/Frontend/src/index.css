@@ -32,6 +32,12 @@
     --destructive: 0 72% 51%;
     --destructive-foreground: 210 40% 98%;
 
+    --success: 142 71% 45%;
+    --success-foreground: 0 0% 100%;
+
+    --warning: 38 92% 50%;
+    --warning-foreground: 0 0% 0%;
+
     --border: 222 30% 20%;
     --input: 222 30% 15%;
     --ring: 192 91% 55%;
@@ -185,3 +191,18 @@
 details summary span:last-child {
   transition: transform 0.5s ease;
 }
+
+/* ── SRS Module Utilities ──────────────────────────────────── */
+.glass-card {
+  @apply bg-card/80 backdrop-blur-sm border border-border rounded-xl;
+}
+
+@keyframes slide-in {
+  from { opacity: 0; transform: translateY(12px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.animate-slide-in {
+  animation: slide-in 0.3s ease-out both;
+}
+

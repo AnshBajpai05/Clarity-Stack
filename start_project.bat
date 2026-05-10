@@ -3,7 +3,7 @@ echo Starting Claritystack Backend and Frontend...
 
 :: Start Backend
 echo Starting Backend...
-start cmd /k "cd Backend && ..\..\venv\Scripts\activate && uvicorn main:app --reload --port 8000"
+start cmd /k "cd Backend && ..\venv_temp\Scripts\python.exe -m uvicorn main:app --reload --port 8000"
 
 :: Start Frontend
 echo Starting Frontend...
@@ -15,7 +15,7 @@ start cmd /k "cd Satellite && npm run dev"
 
 :: Start SRS Service
 echo Starting SRS Service...
-start cmd /k "cd SRS_Service && ..\..\venv\Scripts\activate && uvicorn api:app --reload --port 8002"
+start cmd /k "cd SRS_Service && ..\..\..\updated_srsclarity\SRS-Clarity\backend\venv_py311\Scripts\python.exe -m uvicorn api:app --reload --port 8002"
 
 :: Start Editor Service
 echo Starting Editor Service...

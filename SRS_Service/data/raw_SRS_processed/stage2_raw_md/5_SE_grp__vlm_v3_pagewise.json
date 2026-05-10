@@ -1,0 +1,53 @@
+{
+  "doc_id": "5_SE_grp_",
+  "total_pages": 5,
+  "method": "marker_vlm_strict",
+  "pipeline_version": "vlm_v3_pagewise",
+  "pages": [
+    {
+      "doc_id": "5_SE_grp_",
+      "page_num": 0,
+      "raw_text": "- 4.2 Hardware Interfaces\n- 4.3 Software Interfaces\n- 4.4 Communications Interfaces\n- 5. Other Non-functional Requirements\n- 5.1 Performance Requirements\n- 5.2 Safety Requirements\n- 5.3 Security Requirements\n- 5.4 Software Quality Attributes\n- 6. Other Requirements\n\n# **1. Introduction**\n\n## **1.1 Purpose**\n\nThe purpose of this document is to outline the software requirements specification (SRS) for an AI-based Blood Bank System. The system aims to revolutionize how blood donations and requests are managed by using AI to intelligently match donors and recipients based on various factors such as availability, location, and blood group.\n\n### **1.2 Document Conventions**\n\n- Bold for key modules and interfaces.\n- Italics for system behavior descriptions.\n- Capitalized headings for section divisions.\n\n## **1.3 Intended Audience**\n\n- Developers\n- Project Coordinators\n- Medical Professionals\n- System Administrators\n- General Users\n\n### **1.4 Project Scope**\n\nThe AI-based Blood Bank System is a web-based application that allows individuals to register as **Donors**, **Recipients**, or **Hospitals**. It uses AI to match recipients with the most suitable donors in real-time. The system includes account management, location sharing, emergency SOS messaging, and a robust admin panel. Its core goal is to optimize blood availability and accessibility in urgent and non-urgent situations.",
+      "extraction_method": "marker_vlm_strict",
+      "ocr_confidence": null,
+      "layout_type": "single_column",
+      "font_metadata": []
+    },
+    {
+      "doc_id": "5_SE_grp_",
+      "page_num": 1,
+      "raw_text": "#### **1.5 References**\n\n- Firebase Firestore\n- Google Maps API\n- React\n- Node.js\n- TailwindCSS\n\n### **2. Overall Description**\n\n### **2.1 Product Perspective**\n\nThis is a standalone system that integrates with geolocation services and communication APIs for real-time messaging. It can be deployed independently or integrated with hospital management systems.\n\n#### **2.2 Product Features**\n\n- User Registration for Donors, Recipients, and Hospitals\n- AI-based Donor Matching\n- Location Sharing\n- SOS Emergency Broadcast\n- Role-Based Dashboards (Admin, Donor, Recipient, Hospital)\n- Search & Filter Donors by Location, Blood Group, Availability\n- Notification System\n\n#### **2.3 User Classes and Characteristics**\n\n- **Donor**: Can update availability, view requests, and respond to SOS.\n- **Recipient**: Can request blood, view nearby donors, and send SOS.\n- **Hospital**: Can manage bulk requests and verify blood stocks.\n- **Admin**: Manages system integrity and user access.\n\n# **2.4 Operating Environment**\n\n- Web browsers (Chrome, Firefox, Safari)\n- Mobile responsive\n- Requires internet connectivity\n\n# **2.5 Design and Implementation Constraints**\n\n- Must use secure HTTPS protocols\n- Support for modern browsers\n- Data storage in Firebase Firestore",
+      "extraction_method": "marker_vlm_strict",
+      "ocr_confidence": null,
+      "layout_type": "single_column",
+      "font_metadata": []
+    },
+    {
+      "doc_id": "5_SE_grp_",
+      "page_num": 2,
+      "raw_text": "### **2.6 User Documentation**\n\n- Online help and tooltips within the interface\n- Admin and user manuals\n\n### **2.7 Assumptions and Dependencies**\n\n- Users have smartphones or internet-enabled devices\n- Google Maps API is functional\n- Stable internet connection\n\n## **3. System Features**\n\n### **3.1 AI-Based Donor Matching**\n\n- Input: Request from recipient\n- Output: Ranked list of matching donors\n\n## **3.2 SOS Messaging System**\n\n- Input: Emergency trigger from recipient/hospital\n- Output: Message broadcast to all nearby available donors\n\n## **3.3 User Management**\n\n- Create, edit, and delete user accounts\n- Role-based permissions\n\n#### **3.4 Location-Based Search**\n\n• Filter donors based on radius, blood group, and availability\n\n# **4. External Interface Requirements**\n\n#### **4.1 User Interfaces**\n\n- Web dashboard for each user role\n- Maps for location sharing\n\n#### **4.2 Hardware Interfaces**\n\n• Compatible with smartphones and desktops",
+      "extraction_method": "marker_vlm_strict",
+      "ocr_confidence": null,
+      "layout_type": "single_column",
+      "font_metadata": []
+    },
+    {
+      "doc_id": "5_SE_grp_",
+      "page_num": 3,
+      "raw_text": "#### **4.3 Software Interfaces**\n\n- Firebase Firestore\n- Google Maps API\n- Twilio (for messaging)\n\n## **4.4 Communications Interfaces**\n\n• HTTPS/RESTful APIs\n\n# **5. Other Non-functional Requirements**\n\n### **5.1 Performance Requirements**\n\n- 1000 concurrent users\n- SOS messages must reach within 5 seconds\n\n## **5.2 Safety Requirements**\n\n- Data backups\n- Real-time logs\n\n#### **5.3 Security Requirements**\n\n- Role-based access\n- Encrypted storage and communication\n\n#### **5.4 Software Quality Attributes**\n\n- Usability: Easy to use\n- Availability: 99.9% uptime\n- Maintainability: Modular design\n\n# **6. Other Requirements**\n\n- Mobile app version in future iterations\n- Integration with national blood database (optional)\n\n# **Appendix A: Glossary**\n\n• **Blood Bank System**: A platform designed to connect blood donors with recipients and hospitals using AI.",
+      "extraction_method": "marker_vlm_strict",
+      "ocr_confidence": null,
+      "layout_type": "single_column",
+      "font_metadata": []
+    },
+    {
+      "doc_id": "5_SE_grp_",
+      "page_num": 4,
+      "raw_text": "- **SRS**: Software Requirements Specification, a formal document that outlines all the functional and non-functional requirements.\n- **GUI**: Graphical User Interface that enables user interaction with the system.\n- **API**: Application Programming Interface, enabling software interaction and data exchange.\n- **SOS**: Emergency alert functionality that notifies nearby donors of urgent blood requirements.\n- **AI**: Artificial Intelligence, used to match donors and recipients based on multiple criteria.\n- **Firebase**: Backend-as-a-Service platform used for real-time database and authentication.\n\n# **Appendix B: Analysis Models**\n\n- Use-case diagrams\n- Sequence diagrams\n- Entity-Relationship diagrams\n\n## **Appendix C: Issues List**\n\n### **Open Issues:**\n\n- Integration with government/national blood registries pending confirmation.\n- Location spoofing detection for authenticity.\n\n#### **Resolved Issues:**\n\n- Twilio integration for SMS and emergency alerts.\n- Role-based access control fully implemented.\n\n### **Future Enhancements:**\n\n- Mobile app development\n- Machine learning for predicting blood demand trends\n- Donor reward and recognition system",
+      "extraction_method": "marker_vlm_strict",
+      "ocr_confidence": null,
+      "layout_type": "single_column",
+      "font_metadata": []
+    }
+  ]
+}

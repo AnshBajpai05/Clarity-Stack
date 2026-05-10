@@ -20,7 +20,7 @@ app = FastAPI(title="SRS Clarity API", version="1.0.0")
 # CORS for Vite dev server
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:8080", "http://localhost:8081", "http://localhost:8082", "http://localhost:3000", "http://127.0.0.1:5173", "http://127.0.0.1:8080", "http://127.0.0.1:8081", "http://127.0.0.1:8082"],
+    allow_origins=["http://localhost:5173", "http://localhost:8080", "http://localhost:8081", "http://localhost:3000", "http://127.0.0.1:5173", "http://127.0.0.1:8080", "http://127.0.0.1:8081"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -45,11 +45,12 @@ def get_doc_id(filename: str) -> str:
 
 
 def find_processed_file(doc_id: str, stage_dir: str, suffix: str) -> Path | None:
-    """Find a processed file by doc_id in a stage directory."""
+    """Find a processed file by doc_id in a stage directory (searches recursively)."""
     target_dir = PROCESSED_ROOT / stage_dir
     if not target_dir.exists():
         return None
-    candidates = list(target_dir.glob(f"{doc_id}*{suffix}"))
+    # Use rglob to search recursively — handles both flat and nested output structures
+    candidates = list(target_dir.rglob(f"{doc_id}*{suffix}"))
     return candidates[0] if candidates else None
 
 
@@ -160,15 +161,16 @@ async def list_documents():
     issues_dir = PROCESSED_ROOT / "stage6_issues"
     
     if intel_dir.exists():
-        for intel_file in intel_dir.glob("*_intelligence.json"):
+        for intel_file in intel_dir.rglob("*_intelligence.json"):
             doc_id = intel_file.stem.replace("_intelligence", "")
             
-            # Count issues if available
+            # Count issues if available (search recursively for nested output dirs)
             ambiguity_count = 0
             conflict_count = 0
             gap_count = 0
-            issue_file = issues_dir / f"{doc_id}_issues.json"
-            if issue_file.exists():
+            issue_candidates = list(issues_dir.rglob(f"{doc_id}_issues.json")) if issues_dir.exists() else []
+            issue_file = issue_candidates[0] if issue_candidates else None
+            if issue_file and issue_file.exists():
                 with open(issue_file, "r", encoding="utf-8") as f:
                     issue_data = json.load(f)
                     ambiguity_count = issue_data.get("total_ambiguities", 0)
@@ -190,7 +192,7 @@ async def list_documents():
                 "conflicts": conflict_count,
                 "gaps": gap_count,
                 "has_intelligence": True,
-                "has_issues": issue_file.exists()
+                "has_issues": issue_file is not None and issue_file.exists()
             })
     
     return {"documents": documents}

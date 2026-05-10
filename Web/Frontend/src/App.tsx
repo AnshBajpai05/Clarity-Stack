@@ -21,7 +21,6 @@ import DiscoveryPage from "./pages/DiscoveryPage";
 
 // SRS-Clarity Pages
 import SRSDashboard from "./pages/srs/Dashboard";
-import SRSIssuesPage from "./pages/srs/IssuesPage";
 import { WorkspacePage as SRSWorkspace } from "./pages/srs/WorkspacePage";
 
 // Collaborative Editor Pages
@@ -65,8 +64,7 @@ const App = () => (
 
         {/* SRS-Clarity Feature */}
         <Route path="/srs/dashboard" element={<SRSDashboard />} />
-        <Route path="/srs/issues" element={<SRSIssuesPage />} />
-        <Route path="/srs/workspace" element={<SRSWorkspace />} />
+        <Route path="/srs/issues" element={<SRSWorkspace />} />
 
         {/* Collaborative Editor Feature */}
         <Route path="/editor/dashboard" element={<EditorDashboard />} />

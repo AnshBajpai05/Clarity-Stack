@@ -41,15 +41,6 @@ const LABEL_BADGE: Record<string, string> = {
   general: "bg-slate-500/15 text-slate-400 border-slate-500/30",
 };
 
-function getTimeLeft(expiresAt: string) {
-  const diff = new Date(expiresAt).getTime() - Date.now();
-  if (diff <= 0) return null;
-  const hours = Math.floor(diff / (1000 * 60 * 60));
-  const days = Math.floor(hours / 24);
-  if (days > 0) return `${days}d ${hours % 24}h left`;
-  return `${hours}h left`;
-}
-
 export default function TemporalCardsPage() {
   const { projectId } = useParams();
   const { toast } = useToast();
@@ -185,7 +176,7 @@ export default function TemporalCardsPage() {
               <div>
                 <h1 className="text-2xl font-bold gradient-text">Temporal Cards</h1>
                 <p className="text-muted-foreground text-sm">
-                  AI-generated project updates • Auto-expires every 3 days • Powered by Llama 405B
+                  AI-generated project updates • Powered by Llama 3.1 70B
                 </p>
               </div>
             </div>
@@ -286,8 +277,6 @@ export default function TemporalCardsPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {cards.map((card) => {
-              const timeLeft = card.expiresAt ? getTimeLeft(card.expiresAt) : null;
-              const isExpired = card.expired;
               const isExpanded = expandedCard === card._id;
               const labelStyle = LABEL_BADGE[card.label] || LABEL_BADGE.general;
               const versionChain = isExpanded ? getVersionChain(card) : [];
@@ -295,11 +284,7 @@ export default function TemporalCardsPage() {
               return (
                 <div
                   key={card._id}
-                  className={`bg-card/50 border rounded-xl overflow-hidden transition-all duration-200 flex flex-col ${
-                    isExpired
-                      ? "border-orange-500/30 opacity-75"
-                      : "border-border hover:border-neon-violet/50"
-                  }`}
+                  className={`bg-card/50 border rounded-xl overflow-hidden transition-all duration-200 flex flex-col border-border hover:border-neon-violet/50`}
                 >
                   {/* Card Header */}
                   <div className="p-5 flex-1">
@@ -342,19 +327,8 @@ export default function TemporalCardsPage() {
                       </div>
                     )}
 
-                    {/* Expiry / Status indicator */}
-                    <div className="flex items-center gap-2 flex-wrap">
-                      {isExpired ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-orange-500/15 text-orange-400 border border-orange-500/30">
-                          <Archive className="w-3 h-3" /> EXPIRED
-                        </span>
-                      ) : timeLeft ? (
-                        <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-green-500/10 text-green-400 border border-green-500/20">
-                          <Clock className="w-3 h-3" /> {timeLeft}
-                        </span>
-                      ) : null}
-
-                      {card.kgUpdated && (
+                    {/* Status indicator */}
+                    <div className="flex items-center gap-2 flex-wrap">                      {card.kgUpdated && (
                         <span className="inline-flex items-center gap-1 text-[10px] font-semibold px-2 py-0.5 rounded-full bg-blue-500/10 text-blue-400 border border-blue-500/20">
                           <GitBranch className="w-3 h-3" /> KG Updated
                         </span>
@@ -377,26 +351,7 @@ export default function TemporalCardsPage() {
                       )}
                     </div>
 
-                    <div className="flex gap-1">
-                      {isExpired && (
-                        <Button
-                          variant="ghost"
-                          size="sm"
-                          onClick={() => handleRefresh(card._id)}
-                          disabled={!!generating}
-                          className="h-7 text-[11px] px-2"
-                        >
-                          {generating === card._id ? (
-                            <LoadingSpinner size="sm" />
-                          ) : (
-                            <>
-                              <RefreshCw className="w-3 h-3 mr-1" /> Refresh
-                            </>
-                          )}
-                        </Button>
-                      )}
-
-                      {!card.kgUpdated && (
+                    <div className="flex gap-1">                      {!card.kgUpdated && (
                         <Button
                           variant="ghost"
                           size="sm"

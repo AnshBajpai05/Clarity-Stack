@@ -82,11 +82,11 @@ export interface Message {
 
 export interface CreateProjectPayload {
   name: string;
-
   purpose: string;
   success_criteria: string;
   constraints: string;
   owner?: string | null;
+  visibility?: string;
 }
 
 

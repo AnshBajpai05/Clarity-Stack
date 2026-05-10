@@ -1,0 +1,414 @@
+{
+  "document_name": "4_MediCore_HMS_SRS",
+  "total_ambiguities": 25,
+  "total_conflicts": 2,
+  "total_gaps": 5,
+  "ambiguities": [
+    {
+      "id": "AMB-001",
+      "story_id": "ICD-10",
+      "text": "The patient dashboard UI should be very intuitive for older doctors who occasionally fill in for administrative duties",
+      "term": "intuitive",
+      "category": "vague_term",
+      "severity": "high",
+      "explanation": "Subjective UX claim — not testable",
+      "suggested_rewrite": "new users complete [task] without training within [X] minutes"
+    },
+    {
+      "id": "AMB-002",
+      "story_id": "ICD-10",
+      "text": "The patient dashboard UI should be very intuitive for older doctors who occasionally fill in for administrative duties",
+      "term": "should",
+      "category": "weak_verb",
+      "severity": "low",
+      "explanation": "'Should' implies optional — use 'shall' for mandatory requirements",
+      "suggested_rewrite": "Replace 'should' with 'shall' if this is mandatory"
+    },
+    {
+      "id": "AMB-003",
+      "story_id": "AES-256",
+      "text": "The development of the MediCore system is bounded by several critical constraints. To ensure absolute compliance with federal healthcare data regulations, all data at rest must be encrypted using AES-256 standards, and all data in transit must utilize TLS 1.3 protocols. Furthermore, the system must be developed using a technology stack approved by the hospital's internal IT steering committee; specifically, the backend must be written in Java (Spring Boot) and the frontend must utilize React.js. The development timeline is strictly constrained, necessitating a phased rollout where the Patient Management and Billing modules must achieve production readiness by Q3 2025.",
+      "term": "several",
+      "category": "vague_term",
+      "severity": "low",
+      "explanation": "Vague quantifier",
+      "suggested_rewrite": "[specify exact count]"
+    },
+    {
+      "id": "AMB-004",
+      "story_id": "INF-010",
+      "text": "document assumes that the hospital will complete its planned fiber-optic network upgrade prior to system deployment, ensuring sufficient internal bandwidth",
+      "term": "sufficient",
+      "category": "vague_term",
+      "severity": "medium",
+      "explanation": "No quantitative sufficiency criteria",
+      "suggested_rewrite": "at least [X] [units]"
+    },
+    {
+      "id": "AMB-005",
+      "story_id": "REQ-PAT-04",
+      "text": "REQ-PAT-04: Ensure robust data validation on all patient intake forms before saving the record to the main database.",
+      "term": "robust",
+      "category": "vague_term",
+      "severity": "medium",
+      "explanation": "No specific reliability/resilience criteria",
+      "suggested_rewrite": "with [X]% uptime and automatic recovery from [failure types]"
+    },
+    {
+      "id": "AMB-006",
+      "story_id": "REQ-PAT-06",
+      "text": "system shall display a real-time, interactive floor map indicating the occupancy status of all hospital beds (Occupied, Available, Needs Cleaning, Maintenance)",
+      "term": "real-time",
+      "category": "vague_term",
+      "severity": "high",
+      "explanation": "No latency bound defined for 'real-time'",
+      "suggested_rewrite": "with updates pushed within [X] seconds"
+    },
+    {
+      "id": "AMB-007",
+      "story_id": "REQ-PAT-07",
+      "text": "REQ-PAT-07: When an admission order is entered by a physician, the system shall automatically recommend an available bed based on the required care level (e.g., ICU, Maternity, General Ward) and patient gender.",
+      "term": "e.g.",
+      "category": "vague_term",
+      "severity": "low",
+      "explanation": "Example given but exhaustive list may be needed",
+      "suggested_rewrite": "[confirm if this is exhaustive or provide complete list]"
+    },
+    {
+      "id": "AMB-008",
+      "story_id": "REQ-PAT-08",
+      "text": "The system shall generate and print standardized wristband labels containing a scannable 2D barcode, the patient's full name, MRN, and known severe allergies immediately upon admission",
+      "term": "immediately",
+      "category": "vague_term",
+      "severity": "high",
+      "explanation": "No specific time bound — 'immediately' is subjective",
+      "suggested_rewrite": "within [X] seconds of the triggering event"
+    },
+    {
+      "id": "AMB-009",
+      "story_id": "REQ-PAT-09",
+      "text": "The patient discharge workflow needs to be fast enough to not disrupt the ward workflow during peak morning hours",
+      "term": "fast",
+      "category": "vague_term",
+      "severity": "high",
+      "explanation": "No measurable performance target defined",
+      "suggested_rewrite": "with response time under [X]ms at the 95th percentile"
+    },
+    {
+      "id": "AMB-010",
+      "story_id": "REQ-EHR-08",
+      "text": "who have been formally discharged shall be archived immediately upon the physician signing the discharge summary to keep the active database lean",
+      "term": "immediately",
+      "category": "vague_term",
+      "severity": "high",
+      "explanation": "No specific time bound — 'immediately' is subjective",
+      "suggested_rewrite": "within [X] seconds of the triggering event"
+    },
+    {
+      "id": "AMB-011",
+      "story_id": "REQ-EHR-09",
+      "text": "The system shall plot vital signs (temperature, blood pressure, heart rate, oxygen saturation) on interactive graphical flowsheets, allowing clinicians to easily identify physiological trends over time",
+      "term": "easily",
+      "category": "vague_term",
+      "severity": "medium",
+      "explanation": "Subjective ease-of-use claim",
+      "suggested_rewrite": "in [X] steps or fewer"
+    },
+    {
+      "id": "AMB-012",
+      "story_id": "REQ-PHR-02",
+      "text": "The system shall track the real-time physical inventory levels of all stocked medications across the central pharmacy and distributed ward-level dispensing cabinets",
+      "term": "real-time",
+      "category": "vague_term",
+      "severity": "high",
+      "explanation": "No latency bound defined for 'real-time'",
+      "suggested_rewrite": "with updates pushed within [X] seconds"
+    },
+    {
+      "id": "AMB-013",
+      "story_id": "REQ-PHR-03",
+      "text": "the system shall automatically deduct the corresponding quantities from the appropriate inventory location",
+      "term": "appropriate",
+      "category": "vague_term",
+      "severity": "medium",
+      "explanation": "No criteria defining what 'appropriate' means",
+      "suggested_rewrite": "[define specific validation rules or criteria]"
+    },
+    {
+      "id": "AMB-014",
+      "story_id": "REQ-UI-01",
+      "text": "The application layout must be user-friendly and adhere to standard accessibility guidelines (WCAG 2",
+      "term": "user-friendly",
+      "category": "vague_term",
+      "severity": "high",
+      "explanation": "Subjective usability claim without measurable criteria",
+      "suggested_rewrite": "compliant with WCAG 2.1 AA, completable in [X] steps"
+    },
+    {
+      "id": "AMB-015",
+      "story_id": "INF-073",
+      "text": "The system must interact with several pieces of physical hospital equipment to streamline data entry and improve safety",
+      "term": "several",
+      "category": "vague_term",
+      "severity": "low",
+      "explanation": "Vague quantifier",
+      "suggested_rewrite": "[specify exact count]"
+    },
+    {
+      "id": "AMB-016",
+      "story_id": "REQ-PERF-01",
+      "text": "The system should load patient history pages quickly to avoid frustrating the medical staff during rounds",
+      "term": "quickly",
+      "category": "vague_term",
+      "severity": "high",
+      "explanation": "No measurable time constraint defined",
+      "suggested_rewrite": "within [X] milliseconds/seconds"
+    },
+    {
+      "id": "AMB-017",
+      "story_id": "REQ-PERF-01",
+      "text": "The system should load patient history pages quickly to avoid frustrating the medical staff during rounds",
+      "term": "should",
+      "category": "weak_verb",
+      "severity": "low",
+      "explanation": "'Should' implies optional — use 'shall' for mandatory requirements",
+      "suggested_rewrite": "Replace 'should' with 'shall' if this is mandatory"
+    },
+    {
+      "id": "AMB-018",
+      "story_id": "REQ-PERF-05",
+      "text": "The application will handle a large number of concurrent users efficiently during the morning shift changes",
+      "term": "large number",
+      "category": "vague_term",
+      "severity": "high",
+      "explanation": "No specific quantity defined",
+      "suggested_rewrite": "[specify exact count, e.g., 10,000 concurrent users]"
+    },
+    {
+      "id": "AMB-019",
+      "story_id": "REQ-PERF-05",
+      "text": "The application will handle a large number of concurrent users efficiently during the morning shift changes",
+      "term": "efficient",
+      "category": "vague_term",
+      "severity": "medium",
+      "explanation": "No measurable efficiency target",
+      "suggested_rewrite": "completing [task] in under [X] seconds using [Y] resources"
+    },
+    {
+      "id": "AMB-020",
+      "story_id": "REQ-PERF-07",
+      "text": "The backend database should be scalable to accommodate future hospital growth and the acquisition of smaller satellite clinics",
+      "term": "scalable",
+      "category": "vague_term",
+      "severity": "high",
+      "explanation": "No scaling dimensions or limits defined",
+      "suggested_rewrite": "supporting [X] to [Y] concurrent users with horizontal scaling"
+    },
+    {
+      "id": "AMB-021",
+      "story_id": "REQ-PERF-07",
+      "text": "The backend database should be scalable to accommodate future hospital growth and the acquisition of smaller satellite clinics",
+      "term": "should",
+      "category": "weak_verb",
+      "severity": "low",
+      "explanation": "'Should' implies optional — use 'shall' for mandatory requirements",
+      "suggested_rewrite": "Replace 'should' with 'shall' if this is mandatory"
+    },
+    {
+      "id": "AMB-022",
+      "story_id": "REQ-SEC-07",
+      "text": "Database backups should be done seamlessly without disturbing users during their daily operations",
+      "term": "seamless",
+      "category": "vague_term",
+      "severity": "medium",
+      "explanation": "Subjective integration/UX claim",
+      "suggested_rewrite": "without requiring user re-authentication or data re-entry"
+    },
+    {
+      "id": "AMB-023",
+      "story_id": "REQ-SEC-07",
+      "text": "Database backups should be done seamlessly without disturbing users during their daily operations",
+      "term": "should",
+      "category": "weak_verb",
+      "severity": "low",
+      "explanation": "'Should' implies optional — use 'shall' for mandatory requirements",
+      "suggested_rewrite": "Replace 'should' with 'shall' if this is mandatory"
+    },
+    {
+      "id": "AMB-024",
+      "story_id": "REQ-REL-03",
+      "text": "the system shall seamlessly failover to a geographically redundant backup site within 5 minutes, with zero data loss (RPO = 0, RTO = 5 mins)",
+      "term": "seamless",
+      "category": "vague_term",
+      "severity": "medium",
+      "explanation": "Subjective integration/UX claim",
+      "suggested_rewrite": "without requiring user re-authentication or data re-entry"
+    },
+    {
+      "id": "AMB-025",
+      "story_id": "REQ-REL-06",
+      "text": "the system must seamlessly cache up to 100 concurrent transactions locally to maintain operational continuity in the emergency department",
+      "term": "seamless",
+      "category": "vague_term",
+      "severity": "medium",
+      "explanation": "Subjective integration/UX claim",
+      "suggested_rewrite": "without requiring user re-authentication or data re-entry"
+    }
+  ],
+  "conflicts": [
+    {
+      "id": "CON-001",
+      "stories": [
+        "REQ-SEC-01",
+        "REQ-SEC-09"
+      ],
+      "severity": "high",
+      "category": "contradictory_state",
+      "description": "Logically incompatible actions triggered by similar condition 'None'",
+      "details": [
+        "REQ-SEC-01 (System): IF None → The system shall enforce strict Role-Based Access Control (RBAC), ensuring users can only access modules and data strictly necessary for their defined job functions",
+        "REQ-SEC-09 (Admin): IF None → Admin users shall have full, unrestricted read access to the system-wide audit logs to monitor platform usage and investigate security incidents"
+      ],
+      "confidence": 0.734,
+      "source": "embedding",
+      "explanation": "Semantic contradiction inferred: strong_semantic_contradiction with opposite polarity (positive vs negative)",
+      "rule_a": {
+        "story_id": "REQ-SEC-01",
+        "actor": "System",
+        "condition": null,
+        "action": "The system shall enforce strict Role-Based Access Control (RBAC), ensuring users can only access modules and data strictly necessary for their defined job functions",
+        "raw_text": "REQ-SEC-01: The system shall enforce strict Role-Based Access Control (RBAC), ensuring users can only access modules and data strictly necessary for their defined job functions.",
+        "confidence": 0.8
+      },
+      "rule_b": {
+        "story_id": "REQ-SEC-09",
+        "actor": "Admin",
+        "condition": null,
+        "action": "Admin users shall have full, unrestricted read access to the system-wide audit logs to monitor platform usage and investigate security incidents",
+        "raw_text": "REQ-SEC-09: Admin users shall have full, unrestricted read access to the system-wide audit logs to monitor platform usage and investigate security incidents.",
+        "confidence": 0.8
+      },
+      "trace": [
+        {
+          "layer": "rule",
+          "decision": false,
+          "confidence": 0.0,
+          "note": "Rule match failed"
+        },
+        {
+          "layer": "embedding",
+          "decision": true,
+          "confidence": 0.734,
+          "note": "reason=strong_semantic_contradiction, ctx_sim=1.00, act_sim=0.47, pol_a=positive, pol_b=negative"
+        },
+        {
+          "layer": "llm",
+          "skipped": true
+        }
+      ],
+      "confidence_breakdown": {
+        "rule": 0.0,
+        "embedding": 0.734,
+        "llm": 0.0
+      }
+    },
+    {
+      "id": "CON-002",
+      "stories": [
+        "REQ-SEC-05",
+        "REQ-SEC-11"
+      ],
+      "severity": "high",
+      "category": "contradictory_state",
+      "description": "Logically incompatible actions triggered by similar condition 'None'",
+      "details": [
+        "REQ-SEC-05 (User): IF None → all user passwords must be changed every 30 days without exception",
+        "REQ-SEC-11 (User): IF None → User authentication credentials shall remain valid for 90 days before the system prompts for a mandatory reset"
+      ],
+      "confidence": 0.95,
+      "source": "rule",
+      "explanation": "Numeric contradiction detected: 30.0 days vs 90.0 days",
+      "rule_a": {
+        "story_id": "REQ-SEC-05",
+        "actor": "User",
+        "condition": null,
+        "action": "all user passwords must be changed every 30 days without exception",
+        "raw_text": "REQ-SEC-05: For compliance with internal security policies, all user passwords must be changed every 30 days without exception.",
+        "confidence": 0.8
+      },
+      "rule_b": {
+        "story_id": "REQ-SEC-11",
+        "actor": "User",
+        "condition": null,
+        "action": "User authentication credentials shall remain valid for 90 days before the system prompts for a mandatory reset",
+        "raw_text": "REQ-SEC-11: User authentication credentials shall remain valid for 90 days before the system prompts for a mandatory reset.",
+        "confidence": 0.8
+      },
+      "trace": [
+        {
+          "layer": "rule",
+          "decision": true,
+          "confidence": 0.95,
+          "note": "Numeric contradiction detected: 30.0 days vs 90.0 days"
+        }
+      ],
+      "confidence_breakdown": {
+        "rule": 0.95,
+        "embedding": 0.0,
+        "llm": 0.0
+      }
+    }
+  ],
+  "gaps": [
+    {
+      "id": "GAP-001",
+      "story_id": "REQ-SCH-09",
+      "severity": "low",
+      "category": "no_testable_ac",
+      "description": "REQ-SCH-09 is conditional but lacks explicit logic mapping.",
+      "recommendation": "Ensure conditional logic (e.g., 'If X, then the system shall Y') is properly extracted or stated."
+    },
+    {
+      "id": "GAP-002",
+      "story_id": "REQ-EHR-07",
+      "severity": "low",
+      "category": "no_testable_ac",
+      "description": "REQ-EHR-07 is conditional but lacks explicit logic mapping.",
+      "recommendation": "Ensure conditional logic (e.g., 'If X, then the system shall Y') is properly extracted or stated."
+    },
+    {
+      "id": "GAP-003",
+      "story_id": "REQ-EHR-11",
+      "severity": "low",
+      "category": "no_testable_ac",
+      "description": "REQ-EHR-11 is conditional but lacks explicit logic mapping.",
+      "recommendation": "Ensure conditional logic (e.g., 'If X, then the system shall Y') is properly extracted or stated."
+    },
+    {
+      "id": "GAP-004",
+      "story_id": "REQ-PHR-06",
+      "severity": "low",
+      "category": "no_testable_ac",
+      "description": "REQ-PHR-06 is conditional but lacks explicit logic mapping.",
+      "recommendation": "Ensure conditional logic (e.g., 'If X, then the system shall Y') is properly extracted or stated."
+    },
+    {
+      "id": "GAP-005",
+      "story_id": "INF-081",
+      "severity": "low",
+      "category": "no_testable_ac",
+      "description": "INF-081 is conditional but lacks explicit logic mapping.",
+      "recommendation": "Ensure conditional logic (e.g., 'If X, then the system shall Y') is properly extracted or stated."
+    }
+  ],
+  "metadata": {
+    "stories_scanned": 116,
+    "actors": [
+      "Admin",
+      "System",
+      "User",
+      "primary operational system for the hospital"
+    ],
+    "source_file": "F:\\AMRITA ALL SEMESTER\\projects\\SRS Clarity\\backend\\data\\raw_SRS_processed\\stage5_intelligence\\4_MediCore_HMS_SRS_intelligence.json"
+  }
+}

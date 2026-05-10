@@ -8,7 +8,7 @@ __pycache__/
 *.pyc
 node_modules/
 .env
-venv/
+**/venv*/
 .DS_Store
 *.db
 *.log
@@ -17,3 +17,8 @@ env/
 Backend/env/
 SRS_Service/data/
 temp_threatlens/
+.pytest_cache/
+.ipynb_checkpoints/
+*.egg-info/
+dist/
+build/

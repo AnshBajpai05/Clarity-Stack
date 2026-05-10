@@ -1,0 +1,39 @@
+{
+  "document_name": "5_SE_grp_",
+  "total_ambiguities": 2,
+  "total_conflicts": 0,
+  "total_gaps": 0,
+  "ambiguities": [
+    {
+      "id": "AMB-001",
+      "story_id": "INF-002",
+      "text": "The AI-based Blood Bank System is a web-based application that allows individuals to register as Donors, Recipients, or Hospitals. It uses AI to match recipients with the most suitable donors in real-time. The system includes account management, loca",
+      "term": "real-time",
+      "category": "vague_term",
+      "severity": "high",
+      "explanation": "No latency bound defined for 'real-time'",
+      "suggested_rewrite": "with updates pushed within [X] seconds"
+    },
+    {
+      "id": "AMB-002",
+      "story_id": "INF-003",
+      "text": "This is a standalone system that integrates with geolocation services and communication APIs for real-time messaging. It can be deployed independently or integrated with hospital management systems.",
+      "term": "real-time",
+      "category": "vague_term",
+      "severity": "high",
+      "explanation": "No latency bound defined for 'real-time'",
+      "suggested_rewrite": "with updates pushed within [X] seconds"
+    }
+  ],
+  "conflicts": [],
+  "gaps": [],
+  "metadata": {
+    "stories_scanned": 10,
+    "actors": [
+      "Admin",
+      "System",
+      "User"
+    ],
+    "source_file": "F:\\AMRITA ALL SEMESTER\\projects\\SRS Clarity\\backend\\data\\raw_SRS_processed\\stage5_intelligence\\5_SE_grp__intelligence.json"
+  }
+}

@@ -1,26 +1,25 @@
-// services/cardScheduler.js — Auto-generation scheduler for temporal cards
+// services/cardScheduler.js — v4 Auto-generation scheduler with timestamp gating
 const TemporalCard = require("../models/TemporalCard");
 const { autoGenerateCards, expireOldCards } = require("./cardChainer");
 const axios = require("axios");
 
 const CORE_API = process.env.CORE_API_URL || "http://127.0.0.1:8000";
-const CHECK_INTERVAL = 6 * 60 * 60 * 1000; // 6 hours
+const CHECK_INTERVAL = parseInt(process.env.SCHEDULER_INTERVAL_HOURS || "6", 10) * 60 * 60 * 1000;
 
 let schedulerInterval = null;
 
 /**
  * Get a service-level token for automated operations.
- * Uses the first project's owner to create a session token.
  */
 async function getServiceToken() {
-  // Try to get a token via client-login for any known project
   try {
-    const Project = require("mongoose").model("TemporalCard");
-    const anyCard = await Project.findOne().lean();
+    const anyCard = await TemporalCard.findOne().lean();
     if (anyCard) {
-      const res = await axios.post(`${CORE_API}/api/auth/client-login`, {
-        project_id: anyCard.projectId,
-      }, { timeout: 5000 });
+      const res = await axios.post(
+        `${CORE_API}/api/auth/client-login`,
+        { project_id: anyCard.projectId },
+        { timeout: 5000 }
+      );
       return res.data.access_token;
     }
   } catch (err) {
@@ -30,10 +29,10 @@ async function getServiceToken() {
 }
 
 /**
- * Run the scheduler cycle: expire old cards and auto-generate new ones.
+ * Run the scheduler cycle: expire stale cards, auto-generate from new messages.
  */
 async function runSchedulerCycle() {
-  console.log("⏰ [CardScheduler] Running auto-generation cycle...");
+  console.log("⏰ [CardScheduler] Running v4 auto-generation cycle...");
 
   try {
     // 1. Find all projects that have cards
@@ -52,7 +51,9 @@ async function runSchedulerCycle() {
     }
 
     if (totalExpired > 0) {
-      console.log(`⏰ [CardScheduler] Expired ${totalExpired} cards across ${projectIds.length} projects.`);
+      console.log(
+        `⏰ [CardScheduler] ${totalExpired} cards marked stale across ${projectIds.length} projects.`
+      );
     }
 
     // 3. Try to auto-generate (needs a token)
@@ -76,7 +77,7 @@ async function runSchedulerCycle() {
     }
 
     console.log(
-      `⏰ [CardScheduler] Cycle complete: ${totalExpired} expired, ${totalGenerated} generated across ${projectIds.length} projects.`
+      `⏰ [CardScheduler] Cycle complete: ${totalExpired} stale, ${totalGenerated} generated across ${projectIds.length} projects.`
     );
   } catch (err) {
     console.error("⏰ [CardScheduler] Cycle error:", err.message);
@@ -87,14 +88,15 @@ async function runSchedulerCycle() {
  * Start the card scheduler.
  */
 function startCardScheduler() {
-  console.log("⏰ [CardScheduler] Starting — will check every 6 hours...");
+  const hours = CHECK_INTERVAL / (60 * 60 * 1000);
+  console.log(`⏰ [CardScheduler] Starting — will check every ${hours} hours...`);
 
   // Run once after a short delay (let the server fully boot)
   setTimeout(() => {
     runSchedulerCycle().catch(console.error);
   }, 30000); // 30s after boot
 
-  // Then run every 6 hours
+  // Then run on interval
   schedulerInterval = setInterval(() => {
     runSchedulerCycle().catch(console.error);
   }, CHECK_INTERVAL);

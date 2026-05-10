@@ -40,8 +40,19 @@ export async function api<T>(endpoint: string, options: RequestInit = {}): Promi
       let message = `${res.status} — ${res.statusText}`
 
       try {
-        const body = await res.json()
-        message = body?.detail || body?.message || message
+        const body = await res.json();
+        let extractedMessage = body?.detail || body?.message || message;
+        
+        // Handle FastAPI validation error arrays
+        if (Array.isArray(extractedMessage)) {
+          extractedMessage = extractedMessage
+            .map((err: any) => `${err.loc?.[err.loc.length - 1] || 'Field'}: ${err.msg}`)
+            .join(' | ');
+        } else if (typeof extractedMessage === 'object') {
+          extractedMessage = JSON.stringify(extractedMessage);
+        }
+        
+        message = typeof extractedMessage === 'string' ? extractedMessage : String(extractedMessage);
       } catch {}
 
       toast({

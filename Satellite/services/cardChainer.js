@@ -1,26 +1,211 @@
-// services/cardChainer.js — Card generation + chaining pipeline (v2)
+// services/cardChainer.js — v4 Main orchestrator: runCardPipeline + all utilities
+// Uses: ModelRouter → CardDecomposer → CardSynthesizer → CardWriter
 const TemporalCard = require("../models/TemporalCard");
 const KGSnapshot = require("../models/KGSnapshot");
-const {
-  summarizeDelta,
-  generateCardFromMessages,
-  classifyCardLabel,
-  suggestKGUpdates,
-  generateREADMEContent,
-  parseCardResponse,
-} = require("./hfClient");
+const { ModelRouter } = require("./modelRouter");
+const { CardDecomposer } = require("./cardDecomposer");
+const { CardSynthesizer } = require("./cardSynthesizer");
+const { CardWriter } = require("./cardWriter");
 const axios = require("axios");
 
 const CORE_API = process.env.CORE_API_URL || "http://127.0.0.1:8000";
 const THREE_DAYS_MS = 3 * 24 * 60 * 60 * 1000;
 
+// Shared model router instance
+const modelRouter = new ModelRouter();
+
+// KG config defaults
+const KG_AUTO_FLUSH = parseFloat(process.env.KG_AUTO_FLUSH_THRESHOLD || "0.88");
+const KG_SUGGEST = parseFloat(process.env.KG_SUGGEST_THRESHOLD || "0.60");
+
 // ═══════════════════════════════════════════════════════════════════════════════
-// CHAT-BASED CARD GENERATION
+// MAIN PIPELINE — v4
 // ═══════════════════════════════════════════════════════════════════════════════
 
 /**
- * Fetch messages from a specific chat via the core API.
+ * Run the full v4 card pipeline for a message.
+ * One message → N fragments → N cards (created / versioned / updated).
  */
+async function runCardPipeline(message, existingCard = null, options = {}) {
+  const {
+    triggerType = "new_message",
+    thresholdChanges = [],
+    configChanges = null,
+    projectId = null,
+  } = options;
+
+  const decomposer = new CardDecomposer(modelRouter);
+  const synthesizer = new CardSynthesizer(modelRouter);
+  const writer = new CardWriter();
+
+  const startTime = Date.now();
+
+  // Resolve chat/project context
+  const chatId = message?._chatId || message?.chat_id || message?.chatId ||
+    existingCard?.sourceChatIds?.[0] || "unknown";
+  const resolvedProjectId = projectId || message?.projectId || existingCard?.projectId || "unknown";
+
+  // Load active cards for conflict context
+  const activeCards = await TemporalCard.find({
+    sourceChatIds: chatId,
+    status: "active",
+  }).lean();
+
+  // Build minimal project context (for decomposition prompt)
+  const projectContext = { name: resolvedProjectId, techStack: [] };
+
+  // ── Threshold-change trigger: no new message, use existing card content ───
+  if (triggerType === "threshold_change" && !message && existingCard) {
+    const fragment = {
+      id: "threshold_trigger",
+      category: existingCard.category,
+      raw_text: existingCard.sourceFragment || existingCard.summary,
+      summary: existingCard.summary,
+      confidence: existingCard.fragmentConfidence || 0.5,
+      kg_nodes_affected: [],
+      key_changes: [],
+    };
+
+    const synthesis = await synthesizer.synthesize(
+      fragment, existingCard, "threshold_change", configChanges
+    );
+
+    const card = await writer.write(
+      fragment, synthesis, null, existingCard, "threshold_change", configChanges
+    );
+
+    await handleKGSync(card);
+    return [card];
+  }
+
+  // ── Normal flow: decompose message into fragments ────────────────────────
+  const fragments = await decomposer.decompose(
+    message, projectContext, activeCards, thresholdChanges
+  );
+
+  // Process each fragment
+  const results = [];
+  for (const fragment of fragments) {
+    // Enrich fragment with projectId for the writer
+    const enrichedMessage = { ...message, projectId: resolvedProjectId };
+
+    // Find the latest active card for this chain
+    const lastCard = await TemporalCard.findOne({
+      chainIndex: `${chatId}_${fragment.category}`,
+      status: "active",
+    }).sort({ version: -1 }).lean();
+
+    const synthesis = await synthesizer.synthesize(
+      fragment, lastCard, triggerType, configChanges
+    );
+
+    const card = await writer.write(
+      fragment, synthesis, enrichedMessage, lastCard, triggerType, configChanges
+    );
+
+    await handleKGSync(card);
+    results.push(card);
+  }
+
+  const elapsed = Date.now() - startTime;
+  console.log(
+    `🃏 [Pipeline] Processed ${results.length} card(s) in ${elapsed}ms ` +
+    `(project: ${resolvedProjectId}, chat: ${chatId})`
+  );
+
+  return results;
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// KG SYNC — v4 Auto-flush logic
+// ═══════════════════════════════════════════════════════════════════════════════
+
+async function handleKGSync(card) {
+  if (!card.kgDiff || !card.kgDiff.add) return;
+  const confidence = card.kgDiff.confidence || 0;
+
+  if (confidence >= KG_AUTO_FLUSH) {
+    // Auto-flush: apply to KG snapshot
+    try {
+      await applyKGDiff(card.projectId, card.kgDiff);
+      await TemporalCard.findByIdAndUpdate(card._id, { "kgDiff.flushed": true });
+      console.log(`📊 [KG] Auto-flushed diff (confidence: ${confidence.toFixed(2)})`);
+    } catch (err) {
+      console.warn(`📊 [KG] Auto-flush failed: ${err.message}`);
+    }
+  } else if (confidence >= KG_SUGGEST) {
+    // Pending — leave for user review. UI shows "Update KG" button.
+    console.log(`📊 [KG] Diff pending user review (confidence: ${confidence.toFixed(2)})`);
+  } else {
+    // Below threshold — discard
+    await TemporalCard.findByIdAndUpdate(card._id, { kgDiff: null });
+    console.log(`📊 [KG] Diff discarded (confidence: ${confidence.toFixed(2)} below threshold)`);
+  }
+}
+
+async function applyKGDiff(projectId, kgDiff) {
+  const kgSnapshot = await KGSnapshot.findOne({ projectId })
+    .sort({ snapshotAt: -1 })
+    .lean();
+
+  const existingNodes = kgSnapshot?.nodes || [];
+  const existingEdges = kgSnapshot?.edges || [];
+
+  const { v4: uuidv4 } = require("uuid");
+
+  // Add new nodes
+  const newNodes = [...existingNodes];
+  for (const node of kgDiff.add || []) {
+    const rawSection = node.type?.toUpperCase() || "FACT";
+    const validSections = ["FACT", "CONSTRAINT", "ASSUMPTION", "OPTION", "DECISION", "CONFLICT", "UNKNOWN", "CONFIDENCE", "EXAMPLE"];
+    
+    newNodes.push({
+      nodeId: uuidv4(),
+      section: validSections.includes(rawSection) ? rawSection : "FACT",
+      content: node.label || "Unknown",
+      confidence: kgDiff.confidence || null,
+      chatId: "auto",
+      synthesisId: null,
+    });
+  }
+
+  // Remove nodes
+  const removeIds = new Set((kgDiff.remove || []).map((r) => r.id));
+  const filteredNodes = newNodes.filter((n) => !removeIds.has(n.nodeId));
+
+  // Add edges
+  const newEdges = [...existingEdges];
+  const validRelations = ["SUPPORTS", "CONTRADICTS", "REFINES", "DEPENDS_ON", "BLOCKS", "ALTERNATIVE_OF"];
+  
+  for (const edge of kgDiff.edges || []) {
+    const rawRelation = edge.label?.toUpperCase() || "SUPPORTS";
+    
+    newEdges.push({
+      edgeId: uuidv4(),
+      fromNodeId: edge.from,
+      toNodeId: edge.to,
+      relation: validRelations.includes(rawRelation) ? rawRelation : "SUPPORTS",
+      chatId: "auto",
+    });
+  }
+
+  // Save new snapshot
+  if ((kgDiff.add || []).length > 0 || (kgDiff.remove || []).length > 0) {
+    await KGSnapshot.create({
+      projectId,
+      nodes: filteredNodes,
+      edges: newEdges,
+      nodeCount: filteredNodes.length,
+      edgeCount: newEdges.length,
+      version: (kgSnapshot?.version || 0) + 1,
+    });
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// CHAT MESSAGE HELPERS
+// ═══════════════════════════════════════════════════════════════════════════════
+
 async function fetchChatMessages(chatId, token) {
   try {
     const res = await axios.get(`${CORE_API}/chats/${chatId}/messages`, {
@@ -34,31 +219,25 @@ async function fetchChatMessages(chatId, token) {
   }
 }
 
-/**
- * Fetch ALL messages across ALL chats in a project since a given date.
- */
 async function fetchProjectMessagesSince(projectId, sinceDate, token) {
   try {
-    // 1. Get all chats for this project
     const chatsRes = await axios.get(`${CORE_API}/projects/${projectId}/chats`, {
       headers: { Authorization: `Bearer ${token}` },
       timeout: 15000,
     });
     const chats = chatsRes.data || [];
 
-    // 2. Fetch messages from each chat
     const allMessages = [];
     for (const chat of chats) {
       const messages = await fetchChatMessages(chat.id, token);
       for (const msg of messages) {
         const msgDate = new Date(msg.created_at);
         if (!sinceDate || msgDate > sinceDate) {
-          allMessages.push({ ...msg, _chatId: chat.id, _chatTitle: chat.title });
+          allMessages.push({ ...msg, _chatId: chat.id, _chatTitle: chat.title, projectId });
         }
       }
     }
 
-    // Sort by created_at ascending
     allMessages.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
     return allMessages;
   } catch (err) {
@@ -67,17 +246,22 @@ async function fetchProjectMessagesSince(projectId, sinceDate, token) {
   }
 }
 
+// ═══════════════════════════════════════════════════════════════════════════════
+// HIGH-LEVEL ENTRYPOINTS (used by routes)
+// ═══════════════════════════════════════════════════════════════════════════════
+
 /**
- * Generate a card from a specific chat's messages.
+ * Generate cards from a specific chat. v4: decomposes messages, one card per fragment.
  */
 async function generateCardFromChat(projectId, chatId, token, forcedLabel = null) {
-  // 1. Get the last card for this project
-  const lastCard = await TemporalCard.findOne({ projectId })
-    .sort({ chainIndex: -1 })
-    .lean();
+  // Fetch messages since last active card
+  const lastCard = await TemporalCard.findOne({
+    projectId,
+    sourceChatIds: chatId,
+    status: "active",
+  }).sort({ createdAt: -1 }).lean();
 
-  // 2. Fetch messages from the chat (only new ones since last card)
-  const sinceDate = lastCard ? new Date(lastCard.createdAt) : null;
+  const sinceDate = lastCard ? new Date(lastCard.lastMessageTimestamp || lastCard.createdAt) : null;
   const allMessages = await fetchChatMessages(chatId, token);
   const messages = sinceDate
     ? allMessages.filter((m) => new Date(m.created_at) > sinceDate)
@@ -87,360 +271,223 @@ async function generateCardFromChat(projectId, chatId, token, forcedLabel = null
     throw new Error("No new messages found since the last card was generated.");
   }
 
-  // 3. Auto-classify label if not forced
-  const label = forcedLabel || (await classifyCardLabel(messages));
+  // Combine all messages into a single text block for decomposition
+  const combinedText = messages
+    .map((m) => `[${m.role || "user"}] ${m.sender || "unknown"}: ${m.text}`)
+    .join("\n");
 
-  // 4. Get the latest card for this label (for versioning)
-  const latestLabelCard = await TemporalCard.findOne({ projectId, label })
-    .sort({ version: -1 })
-    .lean();
-
-  // 5. Get current KG snapshot for context
-  const kgSnapshot = await KGSnapshot.findOne({ projectId })
-    .sort({ snapshotAt: -1 })
-    .lean();
-
-  // 6. Call Llama 405B
-  const rawResponse = await generateCardFromMessages(messages, latestLabelCard, kgSnapshot, label);
-  const parsed = parseCardResponse(rawResponse);
-
-  // 7. Get chain count
-  const cardCount = await TemporalCard.countDocuments({ projectId });
-
-  // 8. Create the card
-  const card = await TemporalCard.create({
+  const megaMessage = {
+    text: combinedText,
+    _chatId: chatId,
     projectId,
-    title: parsed.title,
-    summary: parsed.summary,
-    keyChanges: parsed.keyChanges,
-    label,
-    version: latestLabelCard ? latestLabelCard.version + 1 : 1,
-    previousVersionId: latestLabelCard?._id || null,
-    sourceType: "chat",
-    sourceMessageIds: messages.map((m) => m.id).filter(Boolean),
-    sourceChatIds: [chatId],
-    generatedBy: "meta-llama/Meta-Llama-3.1-405B-Instruct",
-    chainIndex: cardCount,
-    parentCardId: lastCard?._id || null,
-    status: "draft",
-    expiresAt: new Date(Date.now() + THREE_DAYS_MS),
+    id: messages[messages.length - 1]?.id,
+    created_at: messages[messages.length - 1]?.created_at,
+  };
+
+  const cards = await runCardPipeline(megaMessage, null, {
+    projectId,
+    triggerType: "new_message",
   });
 
-  console.log(`🃏 Card #${card.chainIndex} [${label} v${card.version}] generated: "${card.title}"`);
-  return card;
+  return cards;
 }
 
 /**
- * Generate a new version of a card for a specific label.
- * Uses ALL messages across all chats since the last card of this label.
+ * Generate a new card for a specific label/category from all project messages.
  */
 async function generateCardByLabel(projectId, label, token) {
-  // 1. Get latest card for this label
-  const latestLabelCard = await TemporalCard.findOne({ projectId, label })
-    .sort({ version: -1 })
-    .lean();
+  const latestLabelCard = await TemporalCard.findOne({
+    projectId,
+    category: label,
+    status: "active",
+  }).sort({ version: -1 }).lean();
 
-  // 2. Fetch messages since last card
-  const sinceDate = latestLabelCard ? new Date(latestLabelCard.createdAt) : null;
+  const sinceDate = latestLabelCard
+    ? new Date(latestLabelCard.lastMessageTimestamp || latestLabelCard.createdAt)
+    : null;
   const messages = await fetchProjectMessagesSince(projectId, sinceDate, token);
 
   if (messages.length === 0) {
     throw new Error(`No new messages found since the last "${label}" card.`);
   }
 
-  // 3. Get KG context
-  const kgSnapshot = await KGSnapshot.findOne({ projectId })
-    .sort({ snapshotAt: -1 })
-    .lean();
+  const combinedText = messages
+    .map((m) => `[${m.role || "user"}] ${m.sender || "unknown"}: ${m.text}`)
+    .join("\n");
 
-  // 4. Generate via Llama
-  const rawResponse = await generateCardFromMessages(messages, latestLabelCard, kgSnapshot, label);
-  const parsed = parseCardResponse(rawResponse);
+  const chatIds = [...new Set(messages.map((m) => m._chatId).filter(Boolean))];
 
-  // 5. Chain metadata
-  const cardCount = await TemporalCard.countDocuments({ projectId });
-  const lastCard = await TemporalCard.findOne({ projectId }).sort({ chainIndex: -1 }).lean();
-
-  // 6. Collect unique chat IDs
-  const chatIds = [...new Set(messages.map((m) => m._chatId || m.chat_id).filter(Boolean))];
-
-  // 7. Create
-  const card = await TemporalCard.create({
+  const megaMessage = {
+    text: combinedText,
+    _chatId: chatIds[0] || "project-wide",
     projectId,
-    title: parsed.title,
-    summary: parsed.summary,
-    keyChanges: parsed.keyChanges,
-    label,
-    version: latestLabelCard ? latestLabelCard.version + 1 : 1,
-    previousVersionId: latestLabelCard?._id || null,
-    sourceType: "chat",
-    sourceMessageIds: messages.map((m) => m.id).filter(Boolean),
-    sourceChatIds: chatIds,
-    generatedBy: "meta-llama/Meta-Llama-3.1-405B-Instruct",
-    chainIndex: cardCount,
-    parentCardId: lastCard?._id || null,
-    status: "draft",
-    expiresAt: new Date(Date.now() + THREE_DAYS_MS),
+    id: messages[messages.length - 1]?.id,
+    created_at: messages[messages.length - 1]?.created_at,
+  };
+
+  const cards = await runCardPipeline(megaMessage, null, {
+    projectId,
+    triggerType: "new_message",
   });
 
-  console.log(`🃏 Label card [${label} v${card.version}] generated: "${card.title}"`);
-  return card;
+  return cards;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // TEMPORAL LOGIC
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/**
- * Mark cards older than 3 days as expired.
- */
 async function expireOldCards(projectId) {
-  const result = await TemporalCard.updateMany(
-    {
-      projectId,
-      expired: false,
-      expiresAt: { $lte: new Date() },
-    },
-    { $set: { expired: true } }
-  );
-
-  if (result.modifiedCount > 0) {
-    console.log(`⏰ Expired ${result.modifiedCount} cards for project ${projectId}`);
-  }
-  return result.modifiedCount;
+  // Expiry removed per user request: cards will remain active indefinitely.
+  return 0;
 }
 
-/**
- * Auto-generate cards for a project: expire old cards, generate new ones.
- */
 async function autoGenerateCards(projectId, token) {
-  // 1. Expire old cards
   const expiredCount = await expireOldCards(projectId);
 
-  // 2. Find the most recent card of any type
-  const lastCard = await TemporalCard.findOne({ projectId })
+  const lastCard = await TemporalCard.findOne({ projectId, status: "active" })
     .sort({ createdAt: -1 })
     .lean();
 
-  // 3. Check if enough time has passed (at least 3 days since last card)
-  if (lastCard) {
-    const daysSinceLast = (Date.now() - new Date(lastCard.createdAt).getTime()) / (1000 * 60 * 60 * 24);
-    if (daysSinceLast < 3) {
-      return {
-        message: `Last card was ${daysSinceLast.toFixed(1)} days ago. Next auto-generation in ${(3 - daysSinceLast).toFixed(1)} days.`,
-        expiredCount,
-        generated: [],
-      };
-    }
-  }
-
-  // 4. Fetch new messages since last card
-  const sinceDate = lastCard ? new Date(lastCard.createdAt) : null;
+  const sinceDate = lastCard
+    ? new Date(lastCard.lastMessageTimestamp || lastCard.createdAt)
+    : null;
   const messages = await fetchProjectMessagesSince(projectId, sinceDate, token);
 
   if (messages.length === 0) {
     return { message: "No new messages to generate cards from.", expiredCount, generated: [] };
   }
 
-  // 5. Auto-classify and generate
-  const label = await classifyCardLabel(messages);
   const generated = [];
-
   try {
-    const card = await generateCardByLabel(projectId, label, token);
-    generated.push(card);
+    const combinedText = messages
+      .map((m) => `[${m.role || "user"}] ${m.sender || "unknown"}: ${m.text}`)
+      .join("\n");
 
-    // 6. Attempt KG update
-    try {
-      await updateKGFromCard(projectId, card);
-    } catch (kgErr) {
-      console.warn(`⚠️  KG update skipped: ${kgErr.message}`);
-    }
+    const chatIds = [...new Set(messages.map((m) => m._chatId).filter(Boolean))];
+
+    const megaMessage = {
+      text: combinedText,
+      _chatId: chatIds[0] || "project-wide",
+      projectId,
+      id: messages[messages.length - 1]?.id,
+      created_at: messages[messages.length - 1]?.created_at,
+    };
+
+    const cards = await runCardPipeline(megaMessage, null, {
+      projectId,
+      triggerType: "scheduled_update",
+    });
+
+    generated.push(...cards);
   } catch (genErr) {
     console.error(`❌ Auto-generation failed: ${genErr.message}`);
   }
 
   return {
-    message: `Auto-generation complete. ${generated.length} card(s) created, ${expiredCount} expired.`,
+    message: `Auto-generation complete. ${generated.length} card(s) created, ${expiredCount} stale.`,
     expiredCount,
     generated,
   };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// KG INTEGRATION
+// QUERY HELPERS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/**
- * Use AI to suggest KG updates based on a card, then apply them.
- */
-async function updateKGFromCard(projectId, card) {
-  // 1. Get current KG
-  const kgSnapshot = await KGSnapshot.findOne({ projectId })
-    .sort({ snapshotAt: -1 })
-    .lean();
+async function getChainedCards(projectId) {
+  await expireOldCards(projectId);
+  return TemporalCard.find({ projectId }).sort({ createdAt: 1 }).lean();
+}
 
-  // 2. Ask Llama for suggestions
-  const suggestions = await suggestKGUpdates(card, kgSnapshot);
+async function getCardsByLabel(projectId, label) {
+  await expireOldCards(projectId);
+  return TemporalCard.find({ projectId, category: label }).sort({ version: -1 }).lean();
+}
 
-  if (suggestions.addNodes.length === 0 && suggestions.removeNodes.length === 0) {
-    console.log(`📊 No KG changes suggested for card "${card.title}"`);
-    return { added: 0, removed: 0 };
+async function getCardsByCategory(projectId, category) {
+  await expireOldCards(projectId);
+  return TemporalCard.find({ projectId, category }).sort({ version: -1 }).lean();
+}
+
+async function getExpiredCards(projectId) {
+  await expireOldCards(projectId);
+  return TemporalCard.find({ projectId, status: "stale" }).sort({ createdAt: -1 }).lean();
+}
+
+async function getCardHistory(cardId) {
+  const card = await TemporalCard.findById(cardId).lean();
+  if (!card) return [];
+
+  const history = [card];
+  let current = card;
+
+  while (current.previousCardId) {
+    const prev = await TemporalCard.findById(current.previousCardId).lean();
+    if (!prev) break;
+    history.unshift(prev);
+    current = prev;
   }
 
-  // 3. Apply to KG snapshot (create a new snapshot with the changes)
-  const existingNodes = kgSnapshot?.nodes || [];
-  const existingEdges = kgSnapshot?.edges || [];
+  return history;
+}
 
-  // Add new nodes
-  const newNodes = [...existingNodes];
-  const addedNodeIds = [];
-  for (const node of suggestions.addNodes) {
-    const { v4: uuidv4 } = require("uuid");
-    const nodeId = uuidv4();
-    newNodes.push({
-      nodeId,
-      section: node.section,
-      content: node.content,
-      confidence: null,
-      chatId: card.sourceChatIds?.[0] || "auto",
-      synthesisId: null,
-    });
-    addedNodeIds.push(nodeId);
-  }
+async function refreshCard(projectId, cardId, token) {
+  const oldCard = await TemporalCard.findById(cardId).lean();
+  if (!oldCard) throw new Error("Card not found");
 
-  // Remove nodes (fuzzy match by content fragment)
-  const removedNodeIds = [];
-  const filteredNodes = newNodes.filter((n) => {
-    const shouldRemove = suggestions.removeNodes.some(
-      (frag) => n.content.toLowerCase().includes(frag.toLowerCase())
-    );
-    if (shouldRemove) removedNodeIds.push(n.nodeId);
-    return !shouldRemove;
-  });
-
-  // 4. Save new snapshot
-  if (addedNodeIds.length > 0 || removedNodeIds.length > 0) {
-    await KGSnapshot.create({
-      projectId,
-      nodes: filteredNodes,
-      edges: existingEdges,
-      nodeCount: filteredNodes.length,
-      edgeCount: existingEdges.length,
-      version: (kgSnapshot?.version || 0) + 1,
-    });
-
-    // 5. Update the card with KG impact
-    await TemporalCard.findByIdAndUpdate(card._id, {
-      kgNodesAdded: addedNodeIds,
-      kgNodesRemoved: removedNodeIds,
-      kgUpdated: true,
-    });
-
-    console.log(`📊 KG updated: +${addedNodeIds.length} / -${removedNodeIds.length} nodes`);
-  }
-
-  return { added: addedNodeIds.length, removed: removedNodeIds.length };
+  const cards = await generateCardByLabel(projectId, oldCard.category || oldCard.label, token);
+  return cards[0] || oldCard;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// LEGACY + UTILITY
+// LEGACY COMPAT + EXPORT HELPERS
 // ═══════════════════════════════════════════════════════════════════════════════
 
-/**
- * Generate a TemporalCard from a GraphDelta (legacy path).
- */
+const {
+  summarizeDelta,
+  generateREADMEContent,
+  parseCardResponse,
+} = require("./hfClient");
+
 async function generateCardFromDelta(projectId, delta) {
   const cardCount = await TemporalCard.countDocuments({ projectId });
-  const lastCard = await TemporalCard.findOne({ projectId }).sort({ chainIndex: -1 }).lean();
+  const lastCard = await TemporalCard.findOne({ projectId }).sort({ createdAt: -1 }).lean();
 
   const rawResponse = await summarizeDelta(delta);
   const parsed = parseCardResponse(rawResponse);
 
   const card = await TemporalCard.create({
     projectId,
-    deltaId: delta._id,
+    chainIndex: `${projectId}_general`,
+    category: "general",
     title: parsed.title,
     summary: parsed.summary,
     keyChanges: parsed.keyChanges,
-    label: "general",
+    version: 1,
     sourceType: "delta",
-    generatedBy: "meta-llama/Meta-Llama-3.1-405B-Instruct",
-    chainIndex: cardCount,
-    parentCardId: lastCard?._id || null,
-    status: "draft",
+    deltaId: delta._id,
+    triggerType: "new_message",
+    modelUsed: "llama-3.1-70b-versatile",
+    generatedBy: "llama-3.1-70b-versatile",
+    status: "active",
     expiresAt: new Date(Date.now() + THREE_DAYS_MS),
+    lastMessageTimestamp: new Date(),
   });
 
-  console.log(`🃏 Card #${card.chainIndex} generated from delta: "${card.title}"`);
+  console.log(`🃏 Card [general] generated from delta: "${card.title}"`);
   return card;
 }
 
-/**
- * Get all cards for a project, chained in order.
- */
-async function getChainedCards(projectId) {
-  // Also expire while fetching
-  await expireOldCards(projectId);
-  return TemporalCard.find({ projectId }).sort({ chainIndex: 1 }).lean();
-}
-
-/**
- * Get cards filtered by label, latest version first.
- */
-async function getCardsByLabel(projectId, label) {
-  await expireOldCards(projectId);
-  return TemporalCard.find({ projectId, label }).sort({ version: -1 }).lean();
-}
-
-/**
- * Get only expired cards.
- */
-async function getExpiredCards(projectId) {
-  await expireOldCards(projectId);
-  return TemporalCard.find({ projectId, expired: true }).sort({ createdAt: -1 }).lean();
-}
-
-/**
- * Refresh an expired card — generates a new version.
- */
-async function refreshCard(projectId, cardId, token) {
-  const oldCard = await TemporalCard.findById(cardId).lean();
-  if (!oldCard) throw new Error("Card not found");
-
-  // Generate a new version of the same label
-  const card = await generateCardByLabel(projectId, oldCard.label, token);
-  card.sourceType = "auto_refresh";
-  await TemporalCard.findByIdAndUpdate(card._id, { sourceType: "auto_refresh" });
-  return card;
-}
-
-/**
- * Generate a README from all chained cards.
- */
-async function generateREADME(projectId, token) {
-  const cards = await getChainedCards(projectId);
-  if (cards.length === 0) {
-    return "# No Cards Yet\n\nGenerate temporal cards from chats first.";
+async function updateKGFromCard(projectId, card) {
+  if (card.kgDiff && card.kgDiff.add && card.kgDiff.add.length > 0) {
+    await applyKGDiff(projectId, card.kgDiff);
+    await TemporalCard.findByIdAndUpdate(card._id, { "kgDiff.flushed": true, kgUpdated: true });
+    return { added: card.kgDiff.add.length, removed: (card.kgDiff.remove || []).length };
   }
-
-  let projectInfo = { name: "Project", purpose: "N/A", success_criteria: "N/A" };
-  try {
-    const res = await axios.get(`${CORE_API}/projects/${projectId}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      timeout: 10000,
-    });
-    projectInfo = res.data;
-  } catch (err) {
-    console.warn("⚠️  Could not fetch project info:", err.message);
-  }
-
-  return generateREADMEContent(cards, projectInfo);
+  return { added: 0, removed: 0 };
 }
 
-/**
- * Generate Mermaid UML from a KG snapshot.
- */
 function generateMermaidUML(snapshot) {
   if (!snapshot || !snapshot.nodes || snapshot.nodes.length === 0) {
     return "graph TD\n  empty[No KG data available]";
@@ -472,9 +519,26 @@ function generateMermaidUML(snapshot) {
   return lines.join("\n");
 }
 
-/**
- * Generate a markdown slide deck from chained cards.
- */
+async function generateREADME(projectId, token) {
+  const cards = await getChainedCards(projectId);
+  if (cards.length === 0) {
+    return "# No Cards Yet\n\nGenerate temporal cards from chats first.";
+  }
+
+  let projectInfo = { name: "Project", purpose: "N/A", success_criteria: "N/A" };
+  try {
+    const res = await axios.get(`${CORE_API}/projects/${projectId}`, {
+      headers: { Authorization: `Bearer ${token}` },
+      timeout: 10000,
+    });
+    projectInfo = res.data;
+  } catch (err) {
+    console.warn("⚠️  Could not fetch project info:", err.message);
+  }
+
+  return generateREADMEContent(cards, projectInfo);
+}
+
 async function generatePPTSlides(projectId) {
   const cards = await getChainedCards(projectId);
   if (cards.length === 0) {
@@ -490,9 +554,9 @@ async function generatePPTSlides(projectId) {
       slide += "\n### Key Changes\n";
       slide += card.keyChanges.map((c) => `- ${c}`).join("\n");
     }
-    const labelBadge = card.label ? ` [${card.label.toUpperCase()}]` : "";
+    const categoryBadge = card.category ? ` [${card.category.toUpperCase()}]` : "";
     const versionBadge = card.version > 1 ? ` v${card.version}` : "";
-    slide += `\n\n*Card #${card.chainIndex + 1}${labelBadge}${versionBadge} — ${new Date(card.createdAt).toLocaleDateString()}*\n---`;
+    slide += `\n\n*${categoryBadge}${versionBadge} — ${new Date(card.createdAt).toLocaleDateString()}*\n---`;
     slides.push(slide);
   }
 
@@ -500,6 +564,7 @@ async function generatePPTSlides(projectId) {
 }
 
 module.exports = {
+  runCardPipeline,
   generateCardFromDelta,
   generateCardFromChat,
   generateCardByLabel,
@@ -509,6 +574,8 @@ module.exports = {
   refreshCard,
   getChainedCards,
   getCardsByLabel,
+  getCardsByCategory,
+  getCardHistory,
   getExpiredCards,
   generateREADME,
   generateMermaidUML,

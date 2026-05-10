@@ -1,0 +1,29 @@
+{
+  "document_name": "3_SRS_Grp6_SREERAM R",
+  "total_ambiguities": 1,
+  "total_conflicts": 0,
+  "total_gaps": 0,
+  "ambiguities": [
+    {
+      "id": "AMB-001",
+      "story_id": "FR-2",
+      "text": "FR-2: System shall enforce role-based access control (e.g., Admin, Employee).",
+      "term": "e.g.",
+      "category": "vague_term",
+      "severity": "low",
+      "explanation": "Example given but exhaustive list may be needed",
+      "suggested_rewrite": "[confirm if this is exhaustive or provide complete list]"
+    }
+  ],
+  "conflicts": [],
+  "gaps": [],
+  "metadata": {
+    "stories_scanned": 73,
+    "actors": [
+      "Employee",
+      "System",
+      "User"
+    ],
+    "source_file": "F:\\AMRITA ALL SEMESTER\\projects\\SRS Clarity\\backend\\data\\raw_SRS_processed\\stage5_intelligence\\3_SRS_Grp6_SREERAM R_intelligence.json"
+  }
+}

@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
-import { ProcessingOverlay } from "@/components/srs-workspace/ProcessingOverlay";
+import { ProcessingOverlay } from "@/components/ui/ProcessingOverlay";
 import {
   AlertDialog,
   AlertDialogAction,
