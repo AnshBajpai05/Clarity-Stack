@@ -98,35 +98,12 @@ def _ensure_all_sections(text: str) -> str:
 # ERROR BLOCK
 # =========================================================
 def _error_block(reason: str) -> str:
-
-    return _ensure_all_sections(f"""
-FACT:
-- ERROR: {reason}
-
-CONSTRAINT:
-- None
-
-ASSUMPTION:
-- None
-
-OPTION:
-- None
-
-DECISION:
-- None
-
-CONFLICT:
-- None
-
-EXAMPLE:
-- None
-
-UNKNOWN:
-- None
-
-CONFIDENCE:
-- None
-""".strip())
+    """
+    Returns an empty string so that failed provider calls are cleanly
+    treated as missing (skipped by the `if not raw_block` guard in main.py),
+    rather than injecting a FACT: ERROR entry that poisons the knowledge graph.
+    """
+    return ""
 
 
 # =========================================================

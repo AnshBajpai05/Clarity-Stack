@@ -15,7 +15,7 @@
  */
 
 const BACKEND_URL  = import.meta.env.VITE_API_URL || 'http://localhost:8005';
-const NVIDIA_API_KEY = import.meta.env?.VITE_NVIDIA_API_KEY || '';
+// NOTE: All LLM calls are proxied through BACKEND_URL/api/llm — no client-side API key needed.
 
 const NVIDIA_MODELS = [
     'meta/llama-3.3-70b-instruct',   // Tier 1 — absolute best reasoning + context
