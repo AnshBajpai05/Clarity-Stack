@@ -66,6 +66,9 @@ function Login() {
 
       const token = res.data.access_token;
       localStorage.setItem("token", token);
+      if (loginType === "user") {
+        localStorage.setItem("cs_email", formData.email || "");
+      }
       
       if (loginType === "client") {
         navigate(`/projects/${formData.project_id}/chats`); // Or generated cards

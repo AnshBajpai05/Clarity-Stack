@@ -21,5 +21,13 @@ class MessageSchema(BaseModel):
     ingested_at: datetime
     reply_group_id: Optional[str]
 
-    class Config:
-        orm_mode = True   # <<< IMPORTANT
+    model_config = dict(from_attributes=True)
+
+class JoinRequestSchema(BaseModel):
+    id: str
+    project_id: str
+    user_email: str
+    status: str
+    created_at: datetime
+
+    model_config = dict(from_attributes=True)

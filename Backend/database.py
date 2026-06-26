@@ -1,64 +1,33 @@
-import os
-from sqlalchemy import create_engine, text
+from sqlalchemy import create_engine, event, text
 from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.engine.url import make_url
-from dotenv import load_dotenv
+from sqlalchemy.engine import Engine
 
 from models import Base
 
-load_dotenv()
 
-DATABASE_URL = os.getenv(
-    "DATABASE_URL",
-    "postgresql://postgres:postgres@localhost:5432/claritystack"
-)
-print("USING DB:", DATABASE_URL.split("@")[-1])  # log host/db only, never the password
+DATABASE_URL = "sqlite:///./claritystack.db"
+print("USING DB FILE:", DATABASE_URL)
 
 
-# ---------------------------------------------------------------------------
-# Auto-bootstrap: create the Postgres database if it doesn't exist yet.
-# This means teammates only need Postgres installed — no manual CREATE DATABASE.
-# ---------------------------------------------------------------------------
-def _ensure_database_exists(url: str) -> None:
-    try:
-        parsed = make_url(url)
-        db_name = parsed.database
-        # Connect to the default maintenance db ('postgres') to run CREATE DATABASE
-        admin_url = url.replace(f"/{db_name}", "/postgres", 1)
-        admin_engine = create_engine(admin_url, isolation_level="AUTOCOMMIT", echo=False)
-        with admin_engine.connect() as conn:
-            exists = conn.execute(
-                text("SELECT 1 FROM pg_database WHERE datname = :name"),
-                {"name": db_name}
-            ).fetchone()
-            if not exists:
-                conn.execute(text(f'CREATE DATABASE "{db_name}"'))
-                print(f"[DB] Created database '{db_name}'")
-            else:
-                print(f"[DB] Database '{db_name}' already exists")
-        admin_engine.dispose()
-    except Exception as e:
-        print(f"[DB] WARNING: Could not auto-create database: {e}")
-
-
-_ensure_database_exists(DATABASE_URL)
-
-
-# ---------------------------------------------------------------------------
-# Engine — Postgres connection pool (no SQLite-specific args)
-# ---------------------------------------------------------------------------
+# ─── Single engine (no duplicate) ────────────────────────────────────────────
 engine = create_engine(
     DATABASE_URL,
-    pool_size=10,          # keep 10 persistent connections
-    max_overflow=20,       # allow up to 20 extra under burst load
-    pool_pre_ping=True,    # test connections before handing them out
+    connect_args={"check_same_thread": False},
     echo=False
 )
 
 
-# ---------------------------------------------------------------------------
-# Session factory
-# ---------------------------------------------------------------------------
+# ─── WAL mode + foreign keys on every new connection ─────────────────────────
+@event.listens_for(engine, "connect")
+def set_sqlite_pragmas(dbapi_connection, connection_record):
+    cursor = dbapi_connection.cursor()
+    cursor.execute("PRAGMA journal_mode=WAL")   # concurrent readers + writer
+    cursor.execute("PRAGMA foreign_keys=ON")
+    cursor.execute("PRAGMA synchronous=NORMAL")  # safe and faster than FULL
+    cursor.close()
+
+
+# ─── Session factory ──────────────────────────────────────────────────────────
 SessionLocal = sessionmaker(
     autocommit=False,
     autoflush=False,
@@ -66,12 +35,20 @@ SessionLocal = sessionmaker(
 )
 
 
-# ---------------------------------------------------------------------------
-# FastAPI dependency
-# ---------------------------------------------------------------------------
+# ─── FastAPI dependency ───────────────────────────────────────────────────────
 def get_db() -> Session:
     db = SessionLocal()
     try:
         yield db
     finally:
         db.close()
+
+
+# ─── Postgres migration note ──────────────────────────────────────────────────
+# To migrate to Postgres (recommended for production):
+#   1. Install: pip install psycopg2-binary alembic
+#   2. Set DATABASE_URL=postgresql+psycopg2://user:pass@host:5432/claritystack
+#   3. Remove connect_args and the pragma listener above
+#   4. Run: alembic init migrations && alembic revision --autogenerate -m "init"
+#   5. Run: alembic upgrade head
+# The SQLAlchemy ORM layer is already database-agnostic; no model changes needed.

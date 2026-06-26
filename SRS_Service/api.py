@@ -7,11 +7,14 @@ import json
 import shutil
 import time
 from pathlib import Path
+from dotenv import load_dotenv
 from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 
 from pipeline.utils import setup_logger
+
+load_dotenv(override=True)
 
 logger = setup_logger("api")
 

@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { useParams, Link } from 'react-router-dom';
-import { Plus, MessageSquare, ArrowLeft, FolderKanban, Info } from 'lucide-react';
+import { useParams, Link, useNavigate } from 'react-router-dom';
+import { Plus, MessageSquare, ArrowLeft, FolderKanban, Info, Settings } from 'lucide-react';
 
 import { MainLayout } from '@/components/layout/MainLayout';
 import { ChatCard } from '@/components/chats/ChatCard';
@@ -26,8 +26,12 @@ import {
   Project,
   updateProject,
   renameChat,
-  toggleArchiveChat
+  toggleArchiveChat,
+  getProjectMembers,
 } from '@/lib/api';
+
+import { JoinRequestsPanel } from '@/components/projects/JoinRequestsPanel';
+import { ProjectSettingsPanel } from '@/components/projects/ProjectSettingsPanel';
 
 import { useToast } from '@/hooks/use-toast';
 
@@ -192,12 +196,27 @@ export default function ChatsPage() {
   const [showArchived, setShowArchived] = useState(false);
 
   const { toast } = useToast();
+  const navigate = useNavigate();
   const demoMode = isDemoMode();
+  const currentUserEmail = localStorage.getItem('cs_email') || '';
+  const isOwnerOrPm = !!(project && (
+    project.owner === currentUserEmail
+  ));
 
+  // Real RBAC role from members list
+  const [memberRole, setMemberRole] = useState<'owner'|'pm'|'member'|'viewer'>('member');
+  const isViewer = memberRole === 'viewer';
+
+  const currentUserRole: 'owner'|'pm'|'member'|'viewer' = (() => {
+    if (!project) return memberRole;
+    if (project.owner === currentUserEmail) return 'owner';
+    return memberRole;
+  })();
+  const [showSettings, setShowSettings] = useState(false);
   
 
 
-  // Load project
+  // Load project + derive real RBAC role
   useEffect(() => {
     if (!projectId) return;
 
@@ -205,13 +224,27 @@ export default function ChatsPage() {
       try {
         const data = await getProject(projectId);
         setProject(data);
+        // If this user is the owner, role is 'owner'
+        if (data.owner === currentUserEmail) {
+          setMemberRole('owner');
+          return;
+        }
+        // Otherwise fetch the members list to get their exact role
+        try {
+          const members = await getProjectMembers(projectId);
+          const me = members.find(m => m.user_email === currentUserEmail);
+          if (me) setMemberRole(me.role as 'owner'|'pm'|'member'|'viewer');
+        } catch {
+          // If we can't get members (public project, not yet enrolled) default to member
+          setMemberRole('member');
+        }
       } catch {
         console.warn("Could not load project details");
       }
     }
 
     loadProject();
-  }, [projectId]);
+  }, [projectId, currentUserEmail]);
 
 
 
@@ -361,11 +394,23 @@ const handleCreateChat = async (
           Back to Projects
         </Link>
 
-        <div className="flex items-center gap-3 mb-2">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-neon-violet to-neon-cyan flex items-center justify-center">
-            <FolderKanban className="w-5 h-5 text-background" />
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-neon-violet to-neon-cyan flex items-center justify-center">
+              <FolderKanban className="w-5 h-5 text-background" />
+            </div>
+            <h1 className="text-3xl font-bold gradient-text">Project Chats</h1>
           </div>
-          <h1 className="text-3xl font-bold gradient-text">Project Chats</h1>
+          {project && (
+            <button
+              onClick={() => setShowSettings(true)}
+              title="Project Settings"
+              className="flex items-center gap-2 px-3 py-2 rounded-xl bg-white/5 border border-white/10 hover:border-violet-500/50 hover:bg-violet-500/10 text-slate-400 hover:text-violet-300 transition-all text-sm"
+            >
+              <Settings className="w-4 h-4" />
+              Settings
+            </button>
+          )}
         </div>
 
         <p className="text-muted-foreground">
@@ -420,14 +465,16 @@ const handleCreateChat = async (
           PROJECT CONTEXT
         </h2>
 
-        <Button
-          variant="outline"
-          size="sm"
-          className="border-primary/30 hover:border-primary/60 hover:bg-primary/5"
-          onClick={() => setEditing(true)}
-        >
-          Edit Project Context
-        </Button>
+        {!isViewer && (
+          <Button
+            variant="outline"
+            size="sm"
+            className="border-primary/30 hover:border-primary/60 hover:bg-primary/5"
+            onClick={() => setEditing(true)}
+          >
+            Edit Project Context
+          </Button>
+        )}
       </div>
 
       {/* Content */}
@@ -464,6 +511,13 @@ const handleCreateChat = async (
       )}
 
     </div>
+  </div>
+)}
+
+{/* --- Join Requests Panel (visible only to Owner/PM) --- */}
+{projectId && (
+  <div className="mb-8">
+    <JoinRequestsPanel projectId={projectId} isOwnerOrPm={isOwnerOrPm} />
   </div>
 )}
 
@@ -512,10 +566,12 @@ const handleCreateChat = async (
           title="No chats yet"
           description="Create your first chat to start recording conversations."
           action={
-            <Button variant="neon" data-tour="import-chats" onClick={() => setIsModalOpen(true)}>
-              <Plus className="w-4 h-4" />
-              Create Chat
-            </Button>
+            !isViewer ? (
+              <Button variant="neon" data-tour="import-chats" onClick={() => setIsModalOpen(true)}>
+                <Plus className="w-4 h-4" />
+                Create Chat
+              </Button>
+            ) : undefined
           }
         />
       ) : (
@@ -526,56 +582,58 @@ const handleCreateChat = async (
 
               <ChatCard chat={chat} onDeleted={fetchChats} projectId={projectId} />
 
-              <div className="absolute right-4 top-4">
-                <DropdownMenu>
-                  <DropdownMenuTrigger className="p-2 rounded-md hover:bg-muted/40">
-                    ⋮
-                  </DropdownMenuTrigger>
+              {!isViewer && (
+                <div className="absolute right-4 top-4">
+                  <DropdownMenu>
+                    <DropdownMenuTrigger className="p-2 rounded-md hover:bg-muted/40">
+                      ⋮
+                    </DropdownMenuTrigger>
 
-                  <DropdownMenuContent align="end">
+                    <DropdownMenuContent align="end">
 
-                    <DropdownMenuItem
-                      onClick={async (e) => {
-                        e.preventDefault();
-                        await togglePinChat(chat.id, !chat.pinned);
-                        fetchChats();
-                      }}
-                    >
-                      {chat.pinned ? "⭐ Unpin Chat" : "⭐ Pin Chat"}
-                    </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={async (e) => {
+                          e.preventDefault();
+                          await togglePinChat(chat.id, !chat.pinned);
+                          fetchChats();
+                        }}
+                      >
+                        {chat.pinned ? "⭐ Unpin Chat" : "⭐ Pin Chat"}
+                      </DropdownMenuItem>
 
-                    <DropdownMenuItem
-                      onClick={async () => {
-                        await toggleArchiveChat(chat.id, !chat.archived);
-                        fetchChats();
-                      }}
-                    >
-                      {chat.archived ? "♻ Unarchive Chat" : "📂 Archive Chat"}
-                    </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={async () => {
+                          await toggleArchiveChat(chat.id, !chat.archived);
+                          fetchChats();
+                        }}
+                      >
+                        {chat.archived ? "♻ Unarchive Chat" : "📂 Archive Chat"}
+                      </DropdownMenuItem>
 
-                    <DropdownMenuItem
-                      onClick={async () => {
-                        const newTitle = prompt("Enter new chat name:", chat.title || "");
-                        if (!newTitle?.trim()) return;
-                        await renameChat(chat.id, newTitle.trim());
-                        fetchChats();
-                      }}
-                    >
-                      ✏ Rename Chat
-                    </DropdownMenuItem>
+                      <DropdownMenuItem
+                        onClick={async () => {
+                          const newTitle = prompt("Enter new chat name:", chat.title || "");
+                          if (!newTitle?.trim()) return;
+                          await renameChat(chat.id, newTitle.trim());
+                          fetchChats();
+                        }}
+                      >
+                        ✏ Rename Chat
+                      </DropdownMenuItem>
 
-                    <DropdownMenuSeparator />
+                      <DropdownMenuSeparator />
 
-                    <DropdownMenuItem
-                      className="text-red-500"
-                      onClick={() => handleDeleteChat(chat.id)}
-                    >
-                      🗑 Delete Chat
-                    </DropdownMenuItem>
+                      <DropdownMenuItem
+                        className="text-red-500"
+                        onClick={() => handleDeleteChat(chat.id)}
+                      >
+                        🗑 Delete Chat
+                      </DropdownMenuItem>
 
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -583,7 +641,7 @@ const handleCreateChat = async (
 
 
 
-      {chats.length > 0 && (
+      {!isViewer && chats.length > 0 && (
         <Button
           variant="default"
           size="lg"
@@ -607,6 +665,16 @@ const handleCreateChat = async (
 
 
 
+      {project && showSettings && (
+        <ProjectSettingsPanel
+          projectId={project.id}
+          projectName={project.name}
+          currentUserEmail={currentUserEmail}
+          currentUserRole={currentUserRole}
+          onClose={() => setShowSettings(false)}
+          onProjectDeleted={() => navigate('/projects')}
+        />
+      )}
       {project && (
         <EditProjectBannerModal
           isOpen={editing}

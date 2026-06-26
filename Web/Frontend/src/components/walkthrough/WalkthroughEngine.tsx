@@ -222,12 +222,12 @@ export function WalkthroughEngine() {
       {/* Walkthrough spotlight overlay portal */}
       {isTourActive && activeStep && (
         <div className="fixed inset-0 z-[99998] overflow-hidden pointer-events-none">
-          {/* Spotlight panels masking the screen around target element */}
+          {/* Spotlight panels — visual only, clicks pass through */}
           {targetRect ? (
             <>
               {/* Top mask */}
               <div
-                className="absolute bg-black/60 backdrop-blur-[2px] transition-all duration-300 pointer-events-auto"
+                className="absolute bg-black/60 backdrop-blur-[2px] transition-all duration-300 pointer-events-none"
                 style={{
                   top: 0,
                   left: 0,
@@ -237,7 +237,7 @@ export function WalkthroughEngine() {
               />
               {/* Bottom mask */}
               <div
-                className="absolute bg-black/60 backdrop-blur-[2px] transition-all duration-300 pointer-events-auto"
+                className="absolute bg-black/60 backdrop-blur-[2px] transition-all duration-300 pointer-events-none"
                 style={{
                   top: `${targetRect.bottom}px`,
                   left: 0,
@@ -247,7 +247,7 @@ export function WalkthroughEngine() {
               />
               {/* Left mask */}
               <div
-                className="absolute bg-black/60 backdrop-blur-[2px] transition-all duration-300 pointer-events-auto"
+                className="absolute bg-black/60 backdrop-blur-[2px] transition-all duration-300 pointer-events-none"
                 style={{
                   top: `${targetRect.top}px`,
                   left: 0,
@@ -257,7 +257,7 @@ export function WalkthroughEngine() {
               />
               {/* Right mask */}
               <div
-                className="absolute bg-black/60 backdrop-blur-[2px] transition-all duration-300 pointer-events-auto"
+                className="absolute bg-black/60 backdrop-blur-[2px] transition-all duration-300 pointer-events-none"
                 style={{
                   top: `${targetRect.top}px`,
                   left: `${targetRect.right}px`,
@@ -279,7 +279,7 @@ export function WalkthroughEngine() {
             </>
           ) : (
             /* Full screen dark blur cover for centered modal steps */
-            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm pointer-events-auto" />
+            <div className="absolute inset-0 bg-black/70 backdrop-blur-sm pointer-events-none" />
           )}
 
           {/* Premium Glassmorphic Tutorial Card */}
@@ -303,7 +303,7 @@ export function WalkthroughEngine() {
               </h4>
               <button
                 onClick={handleSkip}
-                className="text-slate-400 hover:text-white p-2 rounded-xl hover:bg-white/10 transition-all duration-200 shrink-0 hover:scale-105 active:scale-95"
+                className="relative z-50 pointer-events-auto cursor-pointer text-slate-400 hover:text-white p-2 rounded-xl hover:bg-white/10 transition-all duration-200 shrink-0 hover:scale-105 active:scale-95"
                 title="Skip Tour"
               >
                 <X className="w-6 h-6" />

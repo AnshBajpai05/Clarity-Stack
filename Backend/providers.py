@@ -6,7 +6,9 @@ from dotenv import load_dotenv
 # =========================================================
 # LOAD ENV
 # =========================================================
-load_dotenv()
+load_dotenv(override=True)
+
+import logging
 
 GROQ_KEY = os.getenv("GROQ_API_KEY")
 NVIDIA_KEY = os.getenv("NVIDIA_API_KEY")
@@ -24,13 +26,20 @@ from ir_schema import EXTRACTION_IR as SECTIONS
 
 
 # =========================================================
-# VALIDATION
+# NON-FATAL KEY VALIDATION
+# Logs warnings so the app boots and degrades gracefully.
+# Endpoints that need a missing key will fail at call-time,
+# not at import/boot time.
 # =========================================================
 if not GROQ_KEY:
-    raise ValueError("Missing GROQ_API_KEY in .env")
+    logging.warning(
+        "[providers] GROQ_API_KEY is not set — Groq models will be unavailable."
+    )
 
 if not NVIDIA_KEY:
-    raise ValueError("Missing NVIDIA_API_KEY in .env")
+    logging.warning(
+        "[providers] NVIDIA_API_KEY is not set — NVIDIA models will be unavailable."
+    )
 
 
 # =========================================================
@@ -95,15 +104,12 @@ def _ensure_all_sections(text: str) -> str:
 
 
 # =========================================================
-# ERROR BLOCK
+# ERROR BLOCK — returns None so callers skip this provider
+# instead of injecting "FACT: ERROR" text into synthesis.
 # =========================================================
-def _error_block(reason: str) -> str:
-    """
-    Returns an empty string so that failed provider calls are cleanly
-    treated as missing (skipped by the `if not raw_block` guard in main.py),
-    rather than injecting a FACT: ERROR entry that poisons the knowledge graph.
-    """
-    return ""
+def _error_block(reason: str) -> None:
+    logging.warning(f"[providers] Provider failed: {reason}")
+    return None
 
 
 # =========================================================
@@ -171,10 +177,10 @@ def ask_groq_llama(prompt: str) -> str:
         return _ensure_all_sections(raw)
 
     except Exception as e:
-        return _error_block(str(e))
+        return _error_block(str(e))   # returns None — caller skips
 
 
-def ask_groq_mixtral(prompt: str) -> str:
+def ask_groq_mixtral(prompt: str) -> "str | None":
 
     try:
 
@@ -189,10 +195,10 @@ def ask_groq_mixtral(prompt: str) -> str:
         return _ensure_all_sections(raw)
 
     except Exception as e:
-        return _error_block(str(e))
+        return _error_block(str(e))   # returns None — caller skips
 
 
-def ask_groq_gemma(prompt: str) -> str:
+def ask_groq_gemma(prompt: str) -> "str | None":
 
     try:
 
@@ -207,13 +213,13 @@ def ask_groq_gemma(prompt: str) -> str:
         return _ensure_all_sections(raw)
 
     except Exception as e:
-        return _error_block(str(e))
+        return _error_block(str(e))   # returns None — caller skips
 
 
 # =========================================================
 # NVIDIA MODELS
 # =========================================================
-def ask_nvidia_llama(prompt: str) -> str:
+def ask_nvidia_llama(prompt: str) -> "str | None":
 
     try:
 
@@ -228,10 +234,10 @@ def ask_nvidia_llama(prompt: str) -> str:
         return _ensure_all_sections(raw)
 
     except Exception as e:
-        return _error_block(str(e))
+        return _error_block(str(e))   # returns None — caller skips
 
 
-def ask_nvidia_mixtral(prompt: str) -> str:
+def ask_nvidia_mixtral(prompt: str) -> "str | None":
 
     try:
 
@@ -246,10 +252,10 @@ def ask_nvidia_mixtral(prompt: str) -> str:
         return _ensure_all_sections(raw)
 
     except Exception as e:
-        return _error_block(str(e))
+        return _error_block(str(e))   # returns None — caller skips
 
 
-def ask_nvidia_gemma(prompt: str) -> str:
+def ask_nvidia_gemma(prompt: str) -> "str | None":
 
     try:
 
@@ -264,7 +270,7 @@ def ask_nvidia_gemma(prompt: str) -> str:
         return _ensure_all_sections(raw)
 
     except Exception as e:
-        return _error_block(str(e))
+        return _error_block(str(e))   # returns None — caller skips
 
 
 # =========================================================
@@ -291,17 +297,17 @@ def run_multi_model_extraction(
         print(f"\nRunning: {model_name}")
 
         try:
-
-            outputs[model_name] = fn(prompt)
-
+            result = fn(prompt)
+            if result is None:
+                # _error_block returned None — provider failed, skip it
+                print(f"SKIPPED (provider failure): {model_name}")
+                continue
+            outputs[model_name] = result
             print(f"SUCCESS: {model_name}")
 
         except Exception as e:
-
-            outputs[model_name] = _error_block(str(e))
-
+            logging.warning(f"[providers] {model_name} raised unexpectedly: {e}")
             print(f"FAILED: {model_name}")
-
 
     return outputs
 
@@ -338,40 +344,8 @@ def ask_synthesis(
         return raw
 
     except Exception as e:
-
-        return _ensure_all_sections(f"""
-INPUT_AUDIT:
-blocks_received: {len(extracted_blocks)}
-
-MERGED_KNOWLEDGE:
-
-FACT:
-- SYNTHESIS ERROR: {str(e)}
-
-CONSTRAINT:
-- None
-
-ASSUMPTION:
-- None
-
-OPTION:
-- None
-
-DECISION:
-- None
-
-CONFLICT:
-- None
-
-EXAMPLE:
-- None
-
-UNKNOWN:
-- None
-
-CONFIDENCE:
-- None
-""".strip())
+        # Synthesis itself failed — raise so the caller can return a clean 503
+        raise RuntimeError(f"Synthesis failed: {str(e)}") from e
 
 
 # =========================================================

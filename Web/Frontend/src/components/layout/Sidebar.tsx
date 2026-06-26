@@ -1,10 +1,11 @@
 import { NavLink, useLocation } from 'react-router-dom';
-import { FolderKanban, Layers, Settings, Sparkles, Globe, FileSearch, Edit3, GitMerge } from 'lucide-react';
+import { FolderKanban, Layers, Settings, Sparkles, Globe, FileSearch, Edit3, GitMerge, UserPlus } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
 const navItems = [
   { to: '/projects', icon: FolderKanban, label: 'Projects' },
   { to: '/discovery', icon: Globe, label: 'Discovery Hub' },
+  { to: '/project-search', icon: UserPlus, label: 'Join Project' },
   { to: '/srs/dashboard', icon: FileSearch, label: 'Analyse SRS Document' },
   { to: '/editor/dashboard', icon: Edit3, label: 'Collab Editor' },
   { to: '/uml/dashboard', icon: GitMerge, label: 'UML-Clarity' },

@@ -1,7 +1,6 @@
-import React, { useEffect, useState, useContext, useRef } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "./supabaseClient";
-import { AuthContext } from "./App";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 const ACCENT_COLORS = ["#7c3aed","#4f46e5","#2563eb","#0891b2","#059669","#d97706","#dc2626","#db2777"];
@@ -24,7 +23,6 @@ const timeAgo = (iso) => {
 
 // ── component ─────────────────────────────────────────────────────────────────
 export default function Dashboard() {
-    const session  = useContext(AuthContext);
     const navigate = useNavigate();
 
     const [workspaces, setWorkspaces] = useState([]);
@@ -32,15 +30,11 @@ export default function Dashboard() {
     const [search, setSearch]         = useState("");
     const [showModal, setShowModal]   = useState(false); // new-workspace modal
 
-    // User identity — prefer full_name stored in metadata
-    const userMeta    = session?.user?.user_metadata || {};
-    const emailPrefix = session?.user?.email?.split("@")[0] || "";
-    const formattedEmailPrefix = emailPrefix.charAt(0).toUpperCase() + emailPrefix.slice(1);
-    
-    const fullName    = userMeta.full_name || userMeta.name || formattedEmailPrefix || "User";
-    const userEmail   = session?.user?.email || "";
+    // User identity — use localStorage from ClarityStack
+    const fullName    = localStorage.getItem('cs_nickname') || "User";
+    const userEmail   = localStorage.getItem('cs_email') || "";
     const initials    = getInitials(fullName);
-    const avatarColor = colorFor(userEmail);
+    const avatarColor = colorFor(userEmail || fullName);
     const firstName   = fullName.split(" ")[0];
 
     useEffect(() => { fetchWorkspaces(); }, []);
@@ -48,9 +42,9 @@ export default function Dashboard() {
     const fetchWorkspaces = async () => {
         setLoading(true);
         try {
-            const { data: { session: s } } = await supabase.auth.getSession();
+            const token = localStorage.getItem('token');
             const base = import.meta.env.VITE_EDITOR_BACKEND_URL || `http://${window.location.hostname}:8004`;
-            const res  = await fetch(`${base}/workspaces`, { headers: { Authorization: `Bearer ${s?.access_token}` } });
+            const res  = await fetch(`${base}/workspaces`, { headers: { Authorization: `Bearer ${token}` } });
             if (res.ok) setWorkspaces(await res.json());
         } catch (e) { console.error(e); }
         setLoading(false);
@@ -59,9 +53,9 @@ export default function Dashboard() {
     const deleteWorkspace = async (e, id) => {
         e.preventDefault();
         if (!window.confirm("Permanently delete this workspace?")) return;
-        const { data: { session: s } } = await supabase.auth.getSession();
+        const token = localStorage.getItem('token');
         const base = import.meta.env.VITE_EDITOR_BACKEND_URL || `http://${window.location.hostname}:8004`;
-        const res  = await fetch(`${base}/workspace/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${s?.access_token}` } });
+        const res  = await fetch(`${base}/workspace/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
         if (res.ok) setWorkspaces((p) => p.filter((w) => w.id !== id));
     };
 
@@ -90,7 +84,6 @@ export default function Dashboard() {
                         </div>
                         <span style={{ fontSize: "14px", fontWeight: 600, color: "#e5e7eb" }}>{fullName}</span>
                     </div>
-                    <button onClick={() => supabase.auth.signOut()} style={s.signOutBtn}>Sign out</button>
                 </div>
             </nav>
 
@@ -152,7 +145,6 @@ export default function Dashboard() {
             {/* ── New Workspace Modal ─────────────────────────────────────── */}
             {showModal && (
                 <NewWorkspaceModal
-                    session={session}
                     onClose={() => setShowModal(false)}
                     onCreated={(id) => navigate(`/editor/workspace/${id}`)}
                 />
@@ -164,7 +156,7 @@ export default function Dashboard() {
 }
 
 // ── New Workspace Modal ───────────────────────────────────────────────────────
-function NewWorkspaceModal({ session, onClose, onCreated }) {
+function NewWorkspaceModal({ onClose, onCreated }) {
     const [name, setName]         = useState("");
     const [isPublic, setIsPublic] = useState(true);
     const [creating, setCreating] = useState(false);
@@ -177,11 +169,11 @@ function NewWorkspaceModal({ session, onClose, onCreated }) {
         if (!name.trim()) return;
         setCreating(true);
         try {
-            const { data: { session: s } } = await supabase.auth.getSession();
+            const token = localStorage.getItem('token');
             const base = import.meta.env.VITE_EDITOR_BACKEND_URL || `http://${window.location.hostname}:8004`;
             const res  = await fetch(`${base}/workspace`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${s?.access_token}` },
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
                 body: JSON.stringify({ name: name.trim(), is_public: isPublic }),
             });
             if (res.ok) { const d = await res.json(); onCreated(d.room_id); }

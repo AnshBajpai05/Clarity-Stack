@@ -1,13 +1,16 @@
-import React, { useEffect, useState, useCallback, useRef, useContext } from "react";
+import React, { useEffect, useState, useCallback, useRef } from "react";
 import { useParams, Link } from "react-router-dom";
 import { socket } from "./socket";
-import { AuthContext } from "./App";
 import { generateUML } from "@/lib/api";
 import { toast } from "sonner";
 
 function Workspace() {
     const { id } = useParams();
-    const session = useContext(AuthContext);
+    
+    // Replace AuthContext with ClarityStack standard auth
+    const token = localStorage.getItem("token");
+    const currentUserEmail = localStorage.getItem("cs_email");
+
     const [sections, setSections] = useState([]);
     const [connected, setConnected] = useState(false);
     const [userCount, setUserCount] = useState(0);
@@ -28,29 +31,39 @@ function Workspace() {
     useEffect(() => {
         const fetchWorkspaceMeta = async () => {
             const baseUrl = import.meta.env.VITE_EDITOR_BACKEND_URL || `http://${window.location.hostname}:8004`;
-            const res = await fetch(`${baseUrl}/workspace/${id}`, {
-                headers: { Authorization: `Bearer ${session?.access_token}` },
-            });
-            if (res.ok) {
-                const data = await res.json();
-                if (!data.is_public && session?.user?.id !== data.owner_id) setReadOnly(true);
+            try {
+                const res = await fetch(`${baseUrl}/workspace/${id}`, {
+                    headers: { Authorization: `Bearer ${token}` },
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    const ownerId = data.owner_id;
+                    const isPublic = data.is_public !== false; // default true
+
+                    // Lock read-only ONLY when: private AND has an owner AND user is NOT the owner
+                    if (!isPublic && ownerId !== null && ownerId !== undefined && currentUserEmail !== ownerId) {
+                        setReadOnly(true);
+                    }
+                }
+            } catch (err) {
+                console.error("Failed to fetch workspace meta:", err);
             }
         };
         fetchWorkspaceMeta();
-    }, [id, session]);
+    }, [id, token, currentUserEmail]);
 
     const fetchActivityLogs = useCallback(async () => {
-        if (!session?.access_token) return;
+        if (!token) return;
         try {
             const baseUrl = import.meta.env.VITE_EDITOR_BACKEND_URL || `http://${window.location.hostname}:8004`;
             const res = await fetch(`${baseUrl}/activity/${id}`, {
-                headers: { Authorization: `Bearer ${session.access_token}` },
+                headers: { Authorization: `Bearer ${token}` },
             });
             if (res.ok) setActivityLogs(await res.json());
         } catch (err) {
             console.error("Failed to fetch activity logs", err);
         }
-    }, [id, session]);
+    }, [id, token]);
 
     useEffect(() => {
         if (showActivityPanel) fetchActivityLogs();
@@ -98,12 +111,12 @@ function Workspace() {
 
     // ── Activity logging ─────────────────────────────────────────────────────
     const logActivity = async (action, content, cursorPosition = 0) => {
-        if (!session?.access_token) return;
+        if (!token) return;
         try {
             const baseUrl = import.meta.env.VITE_EDITOR_BACKEND_URL || `http://${window.location.hostname}:8004`;
             await fetch(`${baseUrl}/activity`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${session.access_token}` },
+                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
                 body: JSON.stringify({ workspace_id: id, action, content_preview: content.slice(-30), cursor_position: cursorPosition }),
             });
         } catch (err) { /* silent */ }

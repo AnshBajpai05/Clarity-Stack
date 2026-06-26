@@ -3,10 +3,15 @@ import json
 import torch
 import fitz
 from pathlib import Path
-from marker.converters.pdf import PdfConverter
-from marker.models import create_model_dict
-from marker.output import text_from_rendered
 from pipeline.utils import setup_logger, RawPageRecord, save_json, load_json
+
+try:
+    from marker.converters.pdf import PdfConverter
+    from marker.models import create_model_dict
+    from marker.output import text_from_rendered
+    _MARKER_AVAILABLE = True
+except ImportError:
+    _MARKER_AVAILABLE = False
 
 logger = setup_logger("stage2_extract_vlm")
 
@@ -14,6 +19,7 @@ def extract_pdf_vlm(pdf_path: Path, output_dir: Path, progress_callback=None) ->
     """
     State-of-the-Art (SOTA) Vision-Language Model extraction using Marker.
     Enforces GPU, extracts page-by-page implicitly preventing merged page errors.
+    If marker is not available, falls back to PyMuPDF (fitz).
     """
     logger.info(f"Starting VLM extraction on {pdf_path.name}")
     
@@ -39,10 +45,6 @@ def extract_pdf_vlm(pdf_path: Path, output_dir: Path, progress_callback=None) ->
     try:
         logger.info("Initializing Vision & OCR Models... (This takes a moment)")
         
-        # Load heavy arrays into memory ONCE
-        artifact_dict = create_model_dict()
-        converter = PdfConverter(artifact_dict=artifact_dict)
-        
         doc = fitz.open(pdf_path)
         doc_id = pdf_path.stem
         total_pages = len(doc)
@@ -52,37 +54,58 @@ def extract_pdf_vlm(pdf_path: Path, output_dir: Path, progress_callback=None) ->
         output_dir.mkdir(parents=True, exist_ok=True)
         
         logger.info(f"Processing {total_pages} pages sequentially for exact page separation...")
-        for i in range(total_pages):
-            logger.info(f"VLM processing page {i+1}/{total_pages}")
-            if progress_callback:
-                percent = 5 + int((i / total_pages) * 20)  # Pages take up 5%→25% range
-                progress_callback("Parsing Document", f"VLM processing page {i+1}/{total_pages}", percent)
-            
-            # Temporary single-page PDF for Marker
-            tmp_pdf_path = output_dir / f"tmp_{doc_id}_page_{i}.pdf"
-            doc_single = fitz.open()
-            doc_single.insert_pdf(doc, from_page=i, to_page=i)
-            doc_single.save(tmp_pdf_path)
-            doc_single.close()
-            
-            try:
-                # Run Marker on the slice
-                rendered = converter(str(tmp_pdf_path))
-                text, _, _ = text_from_rendered(rendered)
+        
+        if not _MARKER_AVAILABLE:
+            logger.warning("Marker package not found! Falling back to PyMuPDF text extraction.")
+            for i in range(total_pages):
+                if progress_callback:
+                    percent = 5 + int((i / total_pages) * 20)
+                    progress_callback("Parsing Document", f"Fallback processing page {i+1}/{total_pages}", percent)
                 
-                # Create correct record
+                text = doc[i].get_text("text")
                 record = RawPageRecord(
                     doc_id=doc_id,
                     page_num=i,
                     raw_text=text,
-                    extraction_method="marker_vlm_strict"
+                    extraction_method="pymupdf_fallback"
                 )
                 extracted_pages.append(record)
+        else:
+            # Load heavy arrays into memory ONCE
+            artifact_dict = create_model_dict()
+            converter = PdfConverter(artifact_dict=artifact_dict)
+            
+            for i in range(total_pages):
+                logger.info(f"VLM processing page {i+1}/{total_pages}")
+                if progress_callback:
+                    percent = 5 + int((i / total_pages) * 20)
+                    progress_callback("Parsing Document", f"VLM processing page {i+1}/{total_pages}", percent)
                 
-            finally:
-                if tmp_pdf_path.exists():
-                    tmp_pdf_path.unlink()
+                # Temporary single-page PDF for Marker
+                tmp_pdf_path = output_dir / f"tmp_{doc_id}_page_{i}.pdf"
+                doc_single = fitz.open()
+                doc_single.insert_pdf(doc, from_page=i, to_page=i)
+                doc_single.save(tmp_pdf_path)
+                doc_single.close()
+                
+                try:
+                    # Run Marker on the slice
+                    rendered = converter(str(tmp_pdf_path))
+                    text, _, _ = text_from_rendered(rendered)
                     
+                    # Create correct record
+                    record = RawPageRecord(
+                        doc_id=doc_id,
+                        page_num=i,
+                        raw_text=text,
+                        extraction_method="marker_vlm_strict"
+                    )
+                    extracted_pages.append(record)
+                    
+                finally:
+                    if tmp_pdf_path.exists():
+                        tmp_pdf_path.unlink()
+                        
         doc.close()
         
         # 3. Post-Extraction Sanity Check

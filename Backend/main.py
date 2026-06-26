@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException
+from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query
 from sqlalchemy.orm import Session
 from typing import List
 from pydantic import BaseModel, Field
@@ -9,7 +9,7 @@ from models import Project
 
 from providers import ask_groq, ask_gemini, ask_hf, ask_direct_answer
 from uuid import uuid4
-# from signal_classify import classify_signal
+from signal_classify import classify_signal
 from synthesis_service import generate_and_store_synthesis
 from auth import hash_password, verify_password, create_access_token, get_current_user
 from models import User
@@ -126,6 +126,90 @@ class ProjectOut(BaseModel):
 
 from models import ProjectMember, JoinRequest
 
+# ─── Access Control Helper ────────────────────────────────────────────────────
+def log_project_activity(db: Session, project_id: str, actor_email: str, action: str, details: str = None):
+    from models import ProjectActivityLog
+    log = ProjectActivityLog(
+        project_id=project_id,
+        actor_email=actor_email,
+        action=action,
+        details=details
+    )
+    db.add(log)
+
+def _get_project_member(db: Session, project_id: str, user_email: str):
+    """Return ProjectMember object or None."""
+    from models import ProjectMember
+    return db.query(ProjectMember).filter(
+        ProjectMember.project_id == project_id,
+        ProjectMember.user_email == user_email
+    ).first()
+
+def get_project_or_403(
+    db: Session,
+    project_id: str,
+    user_email: str,
+    allow_public_read: bool = False,
+    allow_public_write: bool = False,
+    required_roles: list = None
+) -> "Project":
+    """
+    Fetch a project and enforce access control with RBAC.
+    Roles: "owner", "pm", "member", "viewer"
+    """
+    project = db.query(Project).filter(Project.id == project_id).first()
+    if not project:
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    is_owner = project.owner == user_email
+    member_obj = _get_project_member(db, project_id, user_email)
+    user_role = "owner" if is_owner else (member_obj.role if member_obj else None)
+
+    is_public = project.visibility == "public"
+
+    # Enforce specific roles if requested
+    if required_roles and user_role not in required_roles:
+        # If public project and they don't have a role yet, they might get auto-enrolled below
+        if not (is_public and allow_public_write and "member" in required_roles and user_role is None):
+            raise HTTPException(status_code=403, detail="Insufficient permissions for this action.")
+
+    if is_public and (allow_public_read or allow_public_write):
+        if allow_public_write and not user_role:
+            from models import ProjectMember
+            new_member = ProjectMember(project_id=project_id, user_email=user_email, role="member")
+            db.add(new_member)
+            try:
+                db.commit()
+                log_project_activity(db, project_id, user_email, "user_joined", "Auto-enrolled on first write to public project")
+                db.commit()
+            except Exception:
+                db.rollback()  # already enrolled via race condition
+        return project
+
+    if not user_role:
+        # Hide the fact the project exists to prevent enumeration
+        raise HTTPException(status_code=404, detail="Project not found")
+
+    return project
+
+
+def get_chat_or_403(db: Session, chat_id: str, user_email: str, allow_public: bool = False, required_roles: list = None) -> "Chat":
+    """Fetch a chat and enforce that the caller has access to its parent project."""
+    from models import Chat
+    chat = db.query(Chat).filter(Chat.id == chat_id).first()
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    # This will raise 404 if user has no access to the project
+    get_project_or_403(
+        db, chat.project_id, user_email,
+        allow_public_read=allow_public,
+        allow_public_write=allow_public,
+        required_roles=required_roles
+    )
+    return chat
+
+# ─────────────────────────────────────────────────────────────────────────────
+
 @app.post("/projects", response_model=ProjectOut)
 def create_project(payload: ProjectCreate, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
     user_email = current_user["email"]
@@ -200,10 +284,12 @@ def search_projects(
     return []
 
 @app.get("/projects/{project_id}", response_model=ProjectOut)
-def get_project(project_id: str, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+def get_project(
+    project_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    project = get_project_or_403(db, project_id, current_user["email"], allow_public_read=True)
     return project
 
 class JoinRequestCreate(BaseModel):
@@ -214,8 +300,6 @@ def request_join(project_id: str, db: Session = Depends(get_db), current_user: d
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404)
-    if project.visibility != "public":
-        raise HTTPException(status_code=400, detail="Cannot request to join a private project")
 
     user_email = current_user["email"]
     member = db.query(ProjectMember).filter(ProjectMember.project_id == project_id, ProjectMember.user_email == user_email).first()
@@ -236,12 +320,7 @@ def request_join(project_id: str, db: Session = Depends(get_db), current_user: d
 
 @app.get("/projects/{project_id}/join-requests")
 def get_join_requests(project_id: str, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
-    user_email = current_user["email"]
-    project = db.query(Project).filter(Project.id == project_id).first()
-    member = db.query(ProjectMember).filter(ProjectMember.project_id == project_id, ProjectMember.user_email == user_email, ProjectMember.role == "pm").first()
-    
-    if project.owner != user_email and not member:
-        raise HTTPException(status_code=403, detail="Not PM")
+    get_project_or_403(db, project_id, current_user["email"], required_roles=["owner", "pm"])
 
     requests = db.query(JoinRequest).filter(JoinRequest.project_id == project_id).all()
     return [{"id": r.id, "user_email": r.user_email, "status": r.status} for r in requests]
@@ -252,16 +331,13 @@ def update_join_request(request_id: str, status: str, db: Session = Depends(get_
     if not req:
         raise HTTPException(status_code=404)
 
-    user_email = current_user["email"]
-    project = db.query(Project).filter(Project.id == req.project_id).first()
-    member = db.query(ProjectMember).filter(ProjectMember.project_id == req.project_id, ProjectMember.user_email == user_email, ProjectMember.role == "pm").first()
-
-    if project.owner != user_email and not member:
-        raise HTTPException(status_code=403, detail="Not PM")
+    # Validate PM/Owner access
+    get_project_or_403(db, req.project_id, current_user["email"], required_roles=["owner", "pm"])
 
     if status == "accepted":
         new_member = ProjectMember(project_id=req.project_id, user_email=req.user_email, role="member")
         db.add(new_member)
+        log_project_activity(db, req.project_id, current_user["email"], "request_approved", f"Approved join request for {req.user_email}")
 
     req.status = status
     db.commit()
@@ -272,17 +348,86 @@ class InvitePayload(BaseModel):
 
 @app.post("/projects/{project_id}/invite")
 def invite_user(project_id: str, payload: InvitePayload, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
-    user_email = current_user["email"]
-    project = db.query(Project).filter(Project.id == project_id).first()
-    member = db.query(ProjectMember).filter(ProjectMember.project_id == project_id, ProjectMember.user_email == user_email, ProjectMember.role == "pm").first()
+    get_project_or_403(db, project_id, current_user["email"], required_roles=["owner", "pm"])
 
-    if project.owner != user_email and not member:
-        raise HTTPException(status_code=403, detail="Not PM")
+    # check if already exists
+    existing = _get_project_member(db, project_id, payload.user_email)
+    if existing:
+        raise HTTPException(status_code=400, detail="User is already a member")
 
     new_member = ProjectMember(project_id=project_id, user_email=payload.user_email, role="member")
     db.add(new_member)
+    log_project_activity(db, project_id, current_user["email"], "user_joined", f"Invited {payload.user_email} as member")
     db.commit()
     return {"status": "User invited"}
+
+
+class RoleUpdatePayload(BaseModel):
+    role: str
+
+@app.get("/projects/{project_id}/members")
+def list_members(project_id: str, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    project = get_project_or_403(db, project_id, current_user["email"], allow_public_read=True)
+    members = db.query(ProjectMember).filter(ProjectMember.project_id == project_id).all()
+    result = [{"id": m.id, "project_id": m.project_id, "user_email": m.user_email, "role": m.role} for m in members]
+    # Prepend the owner with role="owner" so frontend knows
+    result.insert(0, {"id": "owner", "project_id": project_id, "user_email": project.owner, "role": "owner"})
+    return result
+
+@app.patch("/projects/{project_id}/members/{user_email}/role")
+
+def update_member_role(project_id: str, user_email: str, payload: RoleUpdatePayload, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    project = get_project_or_403(db, project_id, current_user["email"], required_roles=["owner", "pm"])
+
+    if project.owner == user_email:
+        raise HTTPException(status_code=400, detail="Cannot change owner role")
+
+    if payload.role not in ["pm", "member", "viewer"]:
+        raise HTTPException(status_code=400, detail="Invalid role")
+
+    member = _get_project_member(db, project_id, user_email)
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    old_role = member.role
+    member.role = payload.role
+    log_project_activity(db, project_id, current_user["email"], "role_changed", f"Changed role of {user_email} from {old_role} to {payload.role}")
+    db.commit()
+    return {"status": "Role updated"}
+
+
+@app.delete("/projects/{project_id}/members/{user_email}")
+def remove_member(project_id: str, user_email: str, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    project = get_project_or_403(db, project_id, current_user["email"], required_roles=["owner", "pm"])
+
+    if project.owner == user_email:
+        raise HTTPException(status_code=400, detail="Cannot remove owner")
+
+    member = _get_project_member(db, project_id, user_email)
+    if not member:
+        raise HTTPException(status_code=404, detail="Member not found")
+
+    db.delete(member)
+    log_project_activity(db, project_id, current_user["email"], "user_removed", f"Removed {user_email} from project")
+    db.commit()
+    return {"status": "Member removed"}
+
+from models import ProjectActivityLog
+
+@app.get("/projects/{project_id}/activity")
+def get_activity_logs(project_id: str, db: Session = Depends(get_db), current_user: dict = Depends(get_current_user)):
+    get_project_or_403(db, project_id, current_user["email"], required_roles=["owner", "pm"])
+
+    logs = db.query(ProjectActivityLog).filter(ProjectActivityLog.project_id == project_id).order_by(ProjectActivityLog.created_at.desc()).limit(50).all()
+    return [
+        {
+            "id": log.id,
+            "actor_email": log.actor_email,
+            "action": log.action,
+            "details": log.details,
+            "created_at": log.created_at
+        } for log in logs
+    ]
 
 
 from pydantic import BaseModel, Field
@@ -335,12 +480,12 @@ from fastapi import HTTPException
 def create_chat(
     project_id: str = Path(...),
     payload: ChatCreate = None,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
-    # Check if project exists
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    # Allow owners/members always; for public projects any authenticated user can create a chat
+    # (they will be auto-enrolled as a member on first write)
+    get_project_or_403(db, project_id, current_user["email"], allow_public_write=True, required_roles=["owner", "pm", "member"])
 
     chat = Chat(
         project_id=project_id,
@@ -353,7 +498,6 @@ def create_chat(
         description=payload.description,
         owner=payload.owner,
     )
-
 
     db.add(chat)
     db.commit()
@@ -369,11 +513,11 @@ from fastapi import Query
 def list_chats(
     project_id: str,
     archived: bool = Query(False),
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
-    project = db.query(Project).filter(Project.id == project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    # Enforce access: members/owners always allowed; public projects allow read
+    get_project_or_403(db, project_id, current_user["email"], allow_public_read=True)
 
     chats = (
         db.query(Chat)
@@ -456,11 +600,14 @@ from sqlalchemy.exc import SQLAlchemyError
 from models import QuarantinedMessage
 
 @app.post("/chats/{chat_id}/messages", response_model=MessageOut)
-def create_message(chat_id: str, payload: MessageCreate, db: Session = Depends(get_db)):
-
-    chat = db.query(Chat).filter(Chat.id == chat_id).first()
-    if not chat:
-        raise HTTPException(status_code=404, detail="Chat not found")
+def create_message(
+    chat_id: str,
+    payload: MessageCreate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    # allow_public=True so members of public projects can post messages
+    chat = get_chat_or_403(db, chat_id, current_user["email"], allow_public=True, required_roles=["owner", "pm", "member"])
 
     try:
         message = Message(
@@ -498,12 +645,10 @@ def create_message(chat_id: str, payload: MessageCreate, db: Session = Depends(g
 @app.get("/chats/{chat_id}/messages", response_model=List[MessageOut])
 def list_messages(
     chat_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
-
-    chat = db.query(Chat).filter(Chat.id == chat_id).first()
-    if not chat:
-        raise HTTPException(status_code=404, detail="Chat not found")
+    chat = get_chat_or_403(db, chat_id, current_user["email"], allow_public=True)
 
     messages = (
         db.query(Message)
@@ -521,12 +666,14 @@ class SummaryToggle(BaseModel):
 def toggle_message_in_summary(
     message_id: str,
     payload: SummaryToggle,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
-
     message = db.query(Message).filter(Message.id == message_id).first()
     if not message:
         raise HTTPException(status_code=404, detail="Message not found")
+    # Verify caller has access to the chat's parent project
+    get_chat_or_403(db, message.chat_id, current_user["email"])
 
     message.include_in_summary = payload.include
     db.commit()
@@ -542,12 +689,13 @@ class MessageTypeUpdate(BaseModel):
 def update_message_type(
     message_id: str,
     payload: MessageTypeUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
-
     message = db.query(Message).filter(Message.id == message_id).first()
     if not message:
         raise HTTPException(status_code=404, detail="Message not found")
+    get_chat_or_403(db, message.chat_id, current_user["email"])
 
     message.type = payload.type
     db.commit()
@@ -578,46 +726,61 @@ def _call_satellite_cleanup(scope: str, target_id: str):
         logging.error(f"Satellite cleanup exception for {scope} {target_id}: {e}")
         return False
 
-@app.delete("/chats/{chat_id}")
-def delete_chat(chat_id: str, db: Session = Depends(get_db)):
-    chat = db.query(Chat).filter(Chat.id == chat_id).first()
-
-    if not chat:
-        raise HTTPException(status_code=404, detail="Chat not found")
-
-    # 1. Manual Cleanup for related entities (SQLite CASCADE fallback)
+def _delete_chat_internal(chat_id: str, db: Session):
+    """Internal helper — deletes a chat and its children without access control checks."""
     from models import Message, Synthesis, KnowledgeNode, KnowledgeEdge
-    
-    # Order matters to avoid FK violations during manual deletion
     db.query(KnowledgeEdge).filter(KnowledgeEdge.chat_id == chat_id).delete(synchronize_session=False)
     db.query(KnowledgeNode).filter(KnowledgeNode.chat_id == chat_id).delete(synchronize_session=False)
     db.query(Message).filter(Message.chat_id == chat_id).delete(synchronize_session=False)
     db.query(Synthesis).filter(Synthesis.chat_id == chat_id).delete(synchronize_session=False)
-
-    # 2. Delete the chat itself
-    db.delete(chat)
-    db.commit()
-
-    # 3. External cleanup
+    chat = db.query(Chat).filter(Chat.id == chat_id).first()
+    if chat:
+        db.delete(chat)
+        db.commit()
     _call_satellite_cleanup("chat", chat_id)
+
+
+@app.delete("/chats/{chat_id}")
+def delete_chat(
+    chat_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    chat = db.query(Chat).filter(Chat.id == chat_id).first()
+    if not chat:
+        raise HTTPException(status_code=404, detail="Chat not found")
+    # Only project PMs or Owners can delete chats
+    get_project_or_403(db, chat.project_id, current_user["email"], required_roles=["owner", "pm"])
+
+    _delete_chat_internal(chat_id, db)
 
     return {"status": "deleted", "chat_id": chat_id}
 
 @app.delete("/projects/{project_id}")
-def delete_project(project_id: str, db: Session = Depends(get_db)):
+def delete_project(
+    project_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    user_email = current_user["email"]
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+    # Only the owner or a PM can delete a project
+    get_project_or_403(db, project_id, user_email, required_roles=["owner"])
 
     # 1. Manual Cleanup for related chats
     from models import Chat
     chats = db.query(Chat).filter(Chat.project_id == project_id).all()
     for chat in chats:
-        delete_chat(chat.id, db)
+        _delete_chat_internal(chat.id, db)
 
     # 2. Delete project itself
     db.delete(project)
     db.commit()
+
+    # 3. External cleanup
+    scrubbed = _call_satellite_cleanup("project", project_id)
 
     return {"status": "deleted", "project_id": project_id, "satellite_scrubbed": scrubbed}
 
@@ -685,31 +848,41 @@ class PinUpdate(BaseModel):
     pinned: bool
 
 @app.patch("/chats/{chat_id}/pin")
-def update_pin_state(chat_id: str, payload: PinUpdate, db: Session = Depends(get_db)):
-    chat = db.query(Chat).filter(Chat.id == chat_id).first()
-
-    if not chat:
-        raise HTTPException(status_code=404, detail="Chat not found")
-
+def update_pin_state(
+    chat_id: str,
+    payload: PinUpdate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    chat = get_chat_or_403(db, chat_id, current_user["email"])
     chat.pinned = payload.pinned
     db.commit()
     db.refresh(chat)
-
     return {"status": "ok", "pinned": chat.pinned}
 
 class ArchiveUpdate(BaseModel):
     archived: bool
 
 @app.patch("/chats/{chat_id}/archive")
-def archive_chat(chat_id: str, payload: ArchiveUpdate, db: Session = Depends(get_db)):
-    chat = db.query(Chat).filter(Chat.id == chat_id).first()
+def archive_chat(
+    chat_id: str,
+    payload: ArchiveUpdate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    chat = get_chat_or_403(db, chat_id, current_user["email"])
     chat.archived = payload.archived
     db.commit()
     db.refresh(chat)
     return {"status": "ok", "archived": chat.archived}
 
 @app.get("/projects/{project_id}/chats/archived", response_model=List[ChatOut])
-def list_archived_chats(project_id: str, db: Session = Depends(get_db)):
+def list_archived_chats(
+    project_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    get_project_or_403(db, project_id, current_user["email"])
     return (
         db.query(Chat)
         .filter(Chat.project_id == project_id, Chat.archived == True)
@@ -744,7 +917,13 @@ def tag_with_provider(provider: str, block: str) -> str:
 
 
 @app.post("/chats/{chat_id}/ask")
-def ask_multi_model(chat_id: str, payload: AskPayload, db: Session = Depends(get_db)):
+def ask_multi_model(
+    chat_id: str,
+    payload: AskPayload,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    get_chat_or_403(db, chat_id, current_user["email"])
 
     # 1. Classify signal
     signal = classify_signal(payload.text)
@@ -925,11 +1104,14 @@ class AcceptUpdate(BaseModel):
 def accept_message(
     message_id: str,
     payload: AcceptUpdate,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
     msg = db.query(Message).filter(Message.id == message_id).first()
     if not msg:
         raise HTTPException(status_code=404, detail="Message not found")
+    # Verify caller can access the parent project
+    get_chat_or_403(db, msg.chat_id, current_user["email"])
 
     if msg.role != "assistant":
         raise HTTPException(status_code=400, detail="Only assistant messages can be accepted")
@@ -1022,22 +1204,27 @@ def classify_signal(text: str):
 def update_project(
     project_id: str,
     payload: dict,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
-    project = db.query(Project).filter(Project.id == project_id).first()
-
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
+    user_email = current_user["email"]
+    project = get_project_or_403(db, project_id, user_email)
+    # Only the owner or a PM can update project metadata
+    is_pm = db.query(ProjectMember).filter(
+        ProjectMember.project_id == project_id,
+        ProjectMember.user_email == user_email,
+        ProjectMember.role == "pm"
+    ).first()
+    if project.owner != user_email and not is_pm:
+        raise HTTPException(status_code=403, detail="Only project owner or PM can edit project details")
 
     allowed = {"purpose", "success_criteria", "constraints", "owner"}
-
     for key, value in payload.items():
         if key in allowed:
             setattr(project, key, value)
 
     db.commit()
     db.refresh(project)
-
     return project
 
 from fastapi import HTTPException, Depends
@@ -1046,16 +1233,12 @@ from sqlalchemy.orm import Session
 # make sure ChatOut + Chat + get_db are already imported
 
 @app.get("/chats/{chat_id}", response_model=ChatOut)
-def get_chat(chat_id: str, db: Session = Depends(get_db)):
-    chat = (
-        db.query(Chat)
-        .filter(Chat.id == chat_id)
-        .first()
-    )
-
-    if not chat:
-        raise HTTPException(status_code=404, detail="Chat not found")
-
+def get_chat(
+    chat_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    chat = get_chat_or_403(db, chat_id, current_user["email"])
     return chat
 
 from typing import Optional
@@ -1078,17 +1261,16 @@ from sqlalchemy.orm import Session
 
 
 @app.patch("/chats/{chat_id}", response_model=ChatOut)
-def update_chat(chat_id: str, payload: ChatUpdate, db: Session = Depends(get_db)):
-
-    chat = db.query(Chat).filter(Chat.id == chat_id).first()
-    if not chat:
-        raise HTTPException(status_code=404, detail="Chat not found")
-
+def update_chat(
+    chat_id: str,
+    payload: ChatUpdate,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    chat = get_chat_or_403(db, chat_id, current_user["email"])
     updates = payload.model_dump(exclude_unset=True)
-
     for key, value in updates.items():
         setattr(chat, key, value)
-
     db.commit()
     db.refresh(chat)
     return chat
@@ -1103,8 +1285,12 @@ from schemas import MessageSchema   # <-- your existing Pydantic schema
 
 
 @app.get("/chats/{chat_id}/accepted", response_model=List[MessageSchema])
-async def get_accepted_messages(chat_id: str, db: Session = Depends(get_db)):
-
+async def get_accepted_messages(
+    chat_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    get_chat_or_403(db, chat_id, current_user["email"])
     return (
         db.query(Message)
         .filter(
@@ -1118,7 +1304,12 @@ async def get_accepted_messages(chat_id: str, db: Session = Depends(get_db)):
 
 
 @app.get("/chats/{chat_id}/user", response_model=List[MessageSchema])
-async def get_user_messages(chat_id: str, db: Session = Depends(get_db)):
+async def get_user_messages(
+    chat_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    get_chat_or_403(db, chat_id, current_user["email"])
     return (
         db.query(Message)
         .filter(Message.chat_id == chat_id, Message.role == "user")
@@ -1275,7 +1466,12 @@ from reasoning_queries import get_decision_explanation
 from reasoning_queries import get_decision_explanation
 
 @app.get("/api/reasoning/chat/{chat_id}")
-def get_reasoning(chat_id: str, db: Session = Depends(get_db)):
+def get_reasoning(
+    chat_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    get_chat_or_403(db, chat_id, current_user["email"])
     data = get_decision_explanation(db, chat_id)
 
     from fastapi.encoders import jsonable_encoder
@@ -1322,3 +1518,136 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# WEBSOCKET: Real-Time Chat Presence & Typing Indicators
+# ─────────────────────────────────────────────────────────────────────────────
+
+from auth import SECRET_KEY, ALGORITHM
+from jose import jwt, JWTError
+import json
+from typing import Dict, Set
+
+
+class ChatPresenceManager:
+    """Tracks which users (identified by email) are connected to which chat room."""
+
+    def __init__(self):
+        # chat_id -> { email: WebSocket }
+        self.rooms: Dict[str, Dict[str, WebSocket]] = {}
+
+    async def connect(self, chat_id: str, user_email: str, websocket: WebSocket):
+        await websocket.accept()
+        if chat_id not in self.rooms:
+            self.rooms[chat_id] = {}
+        self.rooms[chat_id][user_email] = websocket
+
+    def disconnect(self, chat_id: str, user_email: str):
+        room = self.rooms.get(chat_id, {})
+        room.pop(user_email, None)
+        if not room:
+            self.rooms.pop(chat_id, None)
+
+    async def broadcast(self, chat_id: str, sender_email: str, message: dict):
+        """Send to all connected users in the room EXCEPT the sender."""
+        room = self.rooms.get(chat_id, {})
+        dead = []
+        for email, ws in room.items():
+            if email == sender_email:
+                continue
+            try:
+                await ws.send_text(json.dumps(message))
+            except Exception:
+                dead.append(email)
+        for email in dead:
+            room.pop(email, None)
+
+    def get_presence(self, chat_id: str) -> list:
+        """Return list of currently connected user emails for a room."""
+        return list(self.rooms.get(chat_id, {}).keys())
+
+
+presence_manager = ChatPresenceManager()
+
+
+@app.websocket("/ws/chats/{chat_id}")
+async def chat_websocket_endpoint(
+    websocket: WebSocket,
+    chat_id: str,
+    token: str = Query(...),
+):
+    """
+    WebSocket endpoint for real-time chat presence.
+    Auth: JWT token passed as ?token= query param.
+    Protocol events (JSON):
+      Client -> Server: { "type": "typing_start" | "typing_stop" }
+      Server -> Client: { "type": "user_joined" | "user_left" | "typing_start" | "typing_stop"
+                          | "presence_sync", "user": email, "nickname": str, "users": [...] }
+    """
+    # ── 1. Authenticate ──────────────────────────────────────────────────────
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_email = payload.get("sub")
+        nickname = payload.get("nickname") or user_email.split("@")[0] if user_email else "User"
+        if not user_email:
+            await websocket.close(code=4001)  # Unauthorized
+            return
+    except JWTError:
+        await websocket.close(code=4001)
+        return
+
+    # ── 2. Authorise against the chat's parent project ──────────────────────────
+    db: Session = next(get_db())
+    try:
+        get_chat_or_403(db, chat_id, user_email, allow_public=True)
+    except HTTPException:
+        await websocket.close(code=4003)  # Forbidden
+        db.close()
+        return
+    finally:
+        db.close()
+
+    # ── 3. Join room ─────────────────────────────────────────────────────────
+    await presence_manager.connect(chat_id, user_email, websocket)
+
+    # Notify others: user joined
+    await presence_manager.broadcast(chat_id, user_email, {
+        "type": "user_joined",
+        "user": user_email,
+        "nickname": nickname,
+    })
+
+    # Send current room snapshot to the newly joined user
+    await websocket.send_text(json.dumps({
+        "type": "presence_sync",
+        "users": presence_manager.get_presence(chat_id),
+    }))
+
+    # ── 4. Message Loop ──────────────────────────────────────────────────────
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                data = json.loads(raw)
+            except json.JSONDecodeError:
+                continue
+
+            event_type = data.get("type")
+            if event_type in ("typing_start", "typing_stop"):
+                await presence_manager.broadcast(chat_id, user_email, {
+                    "type": event_type,
+                    "user": user_email,
+                    "nickname": nickname,
+                })
+
+    except WebSocketDisconnect:
+        pass
+    finally:
+        presence_manager.disconnect(chat_id, user_email)
+        await presence_manager.broadcast(chat_id, user_email, {
+            "type": "user_left",
+            "user": user_email,
+            "nickname": nickname,
+        })
+

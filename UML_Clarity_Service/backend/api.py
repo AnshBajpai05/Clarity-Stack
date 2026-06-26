@@ -442,7 +442,7 @@ async def llm_proxy(req: LLMProxyRequest):
     Proxy LLM requests to NVIDIA NIM from the server side.
     This avoids CORS blocks when calling external APIs from the browser.
     """
-    api_key = os.environ.get("NVIDIA_API_KEY") or os.environ.get("VITE_NVIDIA_API_KEY", "")
+    api_key = os.environ.get("NVIDIA_API_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="NVIDIA_API_KEY not configured on server")
 

@@ -21,9 +21,9 @@ import {
 interface MessageBubbleProps {
   message: Message;
   onRefresh?: () => void;
+  onClick?: () => void;
+  isViewer?: boolean;
   dim?: boolean;
-  onClick?: () => void;   // 🧠 ADD THIS
-
 }
 const roleConfig: any = {
   user: {
@@ -82,7 +82,7 @@ const roleConfig: any = {
   }
 };
 
-export function MessageBubble({ message, onRefresh, dim, onClick }: MessageBubbleProps) {
+export function MessageBubble({ message, onRefresh, dim, onClick, isViewer }: MessageBubbleProps) {
   const { toast } = useToast();
 
   const config = roleConfig[message.role] || roleConfig.user;
@@ -213,7 +213,7 @@ export function MessageBubble({ message, onRefresh, dim, onClick }: MessageBubbl
           )}
 
             {/* ⭐ — assistants only (no summary pin) */}
-            {message.role === "assistant" && message.sender !== "synthesis" && (
+            {!isViewer && message.role === "assistant" && message.sender !== "synthesis" && (
               <button
                 onClick={handleAccept}
                 className={cn(
@@ -229,7 +229,7 @@ export function MessageBubble({ message, onRefresh, dim, onClick }: MessageBubbl
             )}
 
             {/* 📌 synthesis — ONLY place where summary is allowed */}
-            {(message.role === "synthesis" || message.sender === "synthesis") && (
+            {!isViewer && (message.role === "synthesis" || message.sender === "synthesis") && (
               <button
                 onClick={handleSummaryToggle}
                 className={cn(

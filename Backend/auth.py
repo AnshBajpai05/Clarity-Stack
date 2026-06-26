@@ -1,10 +1,21 @@
 from datetime import datetime, timedelta
 from jose import jwt, JWTError
 import bcrypt
+import os
 from fastapi import Depends, HTTPException
 from fastapi.security import OAuth2PasswordBearer
 
-SECRET_KEY = "HalaMadrid12345"
+# ── JWT Secret ─────────────────────────────────────────────────────────────────
+# Must be set in the environment / .env file.  The application refuses to boot
+# if this variable is missing — fail-closed, not fail-open.
+SECRET_KEY = os.getenv("JWT_SECRET")
+if not SECRET_KEY:
+    raise RuntimeError(
+        "JWT_SECRET environment variable is not set. "
+        "Generate one with: python -c \"import secrets; print(secrets.token_hex(32))\" "
+        "and add it to your .env file."
+    )
+
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60
 

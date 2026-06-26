@@ -17,11 +17,16 @@ Thumbs.db
 **/env/
 **/.venv/
 **/node_modules/
+.env.*
+**/.env
+**/.env.*
 
 # --- Databases ---
 *.db
 *.sqlite3
 **/claritystack.db
+*.db-shm
+*.db-wal
 
 # --- Python ---
 __pycache__/

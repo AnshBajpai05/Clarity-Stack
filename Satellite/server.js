@@ -1,5 +1,5 @@
 // server.js — Main Express Application
-require("dotenv").config();
+require("dotenv").config({ override: true });
 const express = require("express");
 const cors = require("cors");
 const { connectDB, getConnectionStatus } = require("./config/db");

@@ -26,8 +26,11 @@ import {
   getChat,
   updateChat,
   getChats,          // ✅ REQUIRED FOR FALLBACK
+  getProject,
+  getProjectMembers,
 } from "@/lib/api";
 import { api } from "@/lib/http";
+import { stringToColor, getInitials } from "@/lib/colors";
 
 import { useToast } from "@/hooks/use-toast";
 
@@ -72,10 +75,12 @@ function formatIST(dateStr?: string | null) {
 
 export default function MessagesPage() {
 
-  const { chatId } = useParams<{ projectId: string; chatId: string }>();
+  const { projectId, chatId } = useParams<{ projectId: string; chatId: string }>();
 
   const [chat, setChat] = useState<Chat | null>(null);   // 🆕 CHAT META
   const [editOpen, setEditOpen] = useState(false);       // 🆕 EDIT MODAL
+  const [memberRole, setMemberRole] = useState<'owner'|'pm'|'member'|'viewer'>('member');
+  const isViewer = memberRole === 'viewer';
 
   const [messages, setMessages] = useState<Message[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -87,6 +92,66 @@ export default function MessagesPage() {
 
   const { toast } = useToast();
   const [activeSynthesis, setActiveSynthesis] = useState<Message | null>(null);
+
+  // ── Real-Time Presence (WebSocket) ─────────────────────────────────────
+  const [activeUsers, setActiveUsers] = useState<string[]>([]);
+  const [typingUsers, setTypingUsers] = useState<string[]>([]);
+  const wsRef = useRef<WebSocket | null>(null);
+  const typingTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+
+  useEffect(() => {
+    if (!chatId) return;
+    const token = localStorage.getItem('token');
+    if (!token) return;
+
+    const backendHost = (import.meta as any).env?.VITE_BACKEND_URL
+      ? new URL((import.meta as any).env.VITE_BACKEND_URL).host
+      : `${window.location.hostname}:8000`;
+    const wsUrl = `ws://${backendHost}/ws/chats/${chatId}?token=${encodeURIComponent(token)}`;
+
+    const ws = new WebSocket(wsUrl);
+    wsRef.current = ws;
+
+    ws.onmessage = (evt) => {
+      try {
+        const msg = JSON.parse(evt.data);
+        if (msg.type === 'presence_sync') {
+          setActiveUsers(msg.users || []);
+        } else if (msg.type === 'user_joined') {
+          setActiveUsers(prev => prev.includes(msg.user) ? prev : [...prev, msg.user]);
+        } else if (msg.type === 'user_left') {
+          setActiveUsers(prev => prev.filter(u => u !== msg.user));
+          setTypingUsers(prev => prev.filter(u => u !== msg.user));
+        } else if (msg.type === 'typing_start') {
+          setTypingUsers(prev => prev.includes(msg.user) ? prev : [...prev, msg.user]);
+          // Auto-clear typing indicator after 3s if no stop received
+          if (typingTimers.current[msg.user]) clearTimeout(typingTimers.current[msg.user]);
+          typingTimers.current[msg.user] = setTimeout(() => {
+            setTypingUsers(prev => prev.filter(u => u !== msg.user));
+          }, 3000);
+        } else if (msg.type === 'typing_stop') {
+          if (typingTimers.current[msg.user]) clearTimeout(typingTimers.current[msg.user]);
+          setTypingUsers(prev => prev.filter(u => u !== msg.user));
+        }
+      } catch {}
+    };
+
+    ws.onerror = () => console.warn('[WS] Chat presence connection error');
+
+    return () => {
+      ws.close();
+      wsRef.current = null;
+      Object.values(typingTimers.current).forEach(clearTimeout);
+    };
+  }, [chatId]);
+
+  const sendTypingEvent = useCallback((typing: boolean) => {
+    const ws = wsRef.current;
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ type: typing ? 'typing_start' : 'typing_stop' }));
+    }
+  }, []);
+  // ─────────────────────────────────────────────────────────────
 
   useEffect(() => {
     if (activeSynthesis) {
@@ -114,6 +179,23 @@ export default function MessagesPage() {
             ? prev          // ⚡ avoid useless re-renders
             : data
         );
+        
+        // Derive role
+        const currentUserEmail = localStorage.getItem('cs_email') || '';
+        try {
+          const pId = data.project_id || projectId;
+          if (pId) {
+            const proj = await getProject(pId);
+            if (proj.owner === currentUserEmail) {
+              if (!isCancelled) setMemberRole('owner');
+            } else {
+              const members = await getProjectMembers(pId);
+              const me = members.find(m => m.user_email === currentUserEmail);
+              if (me && !isCancelled) setMemberRole(me.role as any);
+            }
+          }
+        } catch {}
+
         return;
       } catch {
         console.warn("Direct chat fetch failed — falling back");
@@ -315,8 +397,8 @@ export default function MessagesPage() {
 
           <div className="flex items-start justify-between gap-4 flex-wrap">
 
-            {/* LEFT — TITLE */}
-            <div className="flex items-center gap-3">
+          {/* LEFT — TITLE + PRESENCE BAR */}
+            <div className="flex items-center gap-3 flex-wrap">
               <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-neon-peach to-neon-violet flex items-center justify-center">
                 <MessageSquare className="w-5 h-5 text-background" />
               </div>
@@ -327,6 +409,35 @@ export default function MessagesPage() {
                   Messages are immutable and preserved as ground truth.
                 </p>
               </div>
+
+              {/* 👥 Active user avatars */}
+              {activeUsers.length > 0 && (
+                <div className="flex items-center gap-1 ml-2">
+                  <div className="flex -space-x-2">
+                    {activeUsers.slice(0, 5).map(email => (
+                      <Tooltip key={email}>
+                        <TooltipTrigger asChild>
+                          <div
+                            className="w-7 h-7 rounded-full border-2 border-background flex items-center justify-center text-[10px] font-bold text-white cursor-default select-none"
+                            style={{ backgroundColor: stringToColor(email) }}
+                          >
+                            {getInitials(email)}
+                          </div>
+                        </TooltipTrigger>
+                        <TooltipContent side="bottom" className="text-xs">{email}</TooltipContent>
+                      </Tooltip>
+                    ))}
+                    {activeUsers.length > 5 && (
+                      <div className="w-7 h-7 rounded-full border-2 border-background bg-muted flex items-center justify-center text-[10px] font-bold">
+                        +{activeUsers.length - 5}
+                      </div>
+                    )}
+                  </div>
+                  <span className="text-xs text-muted-foreground ml-1">
+                    {activeUsers.length} online
+                  </span>
+                </div>
+              )}
             </div>
             {chat && (
               <div className="relative glass-panel px-4 py-3 rounded-xl border border-primary/20">
@@ -407,14 +518,16 @@ export default function MessagesPage() {
                       {chat.description || "No description yet."}
                     </p>
 
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      className="border-primary/40 hover:border-primary/70 hover:bg-primary/10"
-                      onClick={() => setEditOpen(true)}
-                    >
-                      Edit Chat Context
-                    </Button>
+                    {!isViewer && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="border-primary/40 hover:border-primary/70 hover:bg-primary/10"
+                        onClick={() => setEditOpen(true)}
+                      >
+                        Edit Chat Context
+                      </Button>
+                    )}
                   </div>
                 </details>
 
@@ -468,7 +581,8 @@ export default function MessagesPage() {
                           message={msg}
                           dim={!msg.include_in_summary}
                           onClick={() => setActiveSynthesis(msg)}   // 🧠 NEW
-
+                          isViewer={isViewer}
+                          onRefresh={fetchMessages}
                         />
                       );
                     }
@@ -483,6 +597,8 @@ export default function MessagesPage() {
                         key={msg.id}
                         message={msg}
                         dim={!!dim}
+                        isViewer={isViewer}
+                        onRefresh={fetchMessages}
                       />
                     );
                   })
@@ -493,7 +609,35 @@ export default function MessagesPage() {
               </div>
 
               <div className="flex-shrink-0">
-                <MessageInput onSubmit={handleSendMessage} isLoading={isSending} />
+                {/* ⏳ Typing indicator */}
+                {typingUsers.length > 0 && (
+                  <div className="flex items-center gap-2 px-4 py-2">
+                    {typingUsers.slice(0, 3).map(email => (
+                      <div key={email} className="flex items-center gap-1.5">
+                        <div
+                          className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-bold text-white"
+                          style={{ backgroundColor: stringToColor(email) }}
+                        >
+                          {getInitials(email)}
+                        </div>
+                        <span className="text-xs text-muted-foreground">{email.split('@')[0]}</span>
+                      </div>
+                    ))}
+                    <div className="flex gap-0.5 items-center ml-1">
+                      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '0ms' }} />
+                      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '150ms' }} />
+                      <span className="w-1.5 h-1.5 rounded-full bg-muted-foreground animate-bounce" style={{ animationDelay: '300ms' }} />
+                    </div>
+                    <span className="text-xs text-muted-foreground italic">typing...</span>
+                  </div>
+                )}
+                {!isViewer ? (
+                  <MessageInput onSubmit={handleSendMessage} isLoading={isSending} onTyping={sendTypingEvent} />
+                ) : (
+                  <div className="p-4 text-center bg-white/5 border-t border-white/10">
+                    <p className="text-sm text-slate-400">You are a viewer in this project and cannot send messages.</p>
+                  </div>
+                )}
               </div>
             </>
           )}

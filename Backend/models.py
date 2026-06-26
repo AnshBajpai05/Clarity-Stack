@@ -60,7 +60,17 @@ class ProjectMember(Base):
     id = Column(String, primary_key=True, default=gen_id)
     project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
     user_email = Column(String(255), nullable=False, index=True)
-    role = Column(String(50), default="member", nullable=False)  # "pm", "member"
+    role = Column(String(50), default="member", nullable=False)  # "pm", "member", "viewer"
+
+class ProjectActivityLog(Base):
+    __tablename__ = "project_activity_logs"
+
+    id = Column(String, primary_key=True, default=gen_id)
+    project_id = Column(String, ForeignKey("projects.id", ondelete="CASCADE"), nullable=False, index=True)
+    actor_email = Column(String(255), nullable=False, index=True)
+    action = Column(String(255), nullable=False) # "user_joined", "user_removed", "request_approved", "role_changed", "knowledge_updated"
+    details = Column(Text, nullable=True) # JSON or text string with extra context
+    created_at = Column(DateTime(timezone=True), default=now, nullable=False)
 
 class JoinRequest(Base):
     __tablename__ = "join_requests"

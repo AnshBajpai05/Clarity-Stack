@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { Send, Loader2, User, Bot, Shield, Megaphone } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Textarea } from '@/components/ui/textarea';
@@ -14,6 +14,7 @@ import { Input } from '@/components/ui/input';
 interface MessageInputProps {
   onSubmit: (text: string, role: string, sender: string) => Promise<void>;
   isLoading: boolean;
+  onTyping?: (typing: boolean) => void;
 }
 
 const roles = [
@@ -23,18 +24,32 @@ const roles = [
   { value: 'moderator', label: 'Moderator', icon: Megaphone },
 ];
 
-export function MessageInput({ onSubmit, isLoading }: MessageInputProps) {
+export function MessageInput({ onSubmit, isLoading, onTyping }: MessageInputProps) {
   const [text, setText] = useState('');
   const [role, setRole] = useState('user');
   const [sender, setSender] = useState('');
+  const typingTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const trimmedText = text.trim();
   const trimmedSender = sender.trim();
+
+  const handleTextChange = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    setText(e.target.value);
+    // Fire typing_start
+    if (onTyping) {
+      onTyping(true);
+      // Reset the stop timer on each keystroke
+      if (typingTimer.current) clearTimeout(typingTimer.current);
+      typingTimer.current = setTimeout(() => onTyping(false), 2500);
+    }
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
     if (!trimmedText || !trimmedSender || isLoading) return;
+    if (onTyping) { onTyping(false); }
+    if (typingTimer.current) clearTimeout(typingTimer.current);
 
     await onSubmit(trimmedText, role, trimmedSender);
 
@@ -47,6 +62,11 @@ export function MessageInput({ onSubmit, isLoading }: MessageInputProps) {
       e.preventDefault();
       handleSubmit(e);
     }
+  };
+
+  const handleBlur = () => {
+    if (onTyping) onTyping(false);
+    if (typingTimer.current) clearTimeout(typingTimer.current);
   };
 
   return (
@@ -83,8 +103,9 @@ export function MessageInput({ onSubmit, isLoading }: MessageInputProps) {
           <Textarea
             placeholder="Type your message... (Shift+Enter for new line)"
             value={text}
-            onChange={(e) => setText(e.target.value)}
+            onChange={handleTextChange}
             onKeyDown={handleKeyDown}
+            onBlur={handleBlur}
             disabled={isLoading}
             className="min-h-[80px] bg-muted/50 border-glass focus:border-primary resize-none pr-10"
           />

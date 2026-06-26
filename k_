@@ -1,0 +1,64 @@
+[35mBackend/providers.py[m[36m:[mGROQ_KEY = os.getenv("GROQ_[1;31mAPI_KEY[m")
+[35mBackend/providers.py[m[36m:[mNVIDIA_KEY = os.getenv("NVIDIA_[1;31mAPI_KEY[m")
+[35mBackend/providers.py[m[36m:[m    raise ValueError("Missing GROQ_[1;31mAPI_KEY[m in .env")
+[35mBackend/providers.py[m[36m:[m    raise ValueError("Missing NVIDIA_[1;31mAPI_KEY[m in .env")
+[35mBackend/providers.py[m[36m:[m    [1;31mapi_key[m: str,
+[35mBackend/providers.py[m[36m:[m            "Authorization": f"Bearer {[1;31mapi_key[m}",
+[35mBackend/providers.py[m[36m:[m            [1;31mapi_key[m=GROQ_KEY,
+[35mBackend/providers.py[m[36m:[m            [1;31mapi_key[m=GROQ_KEY,
+[35mBackend/providers.py[m[36m:[m            [1;31mapi_key[m=GROQ_KEY,
+[35mBackend/providers.py[m[36m:[m            [1;31mapi_key[m=NVIDIA_KEY,
+[35mBackend/providers.py[m[36m:[m            [1;31mapi_key[m=NVIDIA_KEY,
+[35mBackend/providers.py[m[36m:[m            [1;31mapi_key[m=NVIDIA_KEY,
+[35mBackend/providers.py[m[36m:[m            [1;31mapi_key[m=GROQ_KEY,
+[35mBackend/providers.py[m[36m:[m            [1;31mapi_key[m=GROQ_KEY,
+[35mBackend/test_gemini.py[m[36m:[m[1;31mapi_key[m = os.getenv("GEMINI_[1;31mAPI_KEY[m")
+[35mBackend/test_gemini.py[m[36m:[mprint("Raw key:", repr([1;31mapi_key[m))
+[35mBackend/test_gemini.py[m[36m:[mclient = genai.Client([1;31mapi_key[m=[1;31mapi_key[m)
+[35mBackend/test_groq.py[m[36m:[mGROQ_KEY = os.getenv("GROQ_[1;31mAPI_KEY[m")
+[35mSETUP_GUIDE.md[m[36m:[m- `GROQ_[1;31mAPI_KEY[m`: Required for Mixtral/Llama inference.
+[35mSETUP_GUIDE.md[m[36m:[m- `NVIDIA_[1;31mAPI_KEY[m`: Required for NVIDIA NIM microservices.
+[35mSETUP_GUIDE.md[m[36m:[m- `NVIDIA_[1;31mAPI_KEY[m`: Required for advanced SRS validation.
+[35mSETUP_GUIDE.md[m[36m:[m- `GOOGLE_SAFE_BROWSING_[1;31mAPI_KEY[m`: For real-time URL reputation checks.
+[35mSETUP_GUIDE.md[m[36m:[m- `NVIDIA_[1;31mAPI_KEY[m`: Powers the UML-to-Code and Code-to-UML logic.
+[35mSETUP_GUIDE.md[m[36m:[m- `GROQ_[1;31mAPI_KEY[m` / `NVIDIA_[1;31mAPI_KEY[m` / `HF_TOKEN`: API credentials for satellite inference.
+[35mSETUP_GUIDE.md[m[36m:[m- `VITE_NVIDIA_[1;31mAPI_KEY[m`: Same as UML API.
+[35mSatellite/benchmark_models.js[m[36m:[m    key: process.env.NVIDIA_[1;31mAPI_KEY[m,
+[35mSatellite/benchmark_models.js[m[36m:[m    key: process.env.GROQ_[1;31mAPI_KEY[m,
+[35mSatellite/probe_nvidia.js[m[36m:[m      headers: { Authorization: `Bearer ${process.env.NVIDIA_[1;31mAPI_KEY[m}` },
+[35mSatellite/services/modelRouter.js[m[36m:[m        key: process.env.GROQ_[1;31mAPI_KEY[m,
+[35mSatellite/services/modelRouter.js[m[36m:[m        key: process.env.NVIDIA_[1;31mAPI_KEY[m,
+[35mThreatLens_Service/app.py[m[36m:[mGOOGLE_SAFE_BROWSING_[1;31mAPI_KEY[m = os.getenv("GOOGLE_SAFE_BROWSING_[1;31mAPI_KEY[m", "")
+[35mThreatLens_Service/app.py[m[36m:[m    if not GOOGLE_SAFE_BROWSING_[1;31mAPI_KEY[m:
+[35mThreatLens_Service/app.py[m[36m:[m            async with session.post(f"{safe_browsing_url}?key={GOOGLE_SAFE_BROWSING_[1;31mAPI_KEY[m}", json=payload) as response:
+[35mUML_Clarity_Service/README.md[m[36m:[mNVIDIA_[1;31mAPI_KEY[m=your_[1;31mapi_key[m_here
+[35mUML_Clarity_Service/backend/api.py[m[36m:[m# Load .env so NVIDIA_[1;31mAPI_KEY[m is available via os.environ
+[35mUML_Clarity_Service/backend/api.py[m[36m:[m    [1;31mapi_key[m = os.environ.get("NVIDIA_[1;31mAPI_KEY[m") or os.environ.get("VITE_NVIDIA_[1;31mAPI_KEY[m", "")
+[35mUML_Clarity_Service/backend/api.py[m[36m:[m    if not [1;31mapi_key[m:
+[35mUML_Clarity_Service/backend/api.py[m[36m:[m        raise HTTPException(status_code=500, detail="NVIDIA_[1;31mAPI_KEY[m not configured on server")
+[35mUML_Clarity_Service/backend/api.py[m[36m:[m                "Authorization": f"Bearer {[1;31mapi_key[m}",
+[35mUML_Clarity_Service/backend/main.py[m[36m:[m    key = os.getenv("NVIDIA_[1;31mAPI_KEY[m")
+[35mUML_Clarity_Service/backend/main.py[m[36m:[m        raise HTTPException(status_code=500, detail="NVIDIA_[1;31mAPI_KEY[m not configured on server")
+[35mUML_Clarity_Service/backend/pipeline/uml_semantic_engine.py[m[36m:[m    [1;31mapi_key[m = os.environ.get("NVIDIA_[1;31mAPI_KEY[m")
+[35mUML_Clarity_Service/backend/pipeline/uml_semantic_engine.py[m[36m:[m    if not [1;31mapi_key[m:
+[35mUML_Clarity_Service/backend/pipeline/uml_semantic_engine.py[m[36m:[m        logger.error("NVIDIA_[1;31mAPI_KEY[m not found in environment.")
+[35mUML_Clarity_Service/backend/pipeline/uml_semantic_engine.py[m[36m:[m        [1;31mapi_key[m=[1;31mapi_key[m
+[35mUML_Clarity_Service/src/components/Dashboard.jsx[m[36m:[mconst GROQ_[1;31mAPI_KEY[m = import.meta.env.VITE_GROQ_[1;31mAPI_KEY[m || '';
+[35mUML_Clarity_Service/src/components/Dashboard.jsx[m[36m:[mconst GEMINI_[1;31mAPI_KEY[m = import.meta.env.VITE_GEMINI_[1;31mAPI_KEY[m || '';
+[35mUML_Clarity_Service/src/components/Dashboard.jsx[m[36m:[m    if (!GROQ_[1;31mAPI_KEY[m) throw new Error('No Groq API key configured');
+[35mUML_Clarity_Service/src/components/Dashboard.jsx[m[36m:[m                        'Authorization': 'Bearer ' + GROQ_[1;31mAPI_KEY[m,
+[35mUML_Clarity_Service/src/components/Dashboard.jsx[m[36m:[m    if (!GEMINI_[1;31mAPI_KEY[m) throw new Error('No Gemini API key configured');
+[35mUML_Clarity_Service/src/components/Dashboard.jsx[m[36m:[m            const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + GEMINI_[1;31mAPI_KEY[m;
+[35mUML_Clarity_Service/src/components/Dashboard.jsx[m[36m:[m    if (GROQ_[1;31mAPI_KEY[m) {
+[35mUML_Clarity_Service/src/components/Dashboard.jsx[m[36m:[m        if (GEMINI_[1;31mAPI_KEY[m) {
+[35mUML_Clarity_Service/src/components/Dashboard.jsx[m[36m:[m    if (GEMINI_[1;31mAPI_KEY[m) {
+[35mUML_Clarity_Service/src/components/Dashboard.jsx[m[36m:[m    throw new Error('No API keys configured. Add VITE_GROQ_[1;31mAPI_KEY[m or VITE_GEMINI_[1;31mAPI_KEY[m to your .env file.');
+[35mUML_Clarity_Service/src/joint-logic/promptEngine.js[m[36m:[mconst NVIDIA_[1;31mAPI_KEY[m = import.meta.env?.VITE_NVIDIA_[1;31mAPI_KEY[m || '';
+[35mUML_Clarity_Service/src/joint-logic/pureFrontendEngine.js[m[36m:[mconst getKey = () => (import.meta.env?.VITE_GROQ_[1;31mAPI_KEY[m || '').trim();
+[35mUML_Clarity_Service/src/joint-logic/pureFrontendEngine.js[m[36m:[m  if (!key) throw new Error('VITE_GROQ_[1;31mAPI_KEY[m is not set in your .env file.');
+[35mstart_project.bat[m[36m:[m:: Required keys: GROQ_[1;31mAPI_KEY[m, NVIDIA_[1;31mAPI_KEY[m, MONGO_URI (for Satellite)
+[35mtake_step_forward.md[m[36m:[m| **Groq** | Core reasoning + synthesis | extraction + merge | `GROQ_[1;31mAPI_KEY[m` |
+[35mtake_step_forward.md[m[36m:[m| **NVIDIA NIM** | Core reasoning, UML `/api/llm` | extraction, diagram gen | `NVIDIA_[1;31mAPI_KEY[m` |
+[35mtake_step_forward.md[m[36m:[m`providers.py:29-33` raises `ValueError` at **import time** if `GROQ_[1;31mAPI_KEY[m` or
+[35mtake_step_forward.md[m[36m:[m`NVIDIA_[1;31mAPI_KEY[m` is missing → the entire Core Backend refuses to boot without both vendors.
+[35mtake_step_forward.md[m[36m:[m`import.meta.env.VITE_NVIDIA_[1;31mAPI_KEY[m`. **Any `VITE_`-prefixed variable is inlined into the

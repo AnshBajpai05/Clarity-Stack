@@ -354,7 +354,50 @@ export async function createProject(payload: CreateProjectPayload): Promise<Proj
 }
 
 
+export async function deleteProject(projectId: string): Promise<void> {
+  await api<void>(`/projects/${projectId}`, { method: 'DELETE' });
+}
+
+/* ===================== MEMBERS ===================== */
+
+export interface ProjectMember {
+  id: string;
+  project_id: string;
+  user_email: string;
+  role: 'owner' | 'pm' | 'member' | 'viewer';
+}
+
+export interface ActivityLog {
+  id: string;
+  actor_email: string;
+  action: string;
+  details?: string;
+  created_at: string;
+}
+
+export async function getProjectMembers(projectId: string): Promise<ProjectMember[]> {
+  return api<ProjectMember[]>(`/projects/${projectId}/members`);
+}
+
+export async function updateMemberRole(projectId: string, userEmail: string, role: string): Promise<any> {
+  return api<any>(`/projects/${projectId}/members/${encodeURIComponent(userEmail)}/role`, {
+    method: 'PATCH',
+    body: JSON.stringify({ role }),
+  });
+}
+
+export async function removeMember(projectId: string, userEmail: string): Promise<any> {
+  return api<any>(`/projects/${projectId}/members/${encodeURIComponent(userEmail)}`, {
+    method: 'DELETE',
+  });
+}
+
+export async function getActivityLogs(projectId: string): Promise<ActivityLog[]> {
+  return api<ActivityLog[]>(`/projects/${projectId}/activity`);
+}
+
 /* ===================== CHATS ===================== */
+
 
 export async function getChats(projectId: string): Promise<Chat[]> {
   if (useDemoMode) return mockChats[projectId] || [];

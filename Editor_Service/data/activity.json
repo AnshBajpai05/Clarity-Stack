@@ -1,0 +1,35 @@
+{
+  "e2a0d258": [
+    {
+      "id": "e0867fd2",
+      "workspace_id": "e2a0d258",
+      "user_id": "shahnishant534@gmail.com",
+      "action": "edit_content",
+      "content_preview": "xvxcvxc\n",
+      "cursor_position": 8,
+      "created_at": "2026-06-12T13:18:10.746Z"
+    }
+  ],
+  "741fecad": [
+    {
+      "id": "6d7cec1a",
+      "workspace_id": "741fecad",
+      "user_id": "shahnishant534@gmail.com",
+      "action": "edit_content",
+      "content_preview": "dffd",
+      "cursor_position": 4,
+      "created_at": "2026-06-12T18:51:22.096Z"
+    }
+  ],
+  "e2bbdb67": [
+    {
+      "id": "6ddceed2",
+      "workspace_id": "e2bbdb67",
+      "user_id": "shahnishant.2060@gmail.com",
+      "action": "edit_content",
+      "content_preview": "vdfdfggd",
+      "cursor_position": 8,
+      "created_at": "2026-06-12T18:51:52.876Z"
+    }
+  ]
+}
