@@ -31,17 +31,17 @@ const isLinkType = (type) => type ? type.toLowerCase().includes('link') : false;
 /* ── Dark / Light theme color maps ────────────────────────────────────── */
 const THEME = {
     dark: {
-        'uml.Actor':          { 'head/fill':'#1e293b','head/stroke':'#94a3b8','torso/stroke':'#94a3b8','arms/stroke':'#94a3b8','leftLeg/stroke':'#94a3b8','rightLeg/stroke':'#94a3b8','label/fill':'#cbd5e1' },
-        'uml.UseCase':        { 'body/fill':'#1e3a5f','body/stroke':'#60a5fa','label/fill':'#e2e8f0' },
-        'uml.SystemBoundary': { 'body/fill':'rgba(59,130,246,0.06)','body/stroke':'#3b82f6','label/fill':'#60a5fa' },
-        'uml.StartNode':      { 'body/fill':'#e2e8f0','body/stroke':'#e2e8f0' },
-        'uml.EndState':       { 'body/fill':'#1e1e2e','body/stroke':'#e2e8f0','inner/fill':'#e2e8f0' },
-        'uml.ActionState':    { 'body/fill':'#064e3b','body/stroke':'#34d399','label/fill':'#d1fae5' },
-        'uml.DecisionNode':   { 'body/fill':'#78350f','body/stroke':'#fbbf24','label/fill':'#fef3c7' },
-        'dfd.Process':        { 'body/fill':'#713f12','body/stroke':'#fbbf24','label/fill':'#fef3c7' },
-        'dfd.DataStore':      { 'body/fill':'#1f2937','topLine/fill':'#6b7280','bottomLine/fill':'#6b7280','label/fill':'#e2e8f0' },
-        'dfd.ExternalEntity': { 'body/fill':'#1e293b','body/stroke':'#64748b','label/fill':'#e2e8f0' },
-        'standard.Rectangle': { 'body/fill':'#1e3a5f','body/stroke':'#60a5fa','label/fill':'#e2e8f0' },
+        'uml.Actor':          { 'head/fill':'#1c2033','head/stroke':'#818cf8','torso/stroke':'#818cf8','arms/stroke':'#818cf8','leftLeg/stroke':'#818cf8','rightLeg/stroke':'#818cf8','label/fill':'#c7d2fe' },
+        'uml.UseCase':        { 'body/fill':'#1e2040','body/stroke':'#818cf8','label/fill':'#c7d2fe' },
+        'uml.SystemBoundary': { 'body/fill':'rgba(129,140,248,0.05)','body/stroke':'#818cf8','label/fill':'#818cf8' },
+        'uml.StartNode':      { 'body/fill':'#34d399','body/stroke':'#34d399' },
+        'uml.EndState':       { 'body/fill':'#11141f','body/stroke':'#34d399','inner/fill':'#34d399' },
+        'uml.ActionState':    { 'body/fill':'rgba(52,211,153,0.1)','body/stroke':'#34d399','label/fill':'#6ee7b7' },
+        'uml.DecisionNode':   { 'body/fill':'rgba(251,191,36,0.1)','body/stroke':'#fbbf24','label/fill':'#fde68a' },
+        'dfd.Process':        { 'body/fill':'rgba(251,191,36,0.08)','body/stroke':'#fbbf24','label/fill':'#fde68a' },
+        'dfd.DataStore':      { 'body/fill':'#1c2033','topLine/fill':'#fbbf24','bottomLine/fill':'#fbbf24','label/fill':'#fde68a' },
+        'dfd.ExternalEntity': { 'body/fill':'#1c2033','body/stroke':'#fbbf24','label/fill':'#fde68a' },
+        'standard.Rectangle': { 'body/fill':'#1e2040','body/stroke':'#818cf8','label/fill':'#c7d2fe' },
     },
     light: {
         'uml.Actor':          { 'head/fill':'white','head/stroke':'#1e293b','torso/stroke':'#1e293b','arms/stroke':'#1e293b','leftLeg/stroke':'#1e293b','rightLeg/stroke':'#1e293b','label/fill':'#1e293b' },
@@ -257,8 +257,8 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
             model:             graph,
             width:             W,
             height:            H,
-            gridSize:          10,
-            drawGrid:          { name: 'mesh', args: { color: '#d1d5db' } },
+            gridSize:          20,
+            drawGrid:          { name: 'dot', args: { color: '#c5c9d6', radius: 1.5 } },
             background:        { color: '#f9fafb' },
             interactive:       true,
             cellViewNamespace: CELL_NAMESPACE,
@@ -545,11 +545,11 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
         var paper = paperRef.current;
         var graph = graphRef.current;
         if (!paper || !graph) return;
-        paper.drawBackground({ color: darkMode ? '#0f172a' : '#f9fafb' });
-        paper.drawGrid({ name: 'mesh', args: { color: darkMode ? '#1e293b' : '#d1d5db' } });
+        paper.drawBackground({ color: darkMode ? '#0d0f17' : '#f9fafb' });
+        paper.drawGrid({ name: 'dot', args: { color: darkMode ? '#2a2f45' : '#c5c9d6', radius: 1.5 } });
         graph.getElements().forEach(function(el) { applyTheme(el, darkMode); });
         graph.getLinks().forEach(function(lk) {
-            lk.attr('line/stroke', darkMode ? '#94a3b8' : '#6b7280');
+            lk.attr('line/stroke', darkMode ? '#555e7f' : '#6b7280');
         });
     }, [darkMode]);
 

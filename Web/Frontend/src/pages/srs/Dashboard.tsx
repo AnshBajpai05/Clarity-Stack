@@ -71,11 +71,11 @@ function LandingView() {
   return (
     <div className="space-y-12 animate-slide-in">
       {/* Hero */}
-      <div className="text-center pt-8 pb-4">
+      <div className="text-center pt-8 pb-4 animate-fade-in-up">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 text-primary text-xs font-medium mb-6">
           <Zap className="w-3 h-3" /> Requirements Intelligence Engine
         </div>
-        <h1 className="text-4xl md:text-5xl font-bold tracking-tight mb-4">
+        <h1 className="text-4xl md:text-5xl font-display font-bold tracking-tight mb-4">
           <span className="gradient-text">SRS Clarity</span>
         </h1>
         <p className="text-muted-foreground max-w-2xl mx-auto text-lg leading-relaxed">
@@ -84,7 +84,7 @@ function LandingView() {
       </div>
 
       {/* Pipeline */}
-      <div className="glass-card p-6">
+      <div className="glass-panel p-6 animate-fade-in-up stagger-1">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-6 text-center">How It Works</h3>
         <div className="flex items-center justify-between max-w-2xl mx-auto">
           {PIPELINE_STEPS.map((step, i) => (
@@ -107,12 +107,12 @@ function LandingView() {
       </div>
 
       {/* Upload CTA */}
-      <div data-tour="srs-uploader" className="glass-card p-8 text-center border-primary/20 glow-primary">
-        <div className="w-14 h-14 rounded-2xl gradient-primary flex items-center justify-center mx-auto mb-4 glow-primary">
-          {isLoading ? <Loader2 className="w-6 h-6 text-primary-foreground animate-spin" /> : <Play className="w-6 h-6 text-primary-foreground ml-0.5" />}
+      <div data-tour="srs-uploader" className="glass-panel p-8 text-center border-primary/20 shadow-glow animate-fade-in-up stagger-2">
+        <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-neon-cyan to-neon-violet flex items-center justify-center mx-auto mb-4 shadow-glow-sm">
+          {isLoading ? <Loader2 className="w-6 h-6 text-background animate-spin" /> : <Play className="w-6 h-6 text-background ml-0.5" />}
         </div>
-        <h2 className="text-xl font-bold mb-2">{isLoading ? 'Processing...' : 'Upload Your SRS'}</h2>
-        <p className="text-muted-foreground text-sm mb-6 max-w-md mx-auto">
+        <h2 className="text-xl font-display font-bold tracking-tight mb-2">{isLoading ? 'Processing...' : 'Upload Your SRS'}</h2>
+        <p className="text-muted-foreground text-sm mb-6 max-w-md mx-auto leading-relaxed">
           {uploadProgress || 'Upload a PDF to extract requirements, detect ambiguities, and get actionable insights.'}
         </p>
         <Button onClick={() => fileRef.current?.click()} className="gap-2 gradient-primary border-0 px-6" disabled={isLoading}>
@@ -123,16 +123,16 @@ function LandingView() {
       </div>
 
       {/* Capabilities — trimmed */}
-      <div>
+      <div className="animate-fade-in-up stagger-3">
         <h3 className="text-xs font-semibold uppercase tracking-wider text-muted-foreground mb-4 text-center">What You Get</h3>
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
           {[
-            { icon: FileText, title: "Structured Requirements", desc: "User stories parsed into Role, Goal, Reason with hierarchical acceptance criteria", color: "text-primary bg-primary/10" },
-            { icon: AlertTriangle, title: "Ambiguity Detection", desc: "Vague terms like \"quickly\", \"user-friendly\" flagged with measurable alternatives", color: "text-warning bg-warning/10" },
-            { icon: Sparkles, title: "Intelligence Model", desc: "If/Then logic extracted, actors normalized, confidence scored", color: "text-accent bg-accent/10" },
+            { icon: FileText, title: "Structured Requirements", desc: "User stories parsed into Role, Goal, Reason with hierarchical acceptance criteria", color: "text-neon-cyan bg-neon-cyan/10 border-neon-cyan/20" },
+            { icon: AlertTriangle, title: "Ambiguity Detection", desc: "Vague terms like \"quickly\", \"user-friendly\" flagged with measurable alternatives", color: "text-[hsl(var(--warning))] bg-[hsl(var(--warning))]/10 border-[hsl(var(--warning))]/20" },
+            { icon: Sparkles, title: "Intelligence Model", desc: "If/Then logic extracted, actors normalized, confidence scored", color: "text-neon-violet bg-neon-violet/10 border-neon-violet/20" },
           ].map(cap => (
-            <div key={cap.title} className="glass-card p-5 group hover:border-primary/30 transition-colors">
-              <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 ${cap.color}`}>
+            <div key={cap.title} className="glass-panel p-5 group hover:border-primary/30 transition-all">
+              <div className={`w-10 h-10 rounded-xl flex items-center justify-center mb-3 border ${cap.color}`}>
                 <cap.icon className="w-5 h-5" />
               </div>
               <h4 className="font-semibold text-sm mb-1">{cap.title}</h4>
@@ -166,7 +166,7 @@ function DocumentListView() {
   return (
     <div className="space-y-6 animate-slide-in">
       <div>
-        <h1 className="text-2xl font-bold">Dashboard</h1>
+        <h1 className="text-2xl font-display font-bold tracking-tight">Dashboard</h1>
         <p className="text-muted-foreground text-sm">Processed documents</p>
       </div>
 
@@ -194,10 +194,10 @@ function DocumentListView() {
 
       {/* Document list */}
       <div data-tour="srs-doc-list" className="space-y-3 relative">
-        {documents.map(doc => (
+        {documents.map((doc, idx) => (
           <div key={doc.doc_id}
             id={`doc-${doc.doc_id}`}
-            className="glass-card p-5 flex items-center justify-between hover:border-primary/30 transition-all duration-300 cursor-pointer relative bg-slate-900/50 group"
+            className={`glass-panel-hover p-5 flex items-center justify-between cursor-pointer group animate-fade-in-up stagger-${(idx % 5) + 1}`}
             onClick={() => handleSelect(doc.doc_id)}
           >
             <div className="flex items-center gap-4">
@@ -205,7 +205,7 @@ function DocumentListView() {
                 <FileText className="w-5 h-5 text-primary" />
               </div>
               <div>
-                <p className="font-semibold">{doc.doc_id.replace(/_/g, ' ')}</p>
+                <p className="font-display font-semibold text-foreground tracking-tight">{doc.doc_id.replace(/_/g, ' ')}</p>
                 <p className="text-xs text-muted-foreground">
                   {doc.stories} stories · {doc.actors.join(', ')} · {doc.original_issues || doc.issues} total issues
                 </p>

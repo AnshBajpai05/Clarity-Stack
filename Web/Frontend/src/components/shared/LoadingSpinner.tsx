@@ -21,9 +21,9 @@ export function LoadingSpinner({ className, text = 'Loading...', size = 'md' }: 
     <div className={cn("flex flex-col items-center justify-center gap-4", className)}>
       <div className="relative">
         <Loader2 className={cn(dim, 'text-primary animate-spin')} />
-        <div className={cn('absolute inset-0 rounded-full bg-primary/20 blur-xl animate-pulse', dim)} />
+        <div className={cn('absolute inset-0 rounded-full bg-primary/30 blur-xl animate-pulse-slow', dim)} />
       </div>
-      {text && <p className="text-muted-foreground text-sm">{text}</p>}
+      {text && <p className="text-muted-foreground font-medium text-sm animate-pulse-slow">{text}</p>}
     </div>
   );
 }

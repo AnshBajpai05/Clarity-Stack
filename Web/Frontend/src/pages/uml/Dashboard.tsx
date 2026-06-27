@@ -77,9 +77,9 @@ export default function UMLDashboard() {
 
   return (
     <MainLayout fullWidth={true}>
-      <div className="flex flex-col h-full w-full">
+      <div className="flex flex-col h-full w-full animate-fade-in-up">
         {/* ── Header Bar ── */}
-        <div className="flex items-center justify-between px-6 py-3 border-b border-glass/50 shrink-0 bg-background/60 backdrop-blur-md">
+        <div className="flex items-center justify-between px-6 py-3 border-b border-border/50 shrink-0 glass-panel z-10">
           <div className="flex items-center gap-3">
             <Button
               variant="ghost"
@@ -90,12 +90,12 @@ export default function UMLDashboard() {
             >
               <ArrowLeft className="w-4 h-4 mr-1.5" /> Back
             </Button>
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-violet-500 via-purple-600 to-indigo-600 flex items-center justify-center shadow-lg shadow-violet-500/30">
-              <GitMerge className="w-4 h-4 text-white" />
+            <div className="w-9 h-9 rounded-xl bg-neon-violet/20 border border-neon-violet/30 flex items-center justify-center shadow-glow-sm shadow-neon-violet/30">
+              <GitMerge className="w-4 h-4 text-neon-violet" />
             </div>
             <div>
-              <h1 className="font-semibold text-sm text-foreground leading-tight">UML-Clarity</h1>
-              <p className="text-[10px] text-muted-foreground">Diagram Intelligence Engine</p>
+              <h1 className="font-display font-semibold text-sm text-foreground tracking-tight leading-tight">UML-Clarity</h1>
+              <p className="text-[10px] text-muted-foreground uppercase tracking-wider mt-0.5">Diagram Intelligence Engine</p>
             </div>
           </div>
 
@@ -109,8 +109,8 @@ export default function UMLDashboard() {
               )}
               {status === "online" && (
                 <>
-                  <div className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span className="text-emerald-400 font-medium">Online</span>
+                  <div className="w-2 h-2 rounded-full bg-neon-mint animate-pulse" />
+                  <span className="text-neon-mint font-medium">Online</span>
                 </>
               )}
               {status === "offline" && (
@@ -132,19 +132,19 @@ export default function UMLDashboard() {
         </div>
 
         {/* ── Main area ── */}
-        <div className="flex-1 relative overflow-hidden bg-slate-950">
+        <div className="flex-1 relative overflow-hidden bg-background">
           {status === "offline" && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 bg-background/80 backdrop-blur-sm z-10">
-              <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-violet-500/20 to-indigo-600/20 border border-violet-500/30 flex items-center justify-center">
-                <WifiOff className="w-9 h-9 text-violet-400" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-6 glass-panel z-10">
+              <div className="w-20 h-20 rounded-2xl bg-destructive/10 border border-destructive/30 flex items-center justify-center">
+                <WifiOff className="w-9 h-9 text-destructive" />
               </div>
               <div className="text-center max-w-sm">
-                <h2 className="text-xl font-bold mb-2">UML-Clarity is not running</h2>
+                <h2 className="text-xl font-display font-bold tracking-tight mb-2">UML-Clarity is not running</h2>
                 <p className="text-muted-foreground text-sm mb-1">
-                  The UML service frontend isn't reachable at <code className="text-xs bg-muted px-1.5 py-0.5 rounded text-violet-400">{UML_SERVICE_URL}</code>
+                  The UML service frontend isn't reachable at <code className="text-xs bg-muted/50 px-1.5 py-0.5 rounded text-destructive">{UML_SERVICE_URL}</code>
                 </p>
               </div>
-              <Button onClick={handleRefresh} className="gap-2 bg-gradient-to-r from-violet-600 to-indigo-600 border-0 text-white hover:opacity-90">
+              <Button onClick={handleRefresh} className="gap-2 bg-destructive/20 text-destructive hover:bg-destructive/30 border border-destructive/30 transition-colors">
                 <RefreshCw className="w-4 h-4" />
                 Retry Connection
               </Button>
@@ -152,11 +152,11 @@ export default function UMLDashboard() {
           )}
 
           {status === "checking" && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 bg-background/60 backdrop-blur-sm z-10">
-              <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500/20 to-indigo-600/20 border border-violet-500/30 flex items-center justify-center">
-                <Loader2 className="w-7 h-7 text-violet-400 animate-spin" />
+            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 glass-panel z-10">
+              <div className="w-16 h-16 rounded-2xl bg-neon-violet/10 border border-neon-violet/30 flex items-center justify-center shadow-glow-sm">
+                <Loader2 className="w-7 h-7 text-neon-violet animate-spin" />
               </div>
-              <p className="text-sm text-muted-foreground">Connecting to UML-Clarity…</p>
+              <p className="text-sm font-semibold text-muted-foreground tracking-wide">Connecting to UML-Clarity…</p>
             </div>
           )}
 

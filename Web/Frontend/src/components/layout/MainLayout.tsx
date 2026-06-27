@@ -11,14 +11,15 @@ interface MainLayoutProps {
 export function MainLayout({ children, fullWidth = false, wide = false }: MainLayoutProps) {
   return (
     <div className="h-screen w-screen relative overflow-hidden bg-background">
-      {/* Background orbs */}
-      <div className="glow-orb w-96 h-96 bg-neon-violet top-20 -left-48 fixed opacity-20" />
-      <div className="glow-orb w-80 h-80 bg-neon-cyan bottom-20 right-10 fixed opacity-20" />
+      {/* Background orbs — deeper blur, more subtle */}
+      <div className="glow-orb w-[28rem] h-[28rem] bg-neon-violet top-20 -left-48 fixed" />
+      <div className="glow-orb w-[24rem] h-[24rem] bg-neon-cyan bottom-20 right-10 fixed" />
+      <div className="glow-orb w-[20rem] h-[20rem] bg-neon-peach top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 fixed opacity-[0.06]" />
       
       {!fullWidth && <Sidebar />}
       
       <main className={cn(
-        "flex flex-col transition-all duration-300 h-screen overflow-y-auto",
+        "flex flex-col h-screen overflow-y-auto scrollbar-thin transition-[margin] duration-slow ease-smooth",
         fullWidth ? "ml-0 w-screen" : "ml-64 p-6"
       )}>
         <div className={cn(

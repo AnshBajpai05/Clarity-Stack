@@ -75,16 +75,16 @@ export default function ProjectsPage() {
     <MainLayout>
       {/* Demo Mode Banner */}
       {demoMode && !isLoading && (
-        <div className="mb-6 glass-panel p-4 border-neon-peach/30 animate-fade-in">
+        <div className="mb-6 glass-panel p-4 border-neon-peach/30 animate-fade-in-up">
           <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-neon-peach/20 flex items-center justify-center">
+            <div className="w-8 h-8 rounded-lg bg-neon-peach/15 flex items-center justify-center">
               <Info className="w-4 h-4 text-neon-peach" />
             </div>
             <div>
               <p className="text-sm font-medium text-neon-peach">Demo Mode</p>
               <p className="text-xs text-muted-foreground">
                 Backend unavailable. Using sample data. Connect to
-                <code className="px-1 py-0.5 rounded bg-muted text-foreground">
+                <code className="px-1 py-0.5 rounded bg-muted text-foreground mx-1 border border-border/50">
                   http://127.0.0.1:8000
                 </code>
                 for live data.
@@ -95,52 +95,54 @@ export default function ProjectsPage() {
       )}
 
       {/* Header */}
-      <div className="mb-8 flex justify-between items-center">
+      <div className="mb-8 flex justify-between items-center animate-fade-in-up">
         <div>
           <div className="flex items-center gap-3 mb-2">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-neon-cyan to-neon-violet flex items-center justify-center">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-neon-cyan to-neon-violet flex items-center justify-center shadow-glow-sm">
               <Sparkles className="w-5 h-5 text-background" />
             </div>
-            <h1 className="text-3xl font-bold gradient-text">
+            <h1 className="text-3xl font-display font-bold gradient-text tracking-tight">
               {localStorage.getItem('cs_nickname') ? `Hello, ${localStorage.getItem('cs_nickname')}` : 'Projects'}
             </h1>
           </div>
-          <p className="text-muted-foreground">
+          <p className="text-muted-foreground leading-relaxed">
             Manage your knowledge projects and chat histories.
           </p>
         </div>
-        <Button variant="outline" data-tour="discover-projects" className="border-purple-500/50 hover:bg-purple-600/20" onClick={() => window.location.href = '/projects/search'}>
-          <Search className="w-4 h-4 mr-2" />
+        <Button variant="outline" data-tour="discover-projects" onClick={() => window.location.href = '/projects/search'}>
+          <Search className="w-4 h-4" />
           Discover Projects
         </Button>
       </div>
 
       {/* Content */}
-      {isLoading ? (
-        <LoadingSpinner className="py-20" text="Loading projects..." />
-      ) : error ? (
-        <ErrorState message={error} onRetry={fetchProjects} />
-      ) : projects.length === 0 ? (
-        <EmptyState
-          icon={FolderKanban}
-          title="No projects yet"
-          description="Create your first project to start organizing your knowledge."
-          action={
-            <Button variant="neon" data-tour="new-project" onClick={() => setIsModalOpen(true)}>
-              <Plus className="w-4 h-4" />
-              Create Project
-            </Button>
-          }
-        />
-      ) : (
-        <div className="space-y-4">
-          {projects.map((project, idx) => (
-            <div key={project.id} data-tour={idx === 0 ? "project-card" : undefined}>
-              <ProjectCard project={project} />
-            </div>
-          ))}
-        </div>
-      )}
+      <div className="animate-fade-in-up stagger-1">
+        {isLoading ? (
+          <LoadingSpinner className="py-20" text="Loading projects..." />
+        ) : error ? (
+          <ErrorState message={error} onRetry={fetchProjects} />
+        ) : projects.length === 0 ? (
+          <EmptyState
+            icon={FolderKanban}
+            title="No projects yet"
+            description="Create your first project to start organizing your knowledge."
+            action={
+              <Button variant="neon" data-tour="new-project" onClick={() => setIsModalOpen(true)}>
+                <Plus className="w-4 h-4" />
+                Create Project
+              </Button>
+            }
+          />
+        ) : (
+          <div className="space-y-4">
+            {projects.map((project, idx) => (
+              <div key={project.id} data-tour={idx === 0 ? "project-card" : undefined} className={`animate-fade-in-up stagger-${(idx % 5) + 1}`}>
+                <ProjectCard project={project} />
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
 
       {/* Floating Button */}
       {projects.length > 0 && (
@@ -148,7 +150,7 @@ export default function ProjectsPage() {
           variant="default"
           size="lg"
           data-tour="new-project"
-          className="fixed bottom-8 right-8 shadow-2xl shadow-primary/30 animate-glow"
+          className="fixed bottom-8 right-8 shadow-elevated hover:shadow-glow transition-all duration-normal ease-spring z-40 rounded-full pr-5 pl-4"
           onClick={() => setIsModalOpen(true)}
         >
           <Plus className="w-5 h-5" />

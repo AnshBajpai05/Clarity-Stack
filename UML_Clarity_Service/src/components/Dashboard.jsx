@@ -1083,22 +1083,22 @@ const Dashboard = () => {
 
     /* ── Theme tokens ────────────────────────────────────────────────────── */
     const T = isDark ? {
-        bg:          '#0a0e1a',
-        surface:     '#111827',
-        surfaceAlt:  '#1e293b',
-        border:      '#334155',
-        text:        '#f1f5f9',
-        textMuted:   '#94a3b8',
-        textSubtle:  '#64748b',
-        inputBg:     '#0f172a',
-        accent:      '#60a5fa',
-        badgeBg:     '#064e3b',
-        badgeText:   '#34d399',
-        badgeBorder: '#065f46',
-        errBg:       '#450a0a',
-        errBorder:   '#991b1b',
-        errText:     '#fca5a5',
-        okBg:        '#052e16',
+        bg:          '#0d0f17',
+        surface:     '#161925',
+        surfaceAlt:  '#1c2033',
+        border:      '#2a2f45',
+        text:        '#e8eaf6',
+        textMuted:   '#8891b4',
+        textSubtle:  '#555e7f',
+        inputBg:     '#11141f',
+        accent:      '#818cf8',
+        badgeBg:     '#1a1f3a',
+        badgeText:   '#818cf8',
+        badgeBorder: '#3730a3',
+        errBg:       '#1f1018',
+        errBorder:   '#7c2d51',
+        errText:     '#f9a8d4',
+        okBg:        '#0f1f1a',
         okBorder:    '#065f46',
         okText:      '#6ee7b7',
     } : {
@@ -1160,8 +1160,8 @@ const Dashboard = () => {
                     ? '1.5px solid ' + T.accent
                     : '1.5px solid ' + T.border,
                 background: active
-                    ? (isDark ? '#1e3a5f' : '#eff6ff')
-                    : (isDark ? '#1e293b' : T.surface),
+                    ? (isDark ? '#1e2040' : '#eff6ff')
+                    : (isDark ? '#1c2033' : T.surface),
                 color: active ? T.accent : T.text,
                 transition: 'all 0.15s',
                 whiteSpace: 'nowrap',
@@ -1569,7 +1569,7 @@ const Dashboard = () => {
                 {/* ── Canvas ─────────────────────────────────────────────── */}
                 <div style={{
                     flex: 1, position: 'relative', overflow: 'hidden', minHeight: 0,
-                    background: isDark ? '#0f172a' : '#e5e7eb',
+                    background: isDark ? '#0d0f17' : '#e5e7eb',
                 }}>
                     <DiagramCanvas
                         ref={canvasRef}

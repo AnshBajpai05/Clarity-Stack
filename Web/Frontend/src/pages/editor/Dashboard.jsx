@@ -64,52 +64,54 @@ export default function Dashboard() {
     );
 
     return (
-        <div style={s.page}>
+        <div className="min-h-screen bg-background text-foreground font-sans flex flex-col">
             {/* ── Navbar ─────────────────────────────────────────────────── */}
-            <nav style={s.nav}>
-                <div style={{ display: "flex", alignItems: "center", gap: "16px" }}>
+            <nav className="h-[58px] bg-background/50 border-b border-border px-8 flex items-center justify-between sticky top-0 z-50 backdrop-blur-md">
+                <div className="flex items-center gap-4">
                     <button
                         onClick={() => navigate('/projects')}
-                        style={{ display: "flex", alignItems: "center", gap: "6px", background: "transparent", border: "1px solid #334155", color: "#cbd5e1", padding: "6px 12px", borderRadius: "8px", fontSize: "13px", fontWeight: 600, cursor: "pointer" }}
+                        className="flex items-center gap-1.5 bg-transparent border border-border text-muted-foreground hover:text-foreground hover:border-primary/50 px-3 py-1.5 rounded-lg text-[13px] font-semibold cursor-pointer transition-colors"
                     >
                         ← Back to Projects
                     </button>
-                    <span style={s.brand}>Clarity</span>
+                    <span className="text-[20px] font-display font-bold text-neon-violet tracking-tight">Clarity</span>
                 </div>
-                <div style={{ display: "flex", alignItems: "center", gap: "20px" }}>
-                    <span style={s.navOnline}><span style={{ color: "#22c55e", marginRight: "6px" }}>●</span>Online</span>
-                    <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
-                        <div style={{ width: "34px", height: "34px", borderRadius: "50%", backgroundColor: avatarColor, display: "flex", alignItems: "center", justifyContent: "center", color: "white", fontWeight: 700, fontSize: "13px", flexShrink: 0 }}>
+                <div className="flex items-center gap-5">
+                    <span className="text-xs text-muted-foreground flex items-center"><span className="text-neon-mint mr-1.5">●</span>Online</span>
+                    <div className="flex items-center gap-2.5">
+                        <div className="w-[34px] h-[34px] rounded-full flex items-center justify-center text-white font-bold text-[13px] shrink-0" style={{ backgroundColor: avatarColor }}>
                             {initials}
                         </div>
-                        <span style={{ fontSize: "14px", fontWeight: 600, color: "#e5e7eb" }}>{fullName}</span>
+                        <span className="text-sm font-semibold text-foreground">{fullName}</span>
                     </div>
                 </div>
             </nav>
 
             {/* ── Hero ───────────────────────────────────────────────────── */}
-            <div style={s.hero}>
-                <div style={{ textAlign: "center", maxWidth: "600px" }}>
-                    <h1 style={s.heroTitle}>
-                        Hello, <span style={{ color: "#a78bfa" }}>{firstName}</span> 👋
+            <div className="bg-[radial-gradient(ellipse_at_60%_0%,_hsl(var(--primary)/0.15)_0%,_transparent_60%)] border-b border-border/50 pt-20 pb-16 flex justify-center items-center">
+                <div className="text-center max-w-[600px] animate-fade-in-up">
+                    <h1 className="text-4xl font-display font-bold text-foreground mb-3 tracking-tight">
+                        Hello, <span className="text-neon-violet">{firstName}</span> 👋
                     </h1>
-                    <p style={s.heroSub}>Your collaborative workspace hub. Create, edit, and share in real time.</p>
-                    <button onClick={() => setShowModal(true)} style={s.heroBtn}>+ New Workspace</button>
+                    <p className="text-base text-muted-foreground mb-8 leading-relaxed">Your collaborative workspace hub. Create, edit, and share in real time.</p>
+                    <button onClick={() => setShowModal(true)} className="px-7 py-3 bg-primary text-primary-foreground border-none rounded-xl text-sm font-bold cursor-pointer shadow-[0_4px_20px_rgba(124,58,237,0.4)] hover:-translate-y-0.5 transition-transform">
+                        + New Workspace
+                    </button>
                 </div>
             </div>
 
             {/* ── Content ────────────────────────────────────────────────── */}
-            <main style={s.main}>
+            <main className="max-w-[1100px] w-full mx-auto px-6 py-8 pb-16 flex-1">
                 {/* Stats + search row */}
-                <div style={s.statsRow}>
+                <div className="flex items-center gap-3 mb-7 flex-wrap animate-fade-in-up stagger-1">
                     <StatCard label="Total Workspaces" value={workspaces.length} icon="🗂️" />
                     <StatCard label="Active Now"        value={workspaces.filter(w => w.active_users > 0).length} icon="🟢" />
                     <StatCard label="Total Sections"    value={workspaces.reduce((a,w) => a + (w.section_count||0), 0)} icon="📄" />
-                    <div style={{ marginLeft: "auto", display: "flex", alignItems: "center" }}>
-                        <div style={s.searchWrap}>
-                            <span style={{ color: "#6b7280", fontSize: "14px", marginRight: "8px" }}>⌕</span>
+                    <div className="ml-auto flex items-center">
+                        <div className="flex items-center glass-panel border-border/50 rounded-xl px-3.5 py-2">
+                            <span className="text-muted-foreground text-sm mr-2">⌕</span>
                             <input
-                                style={s.searchInput}
+                                className="bg-transparent border-none outline-none text-foreground text-[13px] w-[200px]"
                                 placeholder="Search workspaces…"
                                 value={search}
                                 onChange={(e) => setSearch(e.target.value)}
@@ -119,22 +121,25 @@ export default function Dashboard() {
                 </div>
 
                 {/* Section header */}
-                <div style={s.sectionHdr}>
-                    <span style={s.sectionHdrLabel}>Recent Workspaces</span>
-                    <span style={{ fontSize: "12px", color: "#4b5563" }}>{filtered.length} workspace{filtered.length !== 1 ? "s" : ""}</span>
+                <div className="flex items-center justify-between mb-4 animate-fade-in-up stagger-2">
+                    <span className="text-[13px] text-muted-foreground font-semibold uppercase tracking-wider">Recent Workspaces</span>
+                    <span className="text-xs text-muted-foreground">{filtered.length} workspace{filtered.length !== 1 ? "s" : ""}</span>
                 </div>
 
                 {/* Grid */}
                 {loading ? (
-                    <div style={s.empty}><span style={{ fontSize: "32px" }}>⏳</span><p style={{ color: "#6b7280" }}>Loading…</p></div>
+                    <div className="text-center p-20 border border-dashed border-border rounded-xl flex flex-col items-center gap-2">
+                        <span className="text-3xl">⏳</span>
+                        <p className="text-muted-foreground">Loading…</p>
+                    </div>
                 ) : filtered.length === 0 ? (
-                    <div style={s.empty}>
-                        <span style={{ fontSize: "48px" }}>📁</span>
-                        <p style={{ color: "#9ca3af", marginTop: "12px" }}>{search ? "No matches found." : "No workspaces yet."}</p>
-                        {!search && <button onClick={() => setShowModal(true)} style={s.heroBtn}>Create your first workspace</button>}
+                    <div className="text-center p-20 border border-dashed border-border rounded-xl flex flex-col items-center gap-3">
+                        <span className="text-5xl">📁</span>
+                        <p className="text-muted-foreground mt-3">{search ? "No matches found." : "No workspaces yet."}</p>
+                        {!search && <button onClick={() => setShowModal(true)} className="px-7 py-3 bg-primary text-primary-foreground border-none rounded-xl text-sm font-bold cursor-pointer shadow-[0_4px_20px_rgba(124,58,237,0.4)] hover:-translate-y-0.5 transition-transform mt-2">Create your first workspace</button>}
                     </div>
                 ) : (
-                    <div style={s.grid}>
+                    <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-[18px] animate-fade-in-up stagger-3">
                         {filtered.map((ws) => (
                             <WorkspaceCard key={ws.id} ws={ws} onDelete={deleteWorkspace} />
                         ))}
@@ -149,8 +154,6 @@ export default function Dashboard() {
                     onCreated={(id) => navigate(`/editor/workspace/${id}`)}
                 />
             )}
-
-            <style>{`* { box-sizing: border-box; } @keyframes spin { to { transform: rotate(360deg); } }`}</style>
         </div>
     );
 }
@@ -181,38 +184,38 @@ function NewWorkspaceModal({ onClose, onCreated }) {
     };
 
     return (
-        <div style={m.overlay} onClick={onClose}>
-            <div style={m.modal} onClick={(e) => e.stopPropagation()}>
-                <div style={m.mHeader}>
-                    <span style={m.mTitle}>New Workspace</span>
-                    <button onClick={onClose} style={m.closeBtn}>✕</button>
+        <div className="fixed inset-0 bg-background/80 flex items-center justify-center z-[100] backdrop-blur-sm" onClick={onClose}>
+            <div className="glass-panel border-border/50 rounded-2xl p-7 w-[420px] shadow-[0_25px_60px_rgba(0,0,0,0.6)] animate-fade-in-up" onClick={(e) => e.stopPropagation()}>
+                <div className="flex justify-between items-center mb-6">
+                    <span className="text-lg font-display font-bold text-foreground tracking-tight">New Workspace</span>
+                    <button onClick={onClose} className="bg-transparent border-none text-muted-foreground hover:text-foreground cursor-pointer text-lg">✕</button>
                 </div>
 
-                <form onSubmit={create} style={{ display: "flex", flexDirection: "column", gap: "18px" }}>
+                <form onSubmit={create} className="flex flex-col gap-[18px]">
                     <div>
-                        <label style={m.label}>Workspace Name</label>
-                        <input ref={inputRef} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Product Roadmap Q3" style={m.input} required />
+                        <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest block mb-2">Workspace Name</label>
+                        <input ref={inputRef} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. Product Roadmap Q3" className="w-full px-3.5 py-2.5 bg-muted/50 border border-border rounded-lg text-foreground text-sm outline-none focus:border-primary transition-colors" required />
                     </div>
 
                     <div>
-                        <label style={m.label}>Visibility</label>
-                        <div style={{ display: "flex", gap: "10px", marginTop: "8px" }}>
+                        <label className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest block mb-2">Visibility</label>
+                        <div className="flex gap-2.5 mt-2">
                             {[true, false].map((pub) => (
                                 <button
                                     type="button" key={pub}
                                     onClick={() => setIsPublic(pub)}
-                                    style={{ flex: 1, padding: "10px", borderRadius: "8px", border: `1px solid ${isPublic === pub ? "#7c3aed" : "#1f2937"}`, backgroundColor: isPublic === pub ? "#1e1040" : "#111827", color: isPublic === pub ? "#a78bfa" : "#6b7280", cursor: "pointer", fontSize: "13px", fontWeight: 600 }}
+                                    className={`flex-1 p-2.5 rounded-lg border text-[13px] font-semibold cursor-pointer transition-colors ${isPublic === pub ? 'border-primary bg-primary/10 text-primary' : 'border-border bg-muted/20 text-muted-foreground hover:bg-muted/50'}`}
                                 >
                                     {pub ? "🌐 Public" : "🔒 Private"}
                                 </button>
                             ))}
                         </div>
-                        <p style={{ fontSize: "11px", color: "#4b5563", marginTop: "8px" }}>
+                        <p className="text-[11px] text-muted-foreground mt-2">
                             {isPublic ? "Anyone with the link can view and edit." : "Only you can edit this workspace."}
                         </p>
                     </div>
 
-                    <button type="submit" disabled={creating || !name.trim()} style={{ ...m.submitBtn, opacity: (creating || !name.trim()) ? 0.6 : 1 }}>
+                    <button type="submit" disabled={creating || !name.trim()} className={`px-3 py-3.5 bg-primary text-primary-foreground border-none rounded-xl text-sm font-bold cursor-pointer transition-opacity ${(creating || !name.trim()) ? 'opacity-60' : 'opacity-100 hover:-translate-y-0.5 shadow-glow-sm'}`}>
                         {creating ? "Creating…" : "Create Workspace →"}
                     </button>
                 </form>
@@ -227,41 +230,39 @@ function WorkspaceCard({ ws, onDelete }) {
     const accent        = colorFor(ws.id);
 
     return (
-        <Link to={`/editor/workspace/${ws.id}`} style={{ textDecoration: "none" }}
+        <Link to={`/editor/workspace/${ws.id}`} className="no-underline block group"
             onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}>
-            <div style={{ ...c.card, borderColor: hov ? accent : "#1f2937", boxShadow: hov ? `0 0 0 1px ${accent}44, 0 8px 32px rgba(0,0,0,0.4)` : "0 2px 8px rgba(0,0,0,0.3)", transform: hov ? "translateY(-2px)" : "none" }}>
+            <div className={`glass-panel-hover p-5 relative overflow-hidden transition-all duration-300 ${hov ? 'shadow-floating -translate-y-1' : ''}`} style={{ borderColor: hov ? accent : undefined }}>
                 {/* Top accent bar */}
-                <div style={{ height: "3px", borderRadius: "4px 4px 0 0", backgroundColor: accent, position: "absolute", top: 0, left: 0, right: 0 }} />
+                <div className="h-[3px] rounded-t-sm absolute top-0 left-0 right-0" style={{ backgroundColor: accent }} />
 
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "16px", paddingTop: "6px" }}>
-                    <div style={{ width: "38px", height: "38px", borderRadius: "10px", backgroundColor: accent + "22", border: `1px solid ${accent}44`, display: "flex", alignItems: "center", justifyContent: "center", fontSize: "18px" }}>
+                <div className="flex justify-between items-start mb-4 pt-1.5">
+                    <div className="w-[38px] h-[38px] rounded-xl flex items-center justify-center text-lg border" style={{ backgroundColor: accent + "15", borderColor: accent + "30" }}>
                         📝
                     </div>
-                    <div style={{ display: "flex", gap: "8px", alignItems: "center" }}>
+                    <div className="flex gap-2 items-center">
                         {ws.active_users > 0 && (
-                            <span style={{ fontSize: "10px", backgroundColor: "#052e16", color: "#22c55e", padding: "2px 8px", borderRadius: "999px", fontWeight: 700, border: "1px solid #15803d" }}>
+                            <span className="text-[10px] bg-neon-mint/10 text-neon-mint px-2 py-0.5 rounded-full font-bold border border-neon-mint/30">
                                 ● {ws.active_users} live
                             </span>
                         )}
                         <button
                             onClick={(e) => onDelete(e, ws.id)}
-                            style={{ background: "none", border: "none", cursor: "pointer", color: "#374151", fontSize: "14px", padding: "2px 5px", borderRadius: "4px", lineHeight: 1 }}
-                            onMouseEnter={(e) => e.currentTarget.style.color = "#ef4444"}
-                            onMouseLeave={(e) => e.currentTarget.style.color = "#374151"}
+                            className="bg-transparent border-none cursor-pointer text-muted-foreground text-sm px-1.5 py-0.5 rounded hover:text-destructive transition-colors"
                         >✕</button>
                     </div>
                 </div>
 
-                <div style={{ fontWeight: 700, fontSize: "15px", color: "#f9fafb", marginBottom: "6px", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <div className="font-display font-semibold text-[15px] text-foreground mb-1.5 whitespace-nowrap overflow-hidden text-ellipsis tracking-tight">
                     {ws.name || `Workspace ${ws.id}`}
                 </div>
-                <div style={{ fontSize: "12px", color: "#6b7280", fontStyle: "italic", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", marginBottom: "18px", minHeight: "18px" }}>
+                <div className="text-xs text-muted-foreground italic whitespace-nowrap overflow-hidden text-ellipsis mb-[18px] min-h-[18px]">
                     {ws.preview ? `"${ws.preview}…"` : "Empty workspace"}
                 </div>
 
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", paddingTop: "12px", borderTop: "1px solid #1f2937" }}>
-                    <span style={{ fontSize: "11px", color: "#4b5563" }}>{ws.section_count} section{ws.section_count !== 1 ? "s" : ""}</span>
-                    <span style={{ fontSize: "11px", color: "#4b5563", fontFamily: "monospace" }}>{timeAgo(ws.created_at)}</span>
+                <div className="flex justify-between items-center pt-3 border-t border-border">
+                    <span className="text-[11px] text-muted-foreground">{ws.section_count} section{ws.section_count !== 1 ? "s" : ""}</span>
+                    <span className="text-[11px] text-muted-foreground font-mono">{timeAgo(ws.created_at)}</span>
                 </div>
             </div>
         </Link>
@@ -271,52 +272,14 @@ function WorkspaceCard({ ws, onDelete }) {
 // ── Stat Card ─────────────────────────────────────────────────────────────────
 function StatCard({ label, value, icon }) {
     return (
-        <div style={{ backgroundColor: "#0d1117", border: "1px solid #1f2937", borderRadius: "10px", padding: "14px 20px", display: "flex", alignItems: "center", gap: "12px" }}>
-            <span style={{ fontSize: "22px" }}>{icon}</span>
+        <div className="glass-panel border-border/50 rounded-xl px-5 py-3.5 flex items-center gap-3">
+            <span className="text-[22px]">{icon}</span>
             <div>
-                <div style={{ fontSize: "22px", fontWeight: 800, color: "#f9fafb", lineHeight: 1 }}>{value}</div>
-                <div style={{ fontSize: "11px", color: "#6b7280", marginTop: "3px" }}>{label}</div>
+                <div className="text-[22px] font-display font-bold text-foreground leading-none tracking-tight">{value}</div>
+                <div className="text-[11px] text-muted-foreground mt-1 uppercase tracking-wider font-semibold">{label}</div>
             </div>
         </div>
     );
 }
 
-// ── Styles ────────────────────────────────────────────────────────────────────
-const s = {
-    page:     { minHeight: "100vh", backgroundColor: "#080c14", fontFamily: "'Inter','Segoe UI',sans-serif", color: "#f9fafb" },
-    nav:      { backgroundColor: "#0d1117", borderBottom: "1px solid #1f2937", padding: "0 32px", height: "58px", display: "flex", alignItems: "center", justifyContent: "space-between", position: "sticky", top: 0, zIndex: 50 },
-    brand:    { fontSize: "20px", fontWeight: 900, color: "#a78bfa", letterSpacing: "-0.5px" },
-    navOnline:{ fontSize: "12px", color: "#6b7280", display: "flex", alignItems: "center" },
-    signOutBtn:{ padding: "6px 14px", backgroundColor: "transparent", border: "1px solid #1f2937", borderRadius: "7px", color: "#9ca3af", cursor: "pointer", fontSize: "12px", fontWeight: 500 },
 
-    hero:     { background: "radial-gradient(ellipse at 60% 0%, #1e1040 0%, #080c14 60%)", borderBottom: "1px solid #1a1f2e", padding: "80px 32px 64px", display: "flex", justifyContent: "center", alignItems: "center" },
-    heroTitle:{ fontSize: "40px", fontWeight: 900, color: "#f9fafb", margin: "0 0 12px", letterSpacing: "-1px" },
-    heroSub:  { fontSize: "16px", color: "#9ca3af", margin: "0 0 32px", lineHeight: 1.6 },
-    heroBtn:  { padding: "13px 28px", background: "linear-gradient(135deg,#7c3aed,#4f46e5)", color: "white", border: "none", borderRadius: "10px", fontSize: "14px", fontWeight: 700, cursor: "pointer", boxShadow: "0 4px 20px rgba(124,58,237,0.4)" },
-
-    main:     { maxWidth: "1100px", margin: "0 auto", padding: "32px 24px 60px" },
-    statsRow: { display: "flex", alignItems: "center", gap: "12px", marginBottom: "28px", flexWrap: "wrap" },
-    sectionHdr: { display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: "16px" },
-    sectionHdrLabel: { fontSize: "13px", color: "#6b7280", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.08em" },
-
-    searchWrap:  { display: "flex", alignItems: "center", backgroundColor: "#0d1117", border: "1px solid #1f2937", borderRadius: "9px", padding: "8px 14px" },
-    searchInput: { background: "transparent", border: "none", outline: "none", color: "#f9fafb", fontSize: "13px", width: "200px" },
-
-    grid:     { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(260px, 1fr))", gap: "18px" },
-    empty:    { textAlign: "center", padding: "80px 20px", border: "1px dashed #1f2937", borderRadius: "14px", display: "flex", flexDirection: "column", alignItems: "center", gap: "8px" },
-};
-
-const c = {
-    card: { backgroundColor: "#0d1117", border: "1px solid #1f2937", borderRadius: "13px", padding: "20px", position: "relative", overflow: "hidden", transition: "transform 0.2s, box-shadow 0.2s, border-color 0.2s", cursor: "pointer" },
-};
-
-const m = {
-    overlay:   { position: "fixed", inset: 0, backgroundColor: "rgba(0,0,0,0.7)", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 100, backdropFilter: "blur(4px)" },
-    modal:     { backgroundColor: "#0d1117", border: "1px solid #1f2937", borderRadius: "16px", padding: "28px", width: "420px", boxShadow: "0 25px 60px rgba(0,0,0,0.6)" },
-    mHeader:   { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "24px" },
-    mTitle:    { fontSize: "18px", fontWeight: 800, color: "#f9fafb" },
-    closeBtn:  { background: "none", border: "none", color: "#6b7280", cursor: "pointer", fontSize: "18px" },
-    label:     { fontSize: "11px", fontWeight: 700, color: "#6b7280", textTransform: "uppercase", letterSpacing: "0.06em", display: "block", marginBottom: "8px" },
-    input:     { width: "100%", padding: "11px 14px", backgroundColor: "#111827", border: "1px solid #1f2937", borderRadius: "8px", color: "#f9fafb", fontSize: "14px", outline: "none" },
-    submitBtn: { padding: "13px", background: "linear-gradient(135deg,#7c3aed,#4f46e5)", color: "white", border: "none", borderRadius: "9px", fontSize: "14px", fontWeight: 700, cursor: "pointer" },
-};

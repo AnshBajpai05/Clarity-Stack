@@ -562,9 +562,9 @@ export default function KnowledgeGraphPage() {
       <div className="flex flex-col h-full w-full gap-4 min-h-0 overflow-hidden">
 
         {/* Header */}
-        <div className="flex justify-between items-center bg-card/40 border border-border p-4 rounded-xl backdrop-blur-md">
+        <div className="flex justify-between items-center glass-panel p-4 rounded-xl animate-fade-in-up">
           <div>
-            <h1 className="text-2xl font-bold gradient-text">Knowledge Graph</h1>
+            <h1 className="text-2xl font-display font-bold gradient-text tracking-tight">Knowledge Graph</h1>
             <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
               {breadcrumb.map((b, i) => (
                 <span key={i} className="flex items-center gap-1">
@@ -637,9 +637,9 @@ export default function KnowledgeGraphPage() {
             {/* Drill-down hint */}
             {!isLoading && expandedChats.size === 0 && graphData.nodes.length > 1 && (
               <div className="absolute top-4 left-1/2 -translate-x-1/2 pointer-events-none">
-                <div className="bg-card/70 border border-border/60 px-4 py-2 rounded-full text-xs text-muted-foreground backdrop-blur-md whitespace-nowrap">
-                  Click a <span className="text-slate-300 font-medium">Chat</span> to expand
-                  → <span className="text-purple-400 font-medium">type groups</span>
+                <div className="glass-panel px-4 py-2 rounded-full text-xs text-muted-foreground whitespace-nowrap">
+                  Click a <span className="text-foreground font-medium">Chat</span> to expand
+                  → <span className="text-neon-violet font-medium">type groups</span>
                   → individual nodes
                 </div>
               </div>
@@ -657,7 +657,7 @@ export default function KnowledgeGraphPage() {
             )}
 
             {/* Legend */}
-            <div className="absolute bottom-4 left-4 bg-card/80 border border-border p-3 rounded-lg backdrop-blur-md text-xs">
+            <div className="absolute bottom-4 left-4 glass-panel p-3 rounded-lg text-xs">
               <p className="font-medium mb-2 text-muted-foreground uppercase tracking-wider">Node types</p>
               <div className="grid grid-cols-2 gap-x-4 gap-y-1.5 mb-3">
                 {Object.entries(SECTION_COLORS).map(([key, color]) => (
@@ -682,7 +682,7 @@ export default function KnowledgeGraphPage() {
           </div>
 
           {/* Sidebar */}
-          <div data-tour="graph-controls" className="w-72 bg-card/40 border border-border rounded-xl p-4 flex flex-col gap-4 backdrop-blur-md overflow-y-auto">
+          <div data-tour="graph-controls" className="w-72 glass-panel p-4 flex flex-col gap-4 overflow-y-auto">
 
             {/* Stats */}
             <div className="grid grid-cols-3 gap-2">
@@ -738,7 +738,7 @@ export default function KnowledgeGraphPage() {
                         const otherName = typeof other === "object" ? other.name : other;
                         return (
                           <div key={i} className="flex items-start gap-2 text-xs bg-background/50 p-2 rounded border border-border">
-                            <span className={`shrink-0 font-mono ${isSource ? "text-violet-400" : "text-cyan-400"}`}>
+                            <span className={`shrink-0 font-mono ${isSource ? "text-neon-violet" : "text-neon-cyan"}`}>
                               {isSource ? "→" : "←"}
                             </span>
                             <span className="text-muted-foreground shrink-0">{l.label}</span>

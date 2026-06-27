@@ -415,14 +415,14 @@ export default function SettingsPage() {
   return (
     <MainLayout>
       {/* Header */}
-      <div className="mb-8">
+      <div className="mb-8 animate-fade-in-up">
         <div className="flex items-center gap-3 mb-2">
-          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-neon-peach to-neon-violet flex items-center justify-center">
+          <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-neon-peach to-neon-violet flex items-center justify-center shadow-glow-sm">
             <Settings className="w-5 h-5 text-background" />
           </div>
-          <h1 className="text-3xl font-bold gradient-text">Settings</h1>
+          <h1 className="text-3xl font-display font-bold gradient-text tracking-tight">Settings</h1>
         </div>
-        <p className="text-muted-foreground">
+        <p className="text-muted-foreground leading-relaxed">
           Configure your ClarityStack preferences.
         </p>
       </div>
@@ -441,13 +441,13 @@ export default function SettingsPage() {
                 className={cn(
                   "w-full flex items-center gap-3 p-4 rounded-xl text-left transition-all",
                   isActive
-                    ? "glass-panel border-primary/30 shadow-lg shadow-primary/10"
-                    : "hover:bg-muted/50"
+                    ? "glass-panel shadow-floating"
+                    : "hover:bg-muted/30"
                 )}
               >
                 <Icon className={cn("w-5 h-5", isActive ? section.color : "text-muted-foreground")} />
                 <div>
-                  <p className={cn("font-medium", isActive ? "text-foreground" : "text-muted-foreground")}>
+                  <p className={cn("font-display font-medium tracking-tight", isActive ? "text-foreground" : "text-muted-foreground")}>
                     {section.title}
                   </p>
                   <p className="text-xs text-muted-foreground">
@@ -460,10 +460,10 @@ export default function SettingsPage() {
         </div>
 
         {/* Content */}
-        <div className="lg:col-span-3">
+        <div className="lg:col-span-3 animate-fade-in-up stagger-1">
           <div className="glass-panel p-6">
             <div className="mb-6">
-              <h2 className="text-xl font-semibold text-foreground">
+              <h2 className="text-xl font-display font-semibold text-foreground tracking-tight">
                 {sections.find((s) => s.id === activeSection)?.title}
               </h2>
               <p className="text-sm text-muted-foreground">

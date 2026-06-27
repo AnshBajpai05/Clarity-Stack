@@ -112,14 +112,14 @@ export default function DiscoveryPage() {
     <MainLayout>
       <div className="flex flex-col h-full max-w-6xl mx-auto w-full gap-6 pb-12">
         {/* Header */}
-        <div className="flex justify-between items-center bg-card/40 border border-border p-6 rounded-2xl backdrop-blur-md">
+        <div className="flex justify-between items-center glass-panel p-6 rounded-2xl animate-fade-in-up">
           <div className="flex items-center gap-4">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-neon-cyan to-neon-blue flex items-center justify-center">
-              <Globe className="w-6 h-6 text-white" />
+            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-neon-cyan to-neon-violet flex items-center justify-center shadow-glow-sm">
+              <Globe className="w-6 h-6 text-background" />
             </div>
             <div>
-              <h1 className="text-2xl font-bold gradient-text">Discovery Hub</h1>
-              <p className="text-muted-foreground">Find projects, follow updates, and request access</p>
+              <h1 className="text-2xl font-display font-bold gradient-text tracking-tight">Discovery Hub</h1>
+              <p className="text-muted-foreground leading-relaxed">Find projects, follow updates, and request access</p>
             </div>
           </div>
         </div>
@@ -127,34 +127,34 @@ export default function DiscoveryPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           
           {/* LEFT COL: Feed */}
-          <div className="lg:col-span-2 space-y-4">
-            <h2 className="text-lg font-semibold flex items-center gap-2 mb-4">
-              <Activity className="w-5 h-5 text-neon-blue" />
+          <div className="lg:col-span-2 space-y-4 animate-fade-in-up stagger-1">
+            <h2 className="text-lg font-display font-semibold flex items-center gap-2 mb-4 tracking-tight">
+              <Activity className="w-5 h-5 text-neon-cyan" />
               Activity Feed from Followed Projects
             </h2>
             
             {isLoading ? (
               <LoadingSpinner text="Loading feed..." />
             ) : feed.length === 0 ? (
-              <div className="bg-card/30 border border-border rounded-xl p-8 text-center text-muted-foreground">
+              <div className="glass-panel rounded-xl p-8 text-center text-muted-foreground">
                 <Info className="w-10 h-10 mx-auto mb-3 opacity-50" />
                 <p>No recent activity found in your network.</p>
                 <p className="text-sm">Follow some projects to see their updates here.</p>
               </div>
             ) : (
               <div className="space-y-4">
-                {feed.map((item) => {
+                {feed.map((item, idx) => {
                   const proj = publicProjects.find(p => p.id === item.projectId);
                   return (
-                    <div key={item._id} className="bg-card/50 border border-border rounded-xl p-5 hover:border-neon-cyan/30 transition-all">
+                    <div key={item._id} className={`glass-panel-hover p-5 rounded-xl transition-all animate-fade-in-up stagger-${(idx % 5) + 1}`}>
                       <div className="flex justify-between items-center mb-3">
-                        <h4 className="font-semibold text-slate-200">
+                        <h4 className="font-display font-semibold text-foreground">
                           {proj ? proj.name : `Project ${item.projectId.substring(0,8)}`}
                         </h4>
                         <span className="text-xs text-muted-foreground">{new Date(item.computedAt).toLocaleString()}</span>
                       </div>
-                      <p className="text-sm text-slate-400 mb-4">
-                        Graph Delta Computed: <span className="text-neon-green">+{item.totalAdded} Additions</span>, <span className="text-neon-peach">-{item.totalRemoved} Removals</span>
+                      <p className="text-sm text-muted-foreground mb-4 leading-relaxed">
+                        Graph Delta Computed: <span className="text-neon-mint">+{item.totalAdded} Additions</span>, <span className="text-neon-peach">-{item.totalRemoved} Removals</span>
                       </p>
                       
                       {item.totalAdded > 0 && (
@@ -178,11 +178,11 @@ export default function DiscoveryPage() {
           </div>
 
           {/* RIGHT COL: Search & Discover */}
-          <div className="space-y-6">
-            <div className="bg-card/40 border border-border rounded-xl p-5 backdrop-blur-md">
+          <div className="space-y-6 animate-fade-in-up stagger-2">
+            <div className="glass-panel p-5 rounded-xl">
               <div className="flex items-center justify-between mb-4">
-                <h2 className="text-lg font-semibold">Explore Projects</h2>
-                <span className="text-xs bg-neon-cyan/10 text-neon-cyan border border-neon-cyan/20 px-2 py-0.5 rounded-full">
+                <h2 className="text-lg font-display font-semibold tracking-tight">Explore Projects</h2>
+                <span className="text-xs bg-neon-cyan/15 text-neon-cyan border border-neon-cyan/30 px-2 py-0.5 rounded-full">
                   {discoverableProjects.length} public
                 </span>
               </div>
@@ -200,9 +200,9 @@ export default function DiscoveryPage() {
                 {!isSearching && discoverableProjects.map(proj => {
                   const isFollowing = followingIds.includes(proj.id);
                   return (
-                    <div key={proj.id} className="bg-background/80 border border-border p-4 rounded-lg flex flex-col gap-3">
+                    <div key={proj.id} className="glass-card p-4 flex flex-col gap-3 transition-colors hover:border-primary/40">
                       <div>
-                        <h4 className="font-medium truncate">{proj.name}</h4>
+                        <h4 className="font-display font-medium text-foreground truncate">{proj.name}</h4>
                         <p className="text-xs text-muted-foreground truncate">{proj.purpose}</p>
                       </div>
                       <div className="flex gap-2">

@@ -452,16 +452,15 @@ const handleCreateChat = async (
     <div
       className="
         group relative
-        glass-panel p-6 rounded-xl border border-primary/30
-        shadow-[0_0_25px_rgba(168,85,247,0.25)]
-        hover:shadow-[0_0_40px_rgba(168,85,247,0.45)]
-        transition-all duration-300
+        glass-panel p-6 rounded-xl border border-primary/20
+        shadow-floating
+        hover:shadow-glow
+        transition-all duration-normal ease-smooth
       "
     >
-
       {/* Header row */}
-      <div className="flex justify-between items-center mb-3">
-        <h2 className="text-lg font-semibold tracking-wide">
+      <div className="flex justify-between items-center mb-4">
+        <h2 className="text-lg font-display font-semibold tracking-tight">
           PROJECT CONTEXT
         </h2>
 
@@ -646,7 +645,7 @@ const handleCreateChat = async (
           variant="default"
           size="lg"
           data-tour="import-chats"
-          className="fixed bottom-8 right-8 shadow-2xl shadow-primary/30 animate-glow"
+          className="fixed bottom-8 right-8 shadow-elevated hover:shadow-glow transition-all duration-normal ease-spring z-40 rounded-full pr-5 pl-4"
           onClick={() => setIsModalOpen(true)}
         >
           <Plus className="w-5 h-5" />

@@ -13,16 +13,19 @@ export default function LandingPage() {
   const navigate = useNavigate();
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-[#0f0f1a] via-[#1a1033] to-[#0f1a2b] text-white">
-      
+    <div className="min-h-screen bg-background text-foreground relative overflow-hidden">
+      {/* Background effects */}
+      <div className="glow-orb w-[36rem] h-[36rem] bg-neon-violet top-0 -right-48 opacity-[0.12]" />
+      <div className="glow-orb w-[32rem] h-[32rem] bg-neon-cyan -bottom-32 -left-32 opacity-[0.10]" />
+      <div className="glow-orb w-[24rem] h-[24rem] bg-neon-peach top-1/2 left-1/3 opacity-[0.05]" />
+
       {/* NAVBAR */}
-      <div className="flex justify-between items-center px-8 py-6">
-        <h1 className="text-xl font-semibold tracking-wide flex items-center gap-2">
-          <Sparkles className="text-cyan-400" size={20} />
+      <div className="relative flex justify-between items-center px-8 py-6 border-b border-border/20">
+        <h1 className="text-xl font-display font-bold tracking-tight flex items-center gap-2.5">
           ClarityStack
         </h1>
 
-        <div className="flex gap-4">
+        <div className="flex gap-3">
           <Button variant="ghost" onClick={() => navigate("/login")}>
             Login
           </Button>
@@ -33,19 +36,21 @@ export default function LandingPage() {
       </div>
 
       {/* HERO */}
-      <section className="flex flex-col items-center justify-center text-center mt-24 px-6">
-        <h2 className="text-5xl font-bold leading-tight max-w-4xl">
-          Turn messy AI chats into
-          <span className="text-cyan-400"> structured knowledge</span>
+      <section className="relative flex flex-col items-center justify-center text-center mt-24 px-6 animate-fade-in">
+
+
+        <h2 className="text-5xl md:text-6xl font-display font-extrabold leading-[1.08] max-w-4xl tracking-tight">
+          Turn messy AI chats into{" "}
+          <span className="gradient-text">structured knowledge</span>
         </h2>
 
-        <p className="mt-6 text-lg text-gray-300 max-w-2xl">
+        <p className="mt-6 text-lg text-muted-foreground max-w-2xl leading-relaxed">
           ClarityStack synthesizes multiple AI models, builds knowledge graphs,
           and tracks decision reasoning — all in one place.
         </p>
 
-        <div className="mt-8 flex gap-4">
-          <Button size="lg" onClick={() => navigate("/login")}>
+        <div className="mt-10 flex gap-4">
+          <Button size="lg" onClick={() => navigate("/login")} className="shadow-glow">
             Start Building
           </Button>
           <Button size="lg" variant="outline">
@@ -55,68 +60,83 @@ export default function LandingPage() {
       </section>
 
       {/* FEATURES */}
-      <section className="mt-28 px-10 grid md:grid-cols-3 gap-8">
-        
-        <div className="bg-white/5 p-6 rounded-2xl border border-white/10 hover:border-cyan-400/40 transition">
-          <Brain className="text-cyan-400 mb-4" size={28} />
-          <h3 className="text-xl font-semibold mb-3">Multi-Model AI</h3>
-          <p className="text-gray-400">
-            Combine outputs from Groq, HuggingFace, and Gemini to generate a
-            unified truth.
-          </p>
+      <section className="relative mt-32 px-10 max-w-6xl mx-auto">
+        <div className="grid md:grid-cols-3 gap-6">
+          {[
+            {
+              icon: Brain,
+              iconColor: "text-neon-cyan",
+              title: "Multi-Model AI",
+              desc: "Combine outputs from Groq, HuggingFace, and Gemini to generate a unified truth.",
+            },
+            {
+              icon: Network,
+              iconColor: "text-neon-violet",
+              title: "Knowledge Graph",
+              desc: "Automatically convert conversations into structured nodes and relationships.",
+            },
+            {
+              icon: BarChart3,
+              iconColor: "text-neon-peach",
+              title: "Decision Intelligence",
+              desc: "Track decisions, conflicts, and reasoning across evolving discussions.",
+            },
+          ].map((feature, i) => (
+            <div
+              key={feature.title}
+              className={cn(
+                "glass-panel-hover p-6 rounded-2xl group",
+                `stagger-${i + 1} animate-fade-in-up`
+              )}
+            >
+              <div className={cn(
+                "w-11 h-11 rounded-xl flex items-center justify-center mb-5 transition-[box-shadow] duration-normal",
+                feature.iconColor === "text-neon-cyan" && "bg-neon-cyan/10 group-hover:shadow-[0_0_20px_hsl(var(--neon-cyan)/0.2)]",
+                feature.iconColor === "text-neon-violet" && "bg-neon-violet/10 group-hover:shadow-[0_0_20px_hsl(var(--neon-violet)/0.2)]",
+                feature.iconColor === "text-neon-peach" && "bg-neon-peach/10 group-hover:shadow-[0_0_20px_hsl(var(--neon-peach)/0.2)]",
+              )}>
+                <feature.icon className={cn("w-5 h-5", feature.iconColor)} />
+              </div>
+              <h3 className="text-lg font-display font-semibold mb-2 text-foreground">{feature.title}</h3>
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                {feature.desc}
+              </p>
+            </div>
+          ))}
         </div>
-
-        <div className="bg-white/5 p-6 rounded-2xl border border-white/10 hover:border-cyan-400/40 transition">
-          <Network className="text-purple-400 mb-4" size={28} />
-          <h3 className="text-xl font-semibold mb-3">Knowledge Graph</h3>
-          <p className="text-gray-400">
-            Automatically convert conversations into structured nodes and
-            relationships.
-          </p>
-        </div>
-
-        <div className="bg-white/5 p-6 rounded-2xl border border-white/10 hover:border-cyan-400/40 transition">
-          <BarChart3 className="text-amber-400 mb-4" size={28} />
-          <h3 className="text-xl font-semibold mb-3">Decision Intelligence</h3>
-          <p className="text-gray-400">
-            Track decisions, conflicts, and reasoning across evolving discussions.
-          </p>
-        </div>
-
       </section>
 
       {/* HOW IT WORKS */}
-      <section className="mt-28 px-10 text-center">
-        <h2 className="text-3xl font-bold mb-10">How It Works</h2>
+      <section className="relative mt-32 px-10 text-center max-w-5xl mx-auto pb-24">
+        <h2 className="text-3xl font-display font-bold mb-4 tracking-tight">How It Works</h2>
+        <p className="text-muted-foreground mb-12 max-w-lg mx-auto">Three steps to transform your project conversations into actionable intelligence.</p>
 
-        <div className="grid md:grid-cols-3 gap-8">
-          
-          <div>
-            <Upload className="mx-auto mb-3 text-cyan-400" />
-            <h4 className="font-semibold text-lg mb-2">Import</h4>
-            <p className="text-gray-400">
-              Paste conversations from ChatGPT, Slack, or documents.
-            </p>
-          </div>
-
-          <div>
-            <Sparkles className="mx-auto mb-3 text-purple-400" />
-            <h4 className="font-semibold text-lg mb-2">Synthesize</h4>
-            <p className="text-gray-400">
-              AI models analyze and merge information into structured knowledge.
-            </p>
-          </div>
-
-          <div>
-            <Search className="mx-auto mb-3 text-amber-400" />
-            <h4 className="font-semibold text-lg mb-2">Explore</h4>
-            <p className="text-gray-400">
-              Navigate your knowledge graph and trace decisions.
-            </p>
-          </div>
-
+        <div className="grid md:grid-cols-3 gap-10">
+          {[
+            { icon: Upload, color: "text-neon-cyan", title: "Import", desc: "Paste conversations from ChatGPT, Slack, or documents." },
+            { icon: Sparkles, color: "text-neon-violet", title: "Synthesize", desc: "AI models analyze and merge information into structured knowledge." },
+            { icon: Search, color: "text-neon-peach", title: "Explore", desc: "Navigate your knowledge graph and trace decisions." },
+          ].map((step, i) => (
+            <div key={step.title} className={`animate-fade-in-up stagger-${i + 1}`}>
+              <div className={cn(
+                "w-14 h-14 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-border/40",
+                step.color === "text-neon-cyan" && "bg-neon-cyan/8",
+                step.color === "text-neon-violet" && "bg-neon-violet/8",
+                step.color === "text-neon-peach" && "bg-neon-peach/8",
+              )}>
+                <step.icon className={cn("w-6 h-6", step.color)} />
+              </div>
+              <h4 className="font-display font-semibold text-lg mb-2 text-foreground">{step.title}</h4>
+              <p className="text-muted-foreground text-sm leading-relaxed">
+                {step.desc}
+              </p>
+            </div>
+          ))}
         </div>
       </section>
     </div>
   );
 }
+
+// Helper — cn import from utils
+import { cn } from "@/lib/utils";

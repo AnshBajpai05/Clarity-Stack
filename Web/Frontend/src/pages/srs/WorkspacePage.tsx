@@ -35,11 +35,11 @@ export function WorkspacePage() {
 
   if (!currentDocId || !issues) {
     return (
-      <div className="flex-1 flex flex-col items-center justify-center h-full text-slate-400 bg-[#0a0f18] rounded-xl border border-slate-800 border-dashed">
+      <div className="flex-1 flex flex-col items-center justify-center h-full text-muted-foreground bg-background rounded-xl border border-dashed border-border p-6 m-4">
         <FileText className="w-16 h-16 mb-4 opacity-20" />
-        <h2 className="text-xl font-medium text-slate-300">No Document Selected</h2>
+        <h2 className="text-xl font-display font-medium text-foreground tracking-tight">No Document Selected</h2>
         <p className="mt-2 mb-6">Select or upload a document from the Dashboard to start triaging issues.</p>
-        <button onClick={() => navigate('/srs/dashboard')} className="px-6 py-2 bg-indigo-500 hover:bg-indigo-400 text-white rounded-lg font-medium transition-colors">
+        <button onClick={() => navigate('/srs/dashboard')} className="px-6 py-2 bg-primary hover:bg-primary/80 text-primary-foreground rounded-lg font-medium transition-colors">
           Go to Dashboard
         </button>
       </div>
@@ -105,35 +105,35 @@ export function WorkspacePage() {
   if (!currentDocId || !issues) return null;
 
   return (
-    <div className="h-full bg-slate-950 text-slate-200 flex flex-col font-sans">
+    <div className="h-full bg-background text-foreground flex flex-col font-sans">
       {/* Header */}
-      <header className="h-16 border-b border-slate-800 bg-slate-900/50 flex items-center justify-between px-6 shrink-0">
+      <header className="h-16 border-b border-border glass-panel flex items-center justify-between px-6 shrink-0 z-10">
         <div className="flex items-center gap-4">
           <button 
             onClick={() => navigate('/srs/dashboard')}
-            className="p-2 hover:bg-slate-800 rounded-lg transition-colors text-slate-400 hover:text-white"
+            className="p-2 hover:bg-muted/50 rounded-lg transition-colors text-muted-foreground hover:text-foreground"
           >
             <ArrowLeft className="w-5 h-5" />
           </button>
           <div>
-            <h1 className="text-sm font-medium text-slate-400">Workspace</h1>
-            <h2 className="text-lg font-semibold text-white tracking-tight flex items-center gap-2">
-              <FileText className="w-4 h-4 text-emerald-400" />
+            <h1 className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Workspace</h1>
+            <h2 className="text-lg font-display font-semibold text-foreground tracking-tight flex items-center gap-2">
+              <FileText className="w-4 h-4 text-neon-mint" />
               {currentDocId}
             </h2>
           </div>
         </div>
 
         <div className="flex items-center gap-6">
-          <div className="flex items-center gap-4 text-sm px-4 py-1.5 bg-slate-900 rounded-full border border-slate-800">
+          <div className="flex items-center gap-4 text-sm px-4 py-1.5 glass-panel rounded-full border border-border">
             <span className="flex items-center gap-1.5">
-              <AlertCircle className="w-4 h-4 text-slate-400" />
-              <span className="text-slate-300">Total: {metrics.total}</span>
+              <AlertCircle className="w-4 h-4 text-muted-foreground" />
+              <span className="text-foreground">Total: {metrics.total}</span>
             </span>
-            <span className="w-px h-4 bg-slate-800" />
+            <span className="w-px h-4 bg-border" />
             <span className="flex items-center gap-1.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              <span className="text-emerald-400 font-medium">Resolved: {metrics.resolved}</span>
+              <CheckCircle2 className="w-4 h-4 text-neon-mint" />
+              <span className="text-neon-mint font-medium">Resolved: {metrics.resolved}</span>
             </span>
           </div>
 
@@ -153,27 +153,27 @@ export function WorkspacePage() {
               });
             }}
             disabled={isReanalyzing || metrics.remaining === 0}
-            className="flex items-center gap-2 px-4 py-2 bg-indigo-500/10 hover:bg-indigo-500/20 text-indigo-400 text-sm font-medium rounded-lg border border-indigo-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            className="flex items-center gap-2 px-4 py-2 bg-neon-violet/10 hover:bg-neon-violet/20 text-neon-violet text-sm font-medium rounded-lg border border-neon-violet/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
           >
             {isReanalyzing ? 'Validating...' : 'Re-analyze Document'}
           </button>
 
-          <div data-tour="srs-actions" className="flex items-center gap-4 border-l border-slate-800 pl-6">
+          <div data-tour="srs-actions" className="flex items-center gap-4 border-l border-border pl-6">
             {metrics.remaining === 0 && (
               <div className="hidden md:flex flex-col items-end text-right">
-                <p className="text-[11px] text-emerald-400 font-medium flex items-center gap-1"><CheckCircle2 className="w-3 h-3"/> 0 conflicts remaining</p>
-                <p className="text-[11px] text-emerald-400 font-medium flex items-center gap-1"><CheckCircle2 className="w-3 h-3"/> 0 critical ambiguities</p>
-                <p className="text-[10px] text-slate-500 uppercase tracking-widest mt-0.5">Confidence: <span className="text-emerald-400 font-bold">HIGH</span></p>
+                <p className="text-[11px] text-neon-mint font-medium flex items-center gap-1"><CheckCircle2 className="w-3 h-3"/> 0 conflicts remaining</p>
+                <p className="text-[11px] text-neon-mint font-medium flex items-center gap-1"><CheckCircle2 className="w-3 h-3"/> 0 critical ambiguities</p>
+                <p className="text-[10px] text-muted-foreground uppercase tracking-widest mt-0.5">Confidence: <span className="text-neon-mint font-bold">HIGH</span></p>
               </div>
             )}
             <button
               onClick={handleExport}
               className={`flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-bold transition-all duration-300 ${
                 metrics.remaining === 0 
-                  ? 'bg-emerald-500 hover:bg-emerald-400 text-slate-950 shadow-[0_0_20px_rgba(16,185,129,0.4)] transform hover:-translate-y-0.5' 
+                  ? 'bg-neon-mint hover:bg-neon-mint/90 text-background shadow-[0_0_20px_rgba(34,197,94,0.4)] transform hover:-translate-y-0.5' 
                   : hasUnsavedChanges 
-                    ? 'bg-emerald-500/80 hover:bg-emerald-400 text-slate-950 shadow-[0_0_15px_rgba(16,185,129,0.3)]' 
-                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300'
+                    ? 'bg-neon-mint/80 hover:bg-neon-mint/90 text-background shadow-[0_0_15px_rgba(34,197,94,0.3)]' 
+                    : 'bg-muted hover:bg-muted/80 text-foreground'
               }`}
             >
               <Download className="w-4 h-4" />
@@ -182,7 +182,7 @@ export function WorkspacePage() {
 
             <button
               onClick={handleSendToUML}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-bold bg-violet-600 hover:bg-violet-500 text-white shadow-[0_0_15px_rgba(124,58,237,0.3)] transition-all transform hover:-translate-y-0.5"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-lg text-sm font-bold bg-primary hover:bg-primary/90 text-primary-foreground shadow-[0_0_15px_rgba(139,92,246,0.3)] transition-all transform hover:-translate-y-0.5"
             >
               <Zap className="w-4 h-4 fill-white" />
               Send to UML Clarity
@@ -196,57 +196,57 @@ export function WorkspacePage() {
         {metrics.remaining === 0 && metrics.total > 0 ? (
           <>
             {/* Left: Success summary + re-triage option */}
-            <div className="w-[40%] border-r border-slate-800 flex flex-col shrink-0 min-w-[350px] bg-slate-900/30">
+            <div className="w-[40%] border-r border-border flex flex-col shrink-0 min-w-[350px] glass-panel">
               <div className="flex-1 flex flex-col items-center justify-center p-8">
-                <div className="w-20 h-20 bg-emerald-500/20 rounded-full flex items-center justify-center mx-auto mb-6">
-                  <CheckCircle2 className="w-10 h-10 text-emerald-400" />
+                <div className="w-20 h-20 bg-neon-mint/20 rounded-full flex items-center justify-center mx-auto mb-6">
+                  <CheckCircle2 className="w-10 h-10 text-neon-mint" />
                 </div>
-                <h2 className="text-2xl font-bold text-white mb-2">🎉 All Issues Resolved!</h2>
-                <p className="text-slate-400 mb-6 text-center text-sm">
+                <h2 className="text-2xl font-display font-bold text-foreground tracking-tight mb-2">🎉 All Issues Resolved!</h2>
+                <p className="text-muted-foreground mb-6 text-center text-sm">
                   {intelligence?.user_stories.length} requirements analyzed. {metrics.resolved} issues triaged.
                 </p>
                 <button
                   onClick={handleExport}
-                  className="w-full max-w-xs py-3 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-lg shadow-lg transition-colors mb-3"
+                  className="w-full max-w-xs py-3 bg-neon-mint hover:bg-neon-mint/90 text-background font-bold rounded-lg shadow-lg transition-colors mb-3"
                 >
                   <Download className="w-4 h-4 inline mr-2" />
                   Export Clean SRS (.md)
                 </button>
                 <button
                   onClick={handleSendToUML}
-                  className="w-full max-w-xs py-3 bg-violet-600 hover:bg-violet-500 text-white font-bold rounded-lg shadow-lg transition-colors flex items-center justify-center gap-2"
+                  className="w-full max-w-xs py-3 bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-lg shadow-lg transition-colors flex items-center justify-center gap-2"
                 >
                   <Zap className="w-4 h-4 fill-white" />
                   Generate UML Diagrams
                 </button>
-                <p className="text-xs text-slate-500 mt-4 text-center">
+                <p className="text-xs text-muted-foreground mt-4 text-center">
                   👉 Review your edits in the live document on the right. Click any requirement to re-edit it.
                 </p>
               </div>
             </div>
 
             {/* Right: Live Document for review */}
-            <div className="w-[60%] overflow-y-auto bg-[#05080f] relative scroll-smooth">
+            <div className="w-[60%] overflow-y-auto bg-background/50 relative scroll-smooth">
               <LiveDocumentViewer />
             </div>
           </>
         ) : (
           <>
             {/* Left Panel (40%) */}
-            <div className="w-[40%] border-r border-slate-800 flex flex-col shrink-0 min-w-[350px] h-full">
+            <div className="w-[40%] border-r border-border flex flex-col shrink-0 min-w-[350px] h-full">
               {/* Modules List (Top) */}
-              <div className="flex shrink-0 min-h-[200px] max-h-[35%] border-b border-slate-800 bg-slate-900/30">
+              <div className="flex shrink-0 min-h-[200px] max-h-[35%] border-b border-border glass-panel">
                 <ControlPanel />
               </div>
               
               {/* Issues List (Bottom) */}
-              <div className="flex-1 overflow-y-auto bg-[#0a0f18] relative scroll-smooth">
+              <div className="flex-1 overflow-y-auto bg-background/30 relative scroll-smooth">
                 <IssueDetailView />
               </div>
             </div>
 
             {/* Right Panel (60%) */}
-            <div className="w-[60%] overflow-y-auto bg-[#05080f] relative scroll-smooth">
+            <div className="w-[60%] overflow-y-auto bg-background/50 relative scroll-smooth">
               <LiveDocumentViewer />
             </div>
           </>

@@ -36,7 +36,7 @@ function CategoryBadge({ category, colorClass }: { category: string; colorClass?
 
 function AmbiguityCard({ issue }: { issue: AmbiguityIssue }) {
   return (
-    <div className="glass-card p-5 space-y-4">
+    <div className="glass-panel p-5 space-y-4 animate-fade-in-up">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-2">
           <AlertTriangle className={`w-4 h-4 ${issue.severity === 'high' ? 'text-destructive' : issue.severity === 'medium' ? 'text-warning' : 'text-muted-foreground'}`} />
@@ -83,9 +83,9 @@ function ConfidenceBar({ confidence }: { confidence: number }) {
   }, [percent]));
 
   const getColor = () => {
-    if (confidence > 0.8) return "bg-green-500";
-    if (confidence > 0.65) return "bg-yellow-500";
-    return "bg-gray-400";
+    if (confidence > 0.8) return "bg-neon-mint";
+    if (confidence > 0.65) return "bg-[hsl(var(--warning))]";
+    return "bg-muted-foreground";
   };
 
   return (
@@ -110,7 +110,7 @@ function ActionText({ text }: { text: string }) {
       {words.map((w, i) => {
         const clean = w.toLowerCase().replace(/[^a-z]/g, "");
         const isTarget = conflictVerbs.includes(clean);
-        return isTarget ? <span key={i} className="text-red-500 dark:text-red-400 font-bold">{w} </span> : <span key={i}>{w} </span>;
+        return isTarget ? <span key={i} className="text-[hsl(var(--destructive))] font-bold">{w} </span> : <span key={i}>{w} </span>;
       })}
     </span>
   );
@@ -120,9 +120,9 @@ type Source = "rule" | "embedding" | "llm" | string;
 
 function SourceBadge({ source }: { source: Source }) {
   const styles: Record<string, string> = {
-    rule: "bg-green-500/15 text-green-700 dark:text-green-400 border border-green-500/30",
-    embedding: "bg-yellow-500/15 text-yellow-700 dark:text-yellow-400 border border-yellow-500/30",
-    llm: "bg-blue-500/15 text-blue-700 dark:text-blue-400 border border-blue-500/30"
+    rule: "bg-neon-mint/15 text-neon-mint border border-neon-mint/30",
+    embedding: "bg-[hsl(var(--warning))]/15 text-[hsl(var(--warning))] border border-[hsl(var(--warning))]/30",
+    llm: "bg-neon-cyan/15 text-neon-cyan border border-neon-cyan/30"
   };
   const defaultStyle = "bg-muted text-muted-foreground";
 
@@ -180,9 +180,9 @@ function ConfidenceBreakdown({ data }: { data?: Breakdown }) {
   if (!data) return null;
 
   const layers = [
-    { key: "rule", label: "Rule", color: "bg-green-500/80" },
-    { key: "embedding", label: "Embedding", color: "bg-yellow-500/80" },
-    { key: "llm", label: "LLM", color: "bg-blue-500/80" }
+    { key: "rule", label: "Rule", color: "bg-neon-mint/80" },
+    { key: "embedding", label: "Embedding", color: "bg-[hsl(var(--warning))]/80" },
+    { key: "llm", label: "LLM", color: "bg-neon-cyan/80" }
   ];
 
   const maxValue = Math.max(data.rule, data.embedding, data.llm);
@@ -250,12 +250,12 @@ function ReasoningTimeline({ trace }: { trace: any[] }) {
 
 function ConflictCard({ issue }: { issue: ConflictIssue }) {
   return (
-    <div className="glass-card p-5 shadow-sm transition-all hover:shadow-md border border-border/50 bg-card/40">
+    <div className="glass-panel p-5 shadow-sm transition-all hover:shadow-md animate-fade-in-up">
       
       <div className="flex justify-between items-start mb-4">
         <div className="flex items-center gap-2">
           <Swords className="w-4 h-4 text-destructive" />
-          <h3 className="font-semibold text-sm text-destructive">
+          <h3 className="font-display font-semibold text-sm tracking-tight text-destructive">
             ⚠ Conflicting Logic Detected
           </h3>
         </div>
@@ -316,7 +316,7 @@ function ConflictCard({ issue }: { issue: ConflictIssue }) {
 
 function GapCard({ issue }: { issue: GapIssue }) {
   return (
-    <div className="glass-card p-5 space-y-4">
+    <div className="glass-panel p-5 space-y-4 animate-fade-in-up">
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-2">
           <SearchX className={`w-4 h-4 ${issue.severity === 'medium' ? 'text-warning' : 'text-muted-foreground'}`} />
@@ -376,9 +376,9 @@ export default function IssuesPage() {
 
   if (!issues) {
     return (
-      <div className="flex flex-col items-center justify-center h-[60vh] text-muted-foreground">
+      <div className="flex flex-col items-center justify-center h-[60vh] text-muted-foreground animate-fade-in">
         <Shield className="w-12 h-12 mb-4 opacity-30" />
-        <h2 className="text-xl font-semibold mb-2">Issues</h2>
+        <h2 className="text-xl font-display font-semibold tracking-tight mb-2">Issues</h2>
         <p className="text-sm">Upload or select a document to see detected issues.</p>
       </div>
     );
@@ -403,7 +403,7 @@ export default function IssuesPage() {
       {/* Header */}
       <div className="flex items-start justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Issues</h1>
+          <h1 className="text-2xl font-display font-bold tracking-tight">Issues</h1>
           <p className="text-muted-foreground text-sm">
             {total} issues detected across {issues.metadata?.stories_scanned || 0} stories
           </p>
@@ -474,16 +474,16 @@ export default function IssuesPage() {
           ) : (
             <>
               {/* Distribution Bar */}
-              <div className="flex items-center gap-4 mb-4 bg-muted/20 p-3 rounded-lg border border-border/50">
+              <div className="flex items-center gap-4 mb-4 glass-panel p-3 rounded-lg border-border/50">
                 <div className="text-xs font-bold uppercase tracking-wider text-muted-foreground w-36">System Confidence</div>
                 <div className="flex-1 flex items-center h-2 overflow-hidden gap-0.5 rounded-sm">
-                  {distHigh > 0 && <div className="h-full bg-green-500" style={{ flex: distHigh }} title="High Confidence" />}
-                  {distMed > 0 && <div className="h-full bg-yellow-500" style={{ flex: distMed }} title="Medium/Low Confidence" />}
+                  {distHigh > 0 && <div className="h-full bg-neon-mint" style={{ flex: distHigh }} title="High Confidence" />}
+                  {distMed > 0 && <div className="h-full bg-[hsl(var(--warning))]" style={{ flex: distMed }} title="Medium/Low Confidence" />}
                   {distHigh === 0 && distMed === 0 && <div className="h-full bg-muted w-full" />}
                 </div>
                 <div className="text-xs text-muted-foreground font-mono flex items-center gap-2">
-                  <span className="text-green-500 font-bold">{distHigh} High</span>
-                  <span className="text-yellow-600 font-bold">{distMed} Med</span>
+                  <span className="text-neon-mint font-bold">{distHigh} High</span>
+                  <span className="text-[hsl(var(--warning))] font-bold">{distMed} Med</span>
                 </div>
               </div>
 

@@ -205,28 +205,28 @@ export default function TemporalCardsPage() {
     <MainLayout>
       <div className="flex flex-col min-h-0 max-w-6xl mx-auto w-full gap-6 pb-20 overflow-y-visible">
         {/* Header */}
-        <div className="flex flex-col items-center text-center gap-4 bg-card/20 border border-border/50 p-6 rounded-3xl backdrop-blur-xl mb-2 relative">
+        <div className="flex flex-col items-center text-center gap-4 glass-panel p-6 rounded-3xl mb-2 relative animate-fade-in-up">
           {/* Back button */}
           <div className="absolute left-6 top-6">
             <Button 
               variant="ghost" 
               size="sm" 
               onClick={() => navigate(`/projects/${projectId}/chats`)}
-              className="text-muted-foreground hover:text-white"
+              className="text-muted-foreground hover:text-foreground"
             >
               <ArrowLeft className="w-4 h-4 mr-2" /> Back
             </Button>
           </div>
 
           <div className="flex flex-col items-center gap-3">
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-neon-peach via-neon-violet to-neon-blue p-[1px]">
-              <div className="w-full h-full rounded-[15px] bg-slate-950 flex items-center justify-center">
-                <Layers className="w-7 h-7 text-white" />
+            <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-neon-peach via-neon-violet to-neon-cyan p-[1px] shadow-glow-sm">
+              <div className="w-full h-full rounded-[15px] bg-background flex items-center justify-center">
+                <Layers className="w-7 h-7 text-foreground" />
               </div>
             </div>
             <div>
-              <h1 className="text-3xl font-extrabold tracking-tight gradient-text">Temporal Cards</h1>
-              <p className="text-muted-foreground text-sm mt-1 max-w-lg">
+              <h1 className="text-3xl font-display font-extrabold tracking-tight gradient-text">Temporal Cards</h1>
+              <p className="text-muted-foreground text-sm mt-1 max-w-lg leading-relaxed">
                 AI-synthesized project evolution checkpoints.
               </p>
             </div>
@@ -250,13 +250,13 @@ export default function TemporalCardsPage() {
 
             <div className="h-5 w-px bg-border/50 mx-1" />
 
-            <div className="flex bg-slate-900/60 p-1 rounded-xl border border-white/10">
+            <div className="flex bg-muted/30 p-1 rounded-xl border border-border/50">
               <Button variant="ghost" size="sm" className="h-7 px-3 text-[10px] font-bold" onClick={() => handleExport("readme")} disabled={!!exporting}>
-                {exporting === "readme" ? <LoadingSpinner size="sm" /> : <FileCode className="w-3 h-3 mr-1.5 text-neon-blue" />}
+                {exporting === "readme" ? <LoadingSpinner size="sm" /> : <FileCode className="w-3 h-3 mr-1.5 text-neon-cyan" />}
                 README
               </Button>
               <Button variant="ghost" size="sm" className="h-7 px-3 text-[10px] font-bold" onClick={() => handleExport("uml")} disabled={!!exporting}>
-                {exporting === "uml" ? <LoadingSpinner size="sm" /> : <FileImage className="w-3 h-3 mr-1.5 text-neon-green" />}
+                {exporting === "uml" ? <LoadingSpinner size="sm" /> : <FileImage className="w-3 h-3 mr-1.5 text-neon-mint" />}
                 UML
               </Button>
               <Button variant="ghost" size="sm" className="h-7 px-3 text-[10px] font-bold" onClick={() => handleExport("ppt")} disabled={!!exporting}>
@@ -279,11 +279,11 @@ export default function TemporalCardsPage() {
                   onClick={() => setActiveLabel(l.key)}
                   className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
                     isActive
-                      ? `bg-gradient-to-r ${l.color} text-white shadow-[0_4px_12px_rgba(0,0,0,0.3)] scale-[1.02]`
-                      : "text-slate-400 hover:text-white hover:bg-white/5"
+                      ? `bg-gradient-to-r ${l.color} text-white shadow-glow-sm scale-[1.02]`
+                      : "text-muted-foreground hover:text-foreground hover:bg-muted/30"
                   }`}
                 >
-                  <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : 'text-slate-500'}`} />
+                  <Icon className={`w-3.5 h-3.5 ${isActive ? 'text-white' : 'text-muted-foreground'}`} />
                   {l.name}
                 </button>
               );
@@ -341,7 +341,7 @@ export default function TemporalCardsPage() {
           </div>
         ) : (
           <div data-tour="cards-deck" className="grid grid-cols-1 md:grid-cols-2 gap-6">
-            {cards.map((card) => {
+            {cards.map((card, index) => {
               const isExpanded = expandedCard === card._id;
               const labelStyle = LABEL_BADGE[card.label] || LABEL_BADGE.general;
               const versionChain = isExpanded ? getVersionChain(card) : [];
@@ -350,16 +350,16 @@ export default function TemporalCardsPage() {
                 <div
                   key={card._id}
                   onClick={() => setExpandedCard(expandedCard === card._id ? null : card._id)}
-                  className="group bg-card/30 border border-border/50 rounded-2xl overflow-hidden transition-all duration-300 flex flex-col hover:border-neon-violet/40 hover:shadow-[0_0_30px_rgba(139,92,246,0.05)] hover:-translate-y-1 cursor-pointer"
+                  className={`group glass-panel-hover overflow-hidden flex flex-col cursor-pointer animate-fade-in-up stagger-${(index % 5) + 1}`}
                 >
                   {/* Card Badge Top-Bar */}
-                  <div className="px-5 py-3 bg-background/40 border-b border-border/30 flex justify-between items-center">
+                  <div className="px-5 py-3 bg-muted/20 border-b border-border/30 flex justify-between items-center">
                     <div className="flex items-center gap-2">
                       <span className={`text-[9px] font-black tracking-widest px-2 py-0.5 rounded-md border uppercase ${LABEL_BADGE[card.category || card.label || 'general'] || LABEL_BADGE.general}`}>
                         {card.category || card.label || "general"}
                       </span>
                       {(card.version > 1 || card.version === 0) && (
-                        <span className="bg-neon-violet/10 text-neon-violet text-[9px] font-black tracking-widest px-2 py-0.5 rounded-md border border-neon-violet/20">
+                        <span className="bg-neon-violet/15 text-neon-violet text-[9px] font-black tracking-widest px-2 py-0.5 rounded-md border border-neon-violet/30">
                           V{card.version || 0}
                         </span>
                       )}
@@ -370,11 +370,11 @@ export default function TemporalCardsPage() {
                   </div>
 
                   <div className="p-6 flex-1 flex flex-col gap-4">
-                    <h3 className="text-xl font-bold text-slate-50 leading-tight group-hover:text-neon-violet transition-colors">
+                    <h3 className="text-xl font-display font-bold text-foreground leading-tight group-hover:text-neon-violet transition-colors">
                       {card.title}
                     </h3>
 
-                    <p className="text-slate-400 text-sm leading-relaxed line-clamp-3">
+                    <p className="text-muted-foreground text-sm leading-relaxed line-clamp-3">
                       {card.summary}
                     </p>
 

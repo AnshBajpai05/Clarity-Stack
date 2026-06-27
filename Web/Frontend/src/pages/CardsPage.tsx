@@ -30,8 +30,8 @@ const typeConfig: Record<CardType, { icon: any; color: string; bg: string; borde
   architecture: { icon: Code, color: 'text-neon-cyan', bg: 'bg-neon-cyan/10', border: 'border-neon-cyan/30', glow: '192 91% 55%', label: 'Architecture' },
   risk: { icon: AlertTriangle, color: 'text-destructive', bg: 'bg-destructive/10', border: 'border-destructive/30', glow: '0 72% 51%', label: 'Risk' },
   conflict: { icon: AlertTriangle, color: 'text-neon-peach', bg: 'bg-neon-peach/10', border: 'border-neon-peach/30', glow: '25 95% 70%', label: 'Conflict' },
-  progress: { icon: CheckCircle, color: 'text-green-400', bg: 'bg-green-400/10', border: 'border-green-400/30', glow: '142 70% 50%', label: 'Progress' },
-  question: { icon: HelpCircle, color: 'text-amber-400', bg: 'bg-amber-400/10', border: 'border-amber-400/30', glow: '45 90% 50%', label: 'Question' },
+  progress: { icon: CheckCircle, color: 'text-[hsl(var(--success))]', bg: 'bg-[hsl(var(--success))]/10', border: 'border-[hsl(var(--success))]/30', glow: '152 60% 42%', label: 'Progress' },
+  question: { icon: HelpCircle, color: 'text-[hsl(var(--warning))]', bg: 'bg-[hsl(var(--warning))]/10', border: 'border-[hsl(var(--warning))]/30', glow: '38 92% 50%', label: 'Question' },
   general: { icon: FileText, color: 'text-slate-400', bg: 'bg-slate-400/10', border: 'border-slate-400/30', glow: '215 20% 55%', label: 'General' },
   unknown: { icon: HelpCircle, color: 'text-muted-foreground', bg: 'bg-muted/20', border: 'border-muted/30', glow: '215 20% 55%', label: 'Unknown' },
 };
@@ -199,7 +199,7 @@ export default function CardsPage() {
             <div className="flex items-center gap-6">
               <Button variant="ghost" size="icon" onClick={() => setSelectedProjectId(null)} className="rounded-2xl glass-panel-hover"><ChevronLeft className="w-6 h-6" /></Button>
               <div>
-                <h1 className="text-3xl font-extrabold tracking-tight gradient-text">Knowledge Deck</h1>
+                <h1 className="text-3xl font-display font-extrabold tracking-tight gradient-text">Knowledge Deck</h1>
                 <p className="text-sm text-muted-foreground mt-1">Cross-thread intelligence for <span className="text-foreground font-medium">{selectedProject?.name}</span></p>
               </div>
             </div>
@@ -269,7 +269,7 @@ export default function CardsPage() {
                       <span className="text-xs font-bold text-muted-foreground/60 tracking-widest uppercase">{currentCard.version}</span>
                     </div>
 
-                    <h2 className="text-4xl font-extrabold text-foreground mb-6 leading-[1.1] tracking-tight">{currentCard.title}</h2>
+                    <h2 className="text-4xl font-display font-extrabold text-foreground mb-6 leading-[1.1] tracking-tight">{currentCard.title}</h2>
                     <p className="text-xl text-muted-foreground/90 leading-relaxed mb-10 font-medium">{currentCard.summary}</p>
 
                     <div className="flex gap-2.5 flex-wrap mb-10">
