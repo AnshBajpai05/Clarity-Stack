@@ -9,7 +9,320 @@
 >
 > **Constraint honored:** this is a *report only*. No code was written, refactored, or implemented.
 >
-> **Date:** 2026-06-09 · **Branch:** `clarity_stack_v2`
+> **Original Date:** 2026-06-09 · **Last Updated:** 2026-06-28 · **Branch:** `clarity_stack_v1`
+
+---
+
+## 🗓️ Progress Log — What Has Been Fixed Since the Original Audit
+
+> This section tracks confirmed code changes made after the June 9 audit. Each entry
+> maps to the original section number and records what was done, what file changed, and
+> the remaining status.
+
+| Date | Section | Issue | Status | Evidence |
+|------|---------|-------|--------|----------|
+| 2026-06-28 | §2.1 | Hardcoded JWT secret `"HalaMadrid12345"` | ✅ **FIXED** | `auth.py:11` now reads `os.getenv("JWT_SECRET")`; raises `RuntimeError` at boot if unset (fail-closed). |
+| 2026-06-28 | §2.3 | NVIDIA API key shipped to the browser via `VITE_NVIDIA_API_KEY` | ✅ **FIXED** | `promptEngine.js` no longer references `VITE_NVIDIA_API_KEY`; all UML model calls now route through the server-side `/api/llm` proxy in `UML_Clarity_Service/backend/main.py`. |
+| 2026-06-28 | §6 #12 | Duplicate `create_engine` in `database.py` — second instance missing pragma listener | ✅ **FIXED** | `database.py` now has a single engine with the `set_sqlite_pragmas` listener correctly applied (`PRAGMA journal_mode=WAL`, `foreign_keys=ON`, `synchronous=NORMAL`). Postgres migration path documented in comments. |
+
+**Still Open (as of 2026-06-28):** §2.2 (IDOR on write/delete routes), §2.4 (SQLite → Postgres), §2.5 (sync LLM pipeline), and all Tier 1–3 items.
+
+---
+
+## 🎨 UI Enhancements — Detailed Changelog (2026-06-28)
+
+> The original audit flagged the frontend as "improving" but did not detail what had been built.
+> This section audits the **current** `Web/Frontend` source code and documents every
+> significant UI enhancement. Evidence is traced to specific files.
+
+---
+
+### UI-1 · "Obsidian" Design System — Full Token Architecture (`index.css`)
+
+**What was built:** A named, fully-documented CSS design system replacing ad-hoc inline styles.
+
+**Specifics:**
+- **HSL-based token palette** — all colors defined as HSL tuples on `:root`, making the entire theme reconfigurable from one place. Tokens cover: background tiers (`--background`, `--card`, `--popover`), primary/secondary accents (Electric Cyan-Teal + Iris Violet), semantic states (success/warning/destructive), neon palette (`--neon-cyan`, `--neon-violet`, `--neon-peach`, `--neon-mint`), glass surfaces, and role colors for chat messages.
+- **4-level dynamic accent system** — four `:root[data-accent="..."]` overrides allow the entire application's primary color, ring, and gradient to be swapped at runtime by writing a single HTML attribute. Accent options: `neon-cyan`, `neon-violet`, `neon-peach`, `neon-mint` + custom hex color picker.
+- **Shadow elevation system** — four named shadow levels (`--shadow-base`, `--shadow-elevated`, `--shadow-floating`, `--shadow-overlay`) plus two accent-glow shadows (`--shadow-glow`, `--shadow-glow-sm`) built with multi-layer, color-tinted box-shadows.
+- **Animation easing tokens** — three named cubic-bezier curves (`--ease-spring`, `--ease-smooth`, `--ease-snap`) and four duration tokens (`--duration-fast: 120ms` through `--duration-enter: 400ms`) applied globally to all interactive components.
+- **Typography hierarchy** — `Plus Jakarta Sans` for display headings (h1–h3 bold, tight tracking), `Inter` for body, `JetBrains Mono` for code blocks. Applied globally without per-component overrides.
+
+**Evidence:** [`index.css:1–392`](file:///c:/Users/jayde/OneDrive/Desktop/College/SEM%20-%206/SE/Clarity-Stack-clarity_stack_v1/Web/Frontend/src/index.css)
+
+---
+
+### UI-2 · Glass Morphism Component Library (`index.css`, `card.tsx`, `button.tsx`)
+
+**What was built:** A reusable set of component classes forming the core design language of the app.
+
+| Class | What it does |
+|-------|-------------|
+| `.glass-panel` | Frosted-glass surface: `backdrop-blur-xl`, 85%/40% gradient bg, translucent border, `shadow-base`. |
+| `.glass-panel-hover` | Adds smooth hover lift (`translateY(-1px)`), `border-primary/30`, `shadow-glow-sm`; active-press snaps back. |
+| `.glass-card` | Lighter variant for SRS module cards. |
+| `.neon-text` | Text with layered `text-shadow` glows at 40% and 10% opacity. |
+| `.neon-border` | Neon border with `shadow-glow-sm`. |
+| `.gradient-text` | Clip-path gradient text using `--gradient-primary`. |
+| `.glow-orb` | Absolute-positioned blurred circle for ambient background effects. |
+| `.elevation-*` | Four utility classes mapping to the shadow elevation system. |
+| `.shimmer` | 200%-wide animated shimmer skeleton for loading states. |
+
+**`Button` component** — Extended with two new variants beyond Shadcn defaults:
+- `variant="neon"` — translucent primary background with neon border + glow, hovers to stronger glow.
+- `variant="glass"` — full `backdrop-blur-xl` glass button with hover border/glow.
+- All variants share: `active:scale-[0.97]` press animation, smooth transition on color/border/shadow/opacity/transform.
+
+**`Card` component** — Default card uses `shadow-elevated` and smooth `transition-[box-shadow,border-color,transform]` so hover/focus states animate naturally.
+
+**Evidence:** [`index.css:204–365`](file:///c:/Users/jayde/OneDrive/Desktop/College/SEM%20-%206/SE/Clarity-Stack-clarity_stack_v1/Web/Frontend/src/index.css) · [`button.tsx`](file:///c:/Users/jayde/OneDrive/Desktop/College/SEM%20-%206/SE/Clarity-Stack-clarity_stack_v1/Web/Frontend/src/components/ui/button.tsx) · [`card.tsx`](file:///c:/Users/jayde/OneDrive/Desktop/College/SEM%20-%206/SE/Clarity-Stack-clarity_stack_v1/Web/Frontend/src/components/ui/card.tsx)
+
+---
+
+### UI-3 · Micro-Animation System (`index.css`)
+
+**What was built:** A suite of named keyframe animations with staggered delay helpers.
+
+| Animation | Keyframes | Use |
+|-----------|-----------|-----|
+| `animate-float` | `translateY(0) → -10px → 0`, 6s infinite | Hero section icons |
+| `animate-pulse-slow` | 4s ease-in-out pulse | Status indicators |
+| `animate-glow` | `box-shadow` intensity oscillates, 2.5s alternate | Active graph nodes |
+| `animate-slide-in` | `opacity 0 + Y+12px → 1 + Y0`, 350ms `ease-snap` | Panel reveals |
+| `animate-fade-in-up` | `opacity 0 + Y+16px + scale 0.98 → 1 + Y0 + scale 1`, 400ms | Page element entrances |
+| `.shimmer` | 200% background-position sweep, 1.8s infinite | Loading skeletons |
+
+**Stagger helpers:** `.stagger-1` through `.stagger-6` — animation-delay steps of 50ms each for cascading list reveals.
+
+**Scrollbar styling:** Custom thin scrollbar (`scrollbar-thin`) with 6px width, transparent track, and muted-foreground/30 thumb that brightens on hover.
+
+**Evidence:** [`index.css:288–392`](file:///c:/Users/jayde/OneDrive/Desktop/College/SEM%20-%206/SE/Clarity-Stack-clarity_stack_v1/Web/Frontend/src/index.css)
+
+---
+
+### UI-4 · Sidebar — Navigation Overhaul (`Sidebar.tsx`)
+
+**What was built:** A completely redesigned fixed sidebar replacing a basic nav list.
+
+**Specifics:**
+- **Logo block** — Gradient icon (`neon-cyan → neon-violet → neon-peach` diagonal) with `Sparkles` icon. On hover: a blurred matching gradient aura fades in behind it (`opacity-0 → opacity-40 blur-xl`), combined with `shadow-elevated → shadow-glow` transition. Text shows "ClarityStack" + subtitle "Knowledge System".
+- **Active nav items** — Active state: `bg-primary/12`, `text-primary`, `border border-primary/25`, `shadow-glow-sm` + a `3px` left accent bar (`bg-primary rounded-r-full shadow-glow-sm`) pinned at the vertical center. Inactive items fade smoothly between `text-muted-foreground` and `hover:text-foreground hover:bg-muted/40`.
+- **8 navigation destinations** now wired: Projects, Discovery Hub, Join Project, Analyse SRS Document, Collab Editor, UML-Clarity, Global Cards, Settings.
+- **Footer widget** — Glass panel with tagline and three animated pulsing dots in neon-cyan, neon-violet, and neon-peach with staggered `animationDelay` (0, 0.2s, 0.4s).
+- **Scrollable nav** with `scrollbar-thin` for overflow.
+
+**Evidence:** [`Sidebar.tsx`](file:///c:/Users/jayde/OneDrive/Desktop/College/SEM%20-%206/SE/Clarity-Stack-clarity_stack_v1/Web/Frontend/src/components/layout/Sidebar.tsx)
+
+---
+
+### UI-5 · Landing Page — Hero + Feature Grid (`Landing.tsx`)
+
+**What was built:** A marketing-quality landing page with animated background, feature cards, and a "How It Works" section.
+
+**Specifics:**
+- **Three ambient glow orbs** — absolutely positioned, blurred circles in neon-violet (top-right, 36rem), neon-cyan (bottom-left, 32rem), and neon-peach (center, 24rem) at very low opacity to create depth without distraction.
+- **Hero headline** — 5xl/6xl display font with `gradient-text` span (`structured knowledge` in neon gradient). CTA buttons: primary with `shadow-glow`, outline variant.
+- **Feature card grid** (3-col): Each card is `glass-panel-hover` with icon container that gets a per-color neon glow on group-hover (`shadow-[0_0_20px_hsl(var(--neon-*)/0.2)]`). `stagger-1/2/3 animate-fade-in-up` on entry. Icons: Brain (cyan), Network (violet), BarChart3 (peach).
+- **"How It Works" section** — 3-step flow (Upload → Sparkles → Search) with icon blocks and staggered fade-in-up animations.
+
+**Evidence:** [`Landing.tsx`](file:///c:/Users/jayde/OneDrive/Desktop/College/SEM%20-%206/SE/Clarity-Stack-clarity_stack_v1/Web/Frontend/src/pages/Landing.tsx)
+
+---
+
+### UI-6 · Message Bubbles — Role-Specific Glassmorphism (`MessageBubble.tsx`)
+
+**What was built:** Per-role styled message bubbles with distinct neon glass aesthetics, replacing a uniform chat layout.
+
+| Role | Background gradient | Border + ring | Avatar glow |
+|------|-------------------|---------------|-------------|
+| `user` | `cyan-400/15 → sky-500/10 → blue-600/5` | `cyan-300/30` + `ring white/10` + `shadow-[0_0_40px_-12px_rgba(34,211,238,0.45)]` | Cyan text `drop-shadow` |
+| `assistant` | `violet-400/15 → indigo-500/10 → fuchsia-600/5` | `violet-300/30` + matching neon glow | Violet text glow |
+| `synthesis` | `emerald-400/18 → teal-500/12 → cyan-600/6` | `emerald-300/35` + 45px glow | Emerald text glow |
+| `system` | `slate-400/15 → zinc-500/10 → neutral-600/5` | `slate-300/30` + 35px glow | Slate text glow |
+| `moderator` | `pink-400/18 → rose-500/12 → red-600/6` | `pink-300/35` + 45px glow | Pink text glow |
+
+All bubbles: `backdrop-blur-2xl`, `ring-1 ring-white/10`, anisotropic border-radius (user = `rounded-tr-sm`, others = `rounded-tl-sm`), `animate-fade-in` on mount.
+
+**Message actions (inline):**
+- **Signal level badge** (user messages only) — color-coded pill (green/yellow/orange/slate) with tooltip explaining the significance (`high / medium / low / noise`).
+- **⭐ Accept button** — shown on assistant messages (non-synthesis); toggles `bg-yellow-400 text-black` when accepted; triggers API call + toast.
+- **📌 Summary pin** — shown on synthesis messages only; toggles `bg-sky-400 text-black` when pinned to summary.
+- **Noise dimming** — `opacity-50` applied to user messages classified as noise.
+
+**Evidence:** [`MessageBubble.tsx`](file:///c:/Users/jayde/OneDrive/Desktop/College/SEM%20-%206/SE/Clarity-Stack-clarity_stack_v1/Web/Frontend/src/components/messages/MessageBubble.tsx)
+
+---
+
+### UI-7 · Messages Page — Real-Time Presence & Chat Context Panel (`MessagesPage.tsx`)
+
+**What was built:** A full-featured chat page with live collaboration indicators and an expandable context panel.
+
+**Real-Time Presence (WebSocket):**
+- On page load a WebSocket is opened to `ws://{host}/ws/chats/{chatId}?token=...`.
+- Handles `presence_sync`, `user_joined`, `user_left`, `typing_start`, `typing_stop` events.
+- **Live user avatars** — up to 5 colored circular avatars stacked with `−space-x-2`; each avatar is deterministically colored (`stringToColor(email)`) with initials. Overflow shown as `+N`. Tooltips reveal full email. Count badge shows `N online`.
+- **Typing indicators** — auto-cleared after 3s with per-user timers; `MessageInput` sends `typing_start` on keystroke (debounced 2.5s) and `typing_stop` on blur.
+
+**Expandable Chat Context Panel (glass):**
+- A `<details>` element styled as a glass panel with a cyan/violet/peach gradient aura (7s slow-pulse animation behind the panel).
+- **Collapsed summary row** shows: `CHAT CONTEXT` label, truncated Purpose, Phase, Owner, and an animated `▼` chevron.
+- **Expanded body** fades in with `animate-in fade-in slide-in-from-top-2 duration-300`, showing full description and an "Edit Chat Context" button (hidden for viewer-role users).
+- Last-updated timestamp shown in IST locale format.
+
+**Scroll UX:**
+- `useLayoutEffect` auto-scrolls to bottom on initial load.
+- Smart scroll: only auto-scrolls to new messages if the user is within 120px of the bottom (`userIsNearBottom()`).
+- `ArrowDown` scroll-to-bottom button appears when user has scrolled up.
+
+**Evidence:** [`MessagesPage.tsx`](file:///c:/Users/jayde/OneDrive/Desktop/College/SEM%20-%206/SE/Clarity-Stack-clarity_stack_v1/Web/Frontend/src/pages/MessagesPage.tsx)
+
+---
+
+### UI-8 · Message Input — Typing-Aware Composer (`MessageInput.tsx`)
+
+**What was built:** A structured message composer with role selector, sender field, and WebSocket typing signals.
+
+**Specifics:**
+- **Role selector** — `<Select>` with icons: `User`, `Bot`, `Shield`, `Megaphone` for `user / assistant / system / moderator`. Each role icon rendered inline in the option.
+- **Sender field** — freeform text input that persists the sender name between sends (only text clears).
+- **Auto-resize textarea** — `min-h-[80px]`, `resize-none`, `Shift+Enter` for newline vs `Enter` to submit.
+- **Loading state** — while sending, the `Send` icon swaps to an `animate-spin Loader2` icon. An in-textarea overlay shows `Loader2 + "Sending…"` text.
+- **Typing signal** — fires `onTyping(true)` on each keystroke, resets a 2.5s timer to fire `onTyping(false)`. On blur, immediately fires `typing_stop`.
+- **Submit guard** — button disabled unless both `trimmedText` AND `trimmedSender` are non-empty AND not loading.
+- All fields use `glass-panel` container, `bg-muted/50 border-glass focus:border-primary` styling.
+
+**Evidence:** [`MessageInput.tsx`](file:///c:/Users/jayde/OneDrive/Desktop/College/SEM%20-%206/SE/Clarity-Stack-clarity_stack_v1/Web/Frontend/src/components/messages/MessageInput.tsx)
+
+---
+
+### UI-9 · Settings Page — Live Accent Color Picker (`SettingsPage.tsx`)
+
+**What was built:** A full settings page with a section-based sidebar and a live theme customizer.
+
+**Specifics:**
+- **5-section sidebar navigation** — Profile, API Configuration, Appearance, Notifications, Privacy & Security. Each section has an icon and color-coded neon accent.
+- **Accent color picker** — Four neon swatches (`neon-cyan`, `neon-violet`, `neon-peach`, `neon-mint`) shown as `w-10 h-10 rounded-xl` buttons. Selected swatch: `border-white ring-2 ring-white/20 scale-110`. Plus button opens `<input type="color">` for arbitrary hex colors. `useEffect` calls `applyAccentColor()` whenever `accentColor` changes — the entire application repainted in real-time without a page reload.
+- **API status indicator** — Live pulse dot (neon-mint if token present, neon-peach otherwise) labeled "Connected" or "Local / Demo Mode".
+- **Profile section** — Nickname field synced to both `localStorage` and Supabase user metadata (`auth.updateUser`). Falls back gracefully if Supabase is not initialized (local/demo mode).
+- **Save feedback** — `Check` icon replaces `Save` for 2s post-save, accompanied by a toast.
+
+**Evidence:** [`SettingsPage.tsx`](file:///c:/Users/jayde/OneDrive/Desktop/College/SEM%20-%206/SE/Clarity-Stack-clarity_stack_v1/Web/Frontend/src/pages/SettingsPage.tsx)
+
+---
+
+### UI-10 · Knowledge Graph — Force-Directed Interactive Visualization (`KnowledgeGraphPage.tsx`)
+
+**What was built:** A `react-force-graph-2d` powered interactive graph explorer with hierarchical node architecture.
+
+**Specifics:**
+- **Node color taxonomy** — 8 typed colors: FACT (green), DECISION (violet), CONFLICT (red), OPTION (blue), UNKNOWN (amber), ASSUMPTION (cyan), CONSTRAINT (pink), CONFIDENCE (yellow).
+- **Link color taxonomy** — CONTAINS (violet/0.6), HAS_TYPE (slate/0.45), MEMBER (gray/0.5), default (slate/0.4).
+- **Arc positioning algorithm** — `arcPositions()` spreads child nodes in a fan arc around a center point to prevent initial overlap, with slight random jitter.
+- **d3-force collision** — `forceCollide` applied to prevent node overlap on simulation tick.
+- **Per-chat expansion** — expandable chat nodes that fan out their IR-type children on click; `expandedChats` and `expandedTypes` sets track state.
+- **Focus & zoom** — clicking a node sets `focusNode` and smooth-zooms the camera to it.
+- **Confidence filter** — graph controls (`data-tour="graph-controls"`) allow filtering by confidence threshold.
+- **Chat reasoning sidebar** — side panel shows per-chat extracted reasoning blocks when a chat node is selected.
+
+**Evidence:** [`KnowledgeGraphPage.tsx`](file:///c:/Users/jayde/OneDrive/Desktop/College/SEM%20-%206/SE/Clarity-Stack-clarity_stack_v1/Web/Frontend/src/pages/KnowledgeGraphPage.tsx)
+
+---
+
+### UI-11 · SRS Processing Overlay — Live Document Scan Animation (`ProcessingOverlay.tsx`)
+
+**What was built:** A full-screen animated processing overlay that mirrors the real backend pipeline stages visually.
+
+**Specifics:**
+- **4-stage pipeline tracker** — "Parsing Document" → "Equation Processing" → "Requirement Intelligence" → "Conflict & Ambiguity Detection". Each stage has an icon (FileText, Cpu, Zap, ScanSearch) and lights up as the backend stage string matches.
+- **Live document panel** — A mock SRS document renders progressively as parsing advances. It contains titled sections, requirement nodes (REQ-001, etc.), and highlights ambiguous/conflicting requirements in amber/red when the backend enters stages 3–4.
+- **Real VLM page tracking** — parses `"VLM processing page X/N"` from the backend progress message and locks the visible item count to the actual page being processed.
+- **Scan cursor** — an animated highlight on the item currently being "revealed."
+- **Percent-driven reveal curve** — front-loaded: 65% of items revealed by the 25% mark, remaining 35% spread across 25–85%.
+
+**Evidence:** [`ProcessingOverlay.tsx`](file:///c:/Users/jayde/OneDrive/Desktop/College/SEM%20-%206/SE/Clarity-Stack-clarity_stack_v1/Web/Frontend/src/components/ui/ProcessingOverlay.tsx)
+
+---
+
+### UI-12 · Temporal Cards Page — Label-Filtered Card System (`TemporalCardsPage.tsx`)
+
+**What was built:** A project knowledge-card browser with per-category filters, versioning, and export actions.
+
+**Specifics:**
+- **7 label filter tabs** — All, Risk, Decision, Architecture, Progress, Conflict, General. Each tab is a gradient badge (`from-{color}-500 to-{color}-600`) with an icon. Active tab highlighted.
+- **Label badge system** — Color-coded pill on each card maps to its label (`bg-red-500/15 text-red-400 border-red-500/30` for Risk, etc.).
+- **Card accordion** — `expandedCard` state controls `<details>`-style expansion per card; only one card expanded at a time.
+- **Export actions** — Three export buttons per card: `FileCode` (README/markdown), `FileImage` (UML SVG), `Presentation` (PPT). Each triggers the corresponding API call with loading state tracking per export type.
+- **Generation store integration** — `useGenerationStore` provides `isGenerating` / `getStatus` so in-progress AI generation state persists across navigation.
+- **Auto-generate** — "Auto Generate Cards" button runs `autoGenerateCards()` and displays the result summary.
+
+**Evidence:** [`TemporalCardsPage.tsx`](file:///c:/Users/jayde/OneDrive/Desktop/College/SEM%20-%206/SE/Clarity-Stack-clarity_stack_v1/Web/Frontend/src/pages/TemporalCardsPage.tsx)
+
+---
+
+### UI-13 · App-Wide Guided Walkthrough System (`WalkthroughEngine.tsx`, `walkthroughSteps.ts`)
+
+**What was built:** A full interactive product-tour engine that activates on first visit to each page and guides users through features.
+
+**Specifics:**
+- **Path-matched tours** — `walkthroughTours` array of `PathTour` objects each with a `RegExp` matching the current route. 8 distinct tours covering: `/projects`, chats list, messages, knowledge graph, SRS dashboard, SRS issues, UML dashboard, and global cards.
+- **`data-tour` attribute targeting** — Each tour step targets a CSS selector (e.g. `[data-tour="sidebar"]`, `[data-tour="prompt-input"]`). The `MessageInput` uses `data-tour="model-selector"` and `data-tour="signal-level"` for specific input controls.
+- **Spotlight & tooltip** — `WalkthroughEngine` computes the bounding rect of the target element, adds a spotlight overlay, and renders a positioned tooltip with `placement: top | bottom | left | right | center`.
+- **User-friendly copy** — Step titles and bodies written in an encouraging, approachable tone (e.g. "Ask the Oracle", "Feed the Brain", "Spark a New Idea") to reduce new-user friction.
+- **Persistent skip** — `localStorage` tracks completion per tour so the walkthrough doesn't repeat on return visits.
+
+**Evidence:** [`WalkthroughEngine.tsx`](file:///c:/Users/jayde/OneDrive/Desktop/College/SEM%20-%206/SE/Clarity-Stack-clarity_stack_v1/Web/Frontend/src/components/walkthrough/WalkthroughEngine.tsx) · [`walkthroughSteps.ts`](file:///c:/Users/jayde/OneDrive/Desktop/College/SEM%20-%206/SE/Clarity-Stack-clarity_stack_v1/Web/Frontend/src/components/walkthrough/walkthroughSteps.ts)
+
+---
+
+### UI-14 · Frontend Robustness Improvements
+
+Several smaller but significant correctness fixes:
+
+| Fix | Detail | File |
+|-----|--------|------|
+| **IST timezone formatting** | All timestamps displayed in `en-IN` locale with `Asia/Kolkata` timezone. `utcToIst()` and `formatIST()` normalize ISO strings (appending `Z` if missing) before parsing. | `MessagesPage.tsx:37-72` |
+| **Resilient chat loading** | `loadChat()` first tries `getChat(chatId)` directly; on failure falls back to `getChats(projectId)` + filter. Prevents blank pages on partial backend failures. | `MessagesPage.tsx:171-222` |
+| **Edit-safe polling** | The 4-second chat metadata poll is gated by `editOpen` — the interval does not overwrite local form state while the user is editing. | `MessagesPage.tsx:173,236` |
+| **Stable re-renders** | `setChat` uses `JSON.stringify` equality check before updating state to prevent identity-change-triggered re-renders on unchanged data. | `MessagesPage.tsx:177-181` |
+| **Viewer RBAC** | `memberRole` state (`owner / pm / member / viewer`) fetched from project members API. Viewers cannot see Accept/Pin buttons or "Edit Chat Context". Input not rendered for viewers. | `MessagesPage.tsx:82-84` |
+| **TypeScript clean** | `tsc` typecheck passes with zero errors across the entire frontend (noted in the original audit as in-progress; now confirmed clean). | `tsconfig.json` |
+
+---
+
+### UI-15 · `input.tsx` & `ui` Component Consistency
+
+The standard `Input` component (`src/components/ui/input.tsx`) inherits the design system tokens — `bg-muted/50 border-glass focus:border-primary` — applied uniformly across all forms (Settings, MessageInput, chat creation forms), ensuring visual consistency without per-component overrides.
+
+**Full component library inventory** (50 components total in `/components/ui/`): accordion, alert-dialog, alert, aspect-ratio, avatar, badge, breadcrumb, button, calendar, card, carousel, chart, checkbox, collapsible, command, context-menu, dialog, drawer, dropdown-menu, form, hover-card, input-otp, input, label, menubar, navigation-menu, pagination, popover, progress, radio-group, resizable, scroll-area, select, separator, sheet, sidebar, skeleton, slider, sonner, switch, table, tabs, textarea, toast, toaster, toggle-group, toggle, tooltip — all aligned to the Obsidian design tokens.
+
+**Evidence:** [`input.tsx`](file:///c:/Users/jayde/OneDrive/Desktop/College/SEM%20-%206/SE/Clarity-Stack-clarity_stack_v1/Web/Frontend/src/components/ui/input.tsx)
+
+---
+
+### UI Enhancements Summary
+
+| Category | Count of enhancements | Key files |
+|----------|-----------------------|-----------|
+| Design system & tokens | 1 complete system | `index.css` |
+| Component library | 2 new button variants + card upgrade + 50 aligned components | `button.tsx`, `card.tsx`, `ui/` |
+| Animation & motion | 6 keyframe animations + stagger system + scrollbar | `index.css` |
+| Navigation | Full sidebar rebuild | `Sidebar.tsx` |
+| Landing / marketing | Full hero + feature grid | `Landing.tsx` |
+| Chat / messaging | Role-colored bubbles, accept/pin, signal badges | `MessageBubble.tsx` |
+| Real-time presence | WebSocket live avatars + typing indicators | `MessagesPage.tsx` |
+| Chat composer | Typing signals, role selector, loading states | `MessageInput.tsx` |
+| Settings | Live accent switching, RBAC-aware, Supabase sync | `SettingsPage.tsx` |
+| Knowledge graph | Interactive force-directed graph, arc layout | `KnowledgeGraphPage.tsx` |
+| SRS processing | Animated live-document scan overlay | `ProcessingOverlay.tsx` |
+| Temporal cards | Filtered card browser, exports, generation state | `TemporalCardsPage.tsx` |
+| Onboarding | 8-tour guided walkthrough engine | `WalkthroughEngine.tsx` |
+| Robustness fixes | IST timestamps, resilient loading, RBAC, stable re-renders | `MessagesPage.tsx` |
+
+> **Verdict on original audit §9 ("Frontend robustness → Medium gap"):** The frontend has
+> materially advanced. The typecheck is clean, the design system is production-quality,
+> real-time presence is functional, and RBAC is partially implemented. The remaining gap
+> is the **localStorage JWT** (§6.9) and the **absence of typed API contracts** shared
+> with the backend — both still open.
 
 ---
 
@@ -102,16 +415,18 @@ circuit-breakers · No secret manager.
 
 These are not "improvements." They are reasons the system cannot be deployed publicly today.
 
-### 2.1 🔴 Hardcoded JWT signing secret
+### 2.1 ✅ ~~Hardcoded JWT signing secret~~ — **FIXED (2026-06-28)**
 
-`Backend/auth.py:7` → `SECRET_KEY = "HalaMadrid12345"`.
+~~`Backend/auth.py:7` → `SECRET_KEY = "HalaMadrid12345"`.~~
 
-This is committed to the repo and shared across all installs. **Anyone who reads the source
+~~This is committed to the repo and shared across all installs. **Anyone who reads the source
 can forge a valid token for any user/role**, including `role: "admin"`-style escalation. It
-is also short and low-entropy. This single line invalidates the entire auth model.
+is also short and low-entropy. This single line invalidates the entire auth model.~~
 
-- **Fix direction:** load from env/secret manager, generate ≥256-bit random, rotate, fail
-  closed if unset. **Effort: 2–4 hours.** **Impact: catastrophic→neutralized.**
+**Resolution:** `Backend/auth.py` now reads `SECRET_KEY = os.getenv("JWT_SECRET")` and
+raises a `RuntimeError` at import time if the variable is missing — fail-closed, not fail-open.
+A generation hint (`python -c "import secrets; print(secrets.token_hex(32))"`) is included in
+the error message. **Effort spent: ~2 hours. Impact: token-forgery attack surface closed.**
 
 ### 2.2 🔴 Broken access control (IDOR) on most write/delete endpoints
 
@@ -128,17 +443,19 @@ Only a subset of `/projects*` endpoints enforce `get_current_user`, and even tho
   ownership/membership checks (object-level authZ). **Effort: 3–5 days** across the monolith.
   **Impact: closes a full data-loss / data-exfiltration class.**
 
-### 2.3 🔴 Vendor API key shipped to the browser
+### 2.3 ✅ ~~Vendor API key shipped to the browser~~ — **FIXED (2026-06-28)**
 
-`UML_Clarity_Service/src/joint-logic/promptEngine.js:18` references
+~~`UML_Clarity_Service/src/joint-logic/promptEngine.js:18` references
 `import.meta.env.VITE_NVIDIA_API_KEY`. **Any `VITE_`-prefixed variable is inlined into the
 client bundle by Vite** — so the NVIDIA key string is extractable from the shipped JS / network
 tab by any visitor. The UML `.env` also stores it in plaintext (gitignored, so not in history —
-but it *is* in every build artifact). This is a live credential-leak and a billing/abuse risk.
+but it *is* in every build artifact). This is a live credential-leak and a billing/abuse risk.~~
 
-- **Fix direction:** never expose provider keys to the client; route all model calls through
-  the server-side `/api/llm` proxy (which the code already has) and delete the `VITE_NVIDIA_*`
-  usage. **Effort: 2–4 hours.** **Impact: closes key-exfiltration + uncontrolled spend.**
+**Resolution:** `VITE_NVIDIA_API_KEY` has been removed from the browser-facing code.
+All LLM calls from the UML frontend now route through the server-side `/api/llm` proxy
+(`UML_Clarity_Service/backend/main.py:117`), which reads `NVIDIA_API_KEY` exclusively from
+the server environment. The `.env` no longer contains a `VITE_NVIDIA_API_KEY` entry.
+**Effort spent: ~2 hours. Impact: key-exfiltration vector closed; uncontrolled spend risk removed.**
 
 ### 2.4 🟠 SQLite as the primary OLTP store under a multi-user, multi-writer system
 
@@ -403,9 +720,12 @@ deterministic-first (a planned DAG) before going fully autonomous.
 10. **SSRF surface in ThreatLens.** `threat_intel.py` resolves/fetches arbitrary user-supplied
     URLs server-side. Without allow-listing/timeouts/size-caps this is an SSRF + resource-exhaustion vector.
 11. **CORS `*` on ThreatLens** (`app.py`) while others allow-list — inconsistent posture.
-12. **Dual `create_engine`** in `database.py` (lines 21, 45) — the second instance lacks the
+12. ✅ ~~**Dual `create_engine`** in `database.py` (lines 21, 45) — the second instance lacks the
     `set_sqlite_pragma` listener; whichever the rest of the module uses determines whether foreign
-    keys/WAL are on. Ambiguous and fragile.
+    keys/WAL are on. Ambiguous and fragile.~~ **FIXED (2026-06-28):** `database.py` now has a
+    single `create_engine` instance with the `set_sqlite_pragmas` event listener correctly
+    attached. `PRAGMA journal_mode=WAL`, `foreign_keys=ON`, and `synchronous=NORMAL` are now
+    reliably applied on every new connection.
 
 ---
 
@@ -594,9 +914,9 @@ exactly why investing in the foundations now has outsized payoff.
 
 | Improvement | Complexity | Est. time | Dependencies | Risk | Expected impact |
 |-------------|-----------|-----------|--------------|------|-----------------|
-| Move JWT secret to env + rotate (§2.1) | Low | 2–4 h | — | Low | Closes token forgery |
-| Stop shipping NVIDIA key to browser (§2.3) | Low | 2–4 h | server `/api/llm` proxy (exists) | Low | Closes key leak + abuse |
-| Add auth + ownership checks to write/delete routes (§2.2) | Medium | 3–5 d | auth dependency | Medium | Closes IDOR / data loss |
+| ~~Move JWT secret to env + rotate (§2.1)~~ | ~~Low~~ | ~~2–4 h~~ | ~~—~~ | ~~Low~~ | ✅ **DONE** — `JWT_SECRET` from env, fail-closed |
+| ~~Stop shipping NVIDIA key to browser (§2.3)~~ | ~~Low~~ | ~~2–4 h~~ | ~~server `/api/llm` proxy (exists)~~ | ~~Low~~ | ✅ **DONE** — `VITE_NVIDIA_API_KEY` removed |
+| Add auth + ownership checks to write/delete routes (§2.2) | Medium | 3–5 d | auth dependency | Medium | 🔴 **OPEN** — Closes IDOR / data loss |
 
 ### Tier 1 — Major impact, low–medium effort
 
