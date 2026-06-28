@@ -66,3 +66,27 @@ Architecture_Report.md
 ClarityStack_Engineering_Report.md
 ClarityStack_Enterprise_Audit_Report.md
 final_implementation.md
+
+# --- Runtime collab data (rewritten at runtime; §9.1) ---
+/Editor_Service/data/
+
+# --- Vite build artifacts (§9.1) ---
+**/vite.config.ts.timestamp-*.mjs
+
+# --- Generated corpora / large data — keep local, out of git (§9.1) ---
+/SRS_Service/data/checkpoints/
+**/pdf_raw_text.txt
+
+# --- One lockfile per service: npm only, drop bun (§9.2) ---
+*.lockb
+
+# --- Ad-hoc scratch/debug scripts — dead, kept local (§9.1) ---
+**/scratch_extract.py
+/SRS_Service/test_regex.py
+/SRS_Service/test_semantic.py
+/SRS_Service/test_stage56.py
+/UML_Clarity_Service/backend/test_regex.py
+/UML_Clarity_Service/backend/test_semantic.py
+/UML_Clarity_Service/backend/test_stage56.py
+/UML_Clarity_Service/test_nvidia.py
+/Editor_Service/test_socket.py
