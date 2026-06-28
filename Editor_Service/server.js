@@ -8,7 +8,16 @@ const fs = require("fs");
 const path = require("path");
 require("dotenv").config();
 
-const SECRET_KEY = process.env.SECRET_KEY || "HalaMadrid12345";
+// Unified secret name across all services (Core/Satellite/Editor all use JWT_SECRET).
+// Fail-closed: refuse to boot if unset, instead of silently signing/verifying with a
+// public fallback (was the §1.1/§1.5 auth-bypass: wrong env name → all real tokens failed).
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error(
+    "JWT_SECRET environment variable is not set. Editor refuses to boot (fail-closed). " +
+    "Set it (matching the Core Backend's value) in Editor_Service/.env."
+  );
+}
 
 // ─── Supabase (optional) ──────────────────────────────────────────────────────
 const { createClient } = require("@supabase/supabase-js");
@@ -41,10 +50,16 @@ function readJSON(filePath, fallback = {}) {
 }
 
 function writeJSON(filePath, data) {
+    // Atomic write (§3.3): serialize to a temp file then rename. rename() is atomic
+    // on the same filesystem, so a crash mid-write can't truncate/corrupt the live
+    // file (which holds *all* workspaces).
+    const tmp = `${filePath}.${process.pid}.tmp`;
     try {
-        fs.writeFileSync(filePath, JSON.stringify(data, null, 2), "utf8");
+        fs.writeFileSync(tmp, JSON.stringify(data, null, 2), "utf8");
+        fs.renameSync(tmp, filePath);
     } catch (e) {
         console.error(`[FILE] Error writing ${filePath}: ${e.message}`);
+        try { if (fs.existsSync(tmp)) fs.unlinkSync(tmp); } catch {}
     }
 }
 
@@ -63,13 +78,20 @@ if (supabase) {
 }
 
 // ─── Express + Socket.IO Setup ────────────────────────────────────────────────
+// CORS allow-list (§5.5) — explicit origins instead of "*". Override per
+// environment with CORS_ORIGINS (comma-separated); defaults to local dev UIs.
+const ALLOWED_ORIGINS = (
+    process.env.CORS_ORIGINS ||
+    "http://localhost:8006,http://127.0.0.1:8006,http://localhost:8007,http://127.0.0.1:8007"
+).split(",").map((s) => s.trim()).filter(Boolean);
+
 const app = express();
-app.use(cors());
+app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
 app.use(express.json());
 
 const server = http.createServer(app);
 const io = new Server(server, {
-    cors: { origin: "*", methods: ["GET", "POST"] },
+    cors: { origin: ALLOWED_ORIGINS, methods: ["GET", "POST"], credentials: true },
 });
 
 // ─── Helper: create default room ─────────────────────────────────────────────
@@ -100,7 +122,7 @@ const optionalAuth = (req, res, next) => {
     if (authHeader && authHeader.startsWith("Bearer ")) {
         const token = authHeader.split(" ")[1];
         try {
-            const payload = jwt.verify(token, SECRET_KEY);
+            const payload = jwt.verify(token, JWT_SECRET);
             // ClarityStack JWT stores user email in `sub`
             const userId = payload.sub || payload.email || payload.user_id || payload.id;
             req.user = { id: userId };
@@ -208,11 +230,16 @@ app.get("/workspace/:id", optionalAuth, async (req, res) => {
 
     if (rooms[roomId]) {
         const room = rooms[roomId];
+        const isPublic = room.is_public !== undefined ? room.is_public : true;
+        // Private workspaces are readable only by their owner (§1.5).
+        if (!isPublic && (!userId || (room.owner_id && room.owner_id !== userId))) {
+            return res.status(403).json({ error: "You do not have access to this workspace" });
+        }
         return res.json({
             room_id: roomId,
             sections: room.sections,
             owner_id: room.owner_id,
-            is_public: room.is_public !== undefined ? room.is_public : true,
+            is_public: isPublic,
             name: room.name || `Workspace ${roomId}`,
             created_at: room.created_at || null,
         });
@@ -324,11 +351,46 @@ app.get("/activity/:workspace_id", optionalAuth, (req, res) => {
 
 // ─── Socket.IO Events ────────────────────────────────────────────────────────
 
+// Authenticate the socket handshake (§1.5). The token is sent by the client in
+// `io({ auth: { token } })`. We don't reject anonymous sockets outright (public
+// workspaces stay collaboratively viewable) — instead we attach the identity and
+// gate *private* rooms per-event below.
+io.use((socket, next) => {
+    const token = socket.handshake.auth && socket.handshake.auth.token;
+    socket.user = null;
+    if (token) {
+        try {
+            const payload = jwt.verify(token, JWT_SECRET);
+            socket.user = { id: payload.sub || payload.email || payload.user_id || payload.id };
+        } catch {
+            socket.user = null;
+        }
+    }
+    next();
+});
+
+// Access gate: a private room is reachable only by its owner. Public rooms (and
+// not-yet-created rooms, which are born public) are open for collaboration.
+function canAccessRoom(socket, roomId) {
+    const room = rooms[roomId];
+    if (!room) return true; // will be created fresh as a public room
+    const isPublic = room.is_public !== undefined ? room.is_public : true;
+    if (isPublic) return true;
+    const uid = socket.user ? socket.user.id : null;
+    return !!(uid && room.owner_id && uid === room.owner_id);
+}
+
 io.on("connection", (socket) => {
     console.log(`[WS] Connected: ${socket.id}`);
 
     // ── Join Room ─────────────────────────────────────────────────────────────
     socket.on("join", (roomId) => {
+        if (!canAccessRoom(socket, roomId)) {
+            socket.emit("unauthorized", { error: "You do not have access to this private workspace" });
+            console.warn(`[WS] ${socket.id} denied join to private room ${roomId}`);
+            return;
+        }
+
         socket.join(roomId);
 
         if (!roomUsers[roomId]) roomUsers[roomId] = new Set();
@@ -351,6 +413,7 @@ io.on("connection", (socket) => {
     socket.on("section_change", (data) => {
         const { room, sectionId, content } = data;
         if (!room || !sectionId || !rooms[room]) return;
+        if (!canAccessRoom(socket, room)) return;
 
         const section = rooms[room].sections.find((s) => s.id === sectionId);
         if (section) {
@@ -364,6 +427,7 @@ io.on("connection", (socket) => {
     socket.on("section_title_change", (data) => {
         const { room, sectionId, title } = data;
         if (!room || !sectionId || !rooms[room]) return;
+        if (!canAccessRoom(socket, room)) return;
 
         const section = rooms[room].sections.find((s) => s.id === sectionId);
         if (section) {
@@ -377,6 +441,7 @@ io.on("connection", (socket) => {
     socket.on("add_section", (data) => {
         const { room } = data;
         if (!room || !rooms[room]) return;
+        if (!canAccessRoom(socket, room)) return;
 
         const newSection = {
             id: uuidv4().slice(0, 6),
@@ -393,6 +458,7 @@ io.on("connection", (socket) => {
     socket.on("delete_section", (data) => {
         const { room, sectionId } = data;
         if (!room || !sectionId || !rooms[room]) return;
+        if (!canAccessRoom(socket, room)) return;
 
         if (rooms[room].sections.length <= 1) return; // keep at least one
 
@@ -405,6 +471,7 @@ io.on("connection", (socket) => {
     socket.on("reorder_sections", (data) => {
         const { room, sections } = data;
         if (!room || !sections || !rooms[room]) return;
+        if (!canAccessRoom(socket, room)) return;
         rooms[room].sections = sections;
         socket.to(room).emit("sections_reordered", sections);
         scheduleSave();

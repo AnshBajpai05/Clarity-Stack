@@ -1,11 +1,13 @@
 const express = require("express");
 const router = express.Router();
 const { UMLGenerator } = require("../services/umlGenerator");
+const { requireAuth } = require("../middleware/auth");
+const { rateLimit } = require("../middleware/rateLimit");
 
 const umlGenerator = new UMLGenerator();
 
-// POST /api/satellite/generate/uml
-router.post("/uml", async (req, res) => {
+// POST /api/satellite/generate/uml — auth + rate limit (§5.6: paid LLM endpoint)
+router.post("/uml", requireAuth, rateLimit(20, 60000, "uml"), async (req, res) => {
   const { content, type } = req.body;
 
   if (!content) {

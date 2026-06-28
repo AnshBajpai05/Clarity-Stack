@@ -65,16 +65,16 @@ def _call_chat(
             response.raise_for_status()
 
         except Exception:
-            raise Exception(
-                f"HTTP {response.status_code}\n{response.text}"
-            )
+            # §9.3: don't surface the upstream provider body to callers; log it
+            # server-side and raise a generic message.
+            logging.error("Provider HTTP %s on %s: %s", response.status_code, api_url, response.text)
+            raise Exception(f"Provider request failed (HTTP {response.status_code})")
 
         data = response.json()
 
         if "choices" not in data:
-            raise Exception(
-                f"Invalid API response:\n{data}"
-            )
+            logging.error("Provider returned unexpected payload on %s: %s", api_url, data)
+            raise Exception("Provider returned an unexpected response")
 
         return data["choices"][0]["message"]["content"]
 

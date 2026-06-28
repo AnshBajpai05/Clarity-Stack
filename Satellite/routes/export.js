@@ -2,9 +2,12 @@
 const express = require("express");
 const KGSnapshot = require("../models/KGSnapshot");
 const { generateREADME, generateMermaidUML, generatePPTSlides } = require("../services/cardChainer");
-const { requireAuth } = require("../middleware/auth");
+const { requireAuth, requireProjectAccess } = require("../middleware/auth");
 
 const router = express.Router();
+
+// Object-level authZ: every :projectId route is gated on Core membership (§1.3).
+router.param("projectId", requireProjectAccess);
 
 /**
  * GET /api/satellite/export/:projectId/readme

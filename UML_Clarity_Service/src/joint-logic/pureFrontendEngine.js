@@ -17,11 +17,10 @@
  *   end            → uml.EndState       (bull's-eye — activity end)
  */
 
-const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL   = 'llama-3.3-70b-versatile';
 const BACKEND_URL  = 'http://127.0.0.1:8001'; // edituml parse backend
-
-const getKey = () => (import.meta.env?.VITE_GROQ_API_KEY || '').trim();
+// All LLM calls go through the UML backend proxy — vendor key stays server-side (§1.6).
+const LLM_PROXY_URL = (import.meta.env?.VITE_API_URL || 'http://localhost:8005') + '/api/llm';
+const LLM_MODEL     = 'meta/llama-3.3-70b-instruct';
 
 /* ════════════════════════════════════════════════════════════════════════════
    UML STANDARD MAPPING TABLE
@@ -182,28 +181,22 @@ export function chunkDocument(text, maxChars = 5000) {
    GROQ API CALL HELPER
 ════════════════════════════════════════════════════════════════════════════ */
 async function callGroq(messages, jsonMode = true) {
-  const key = getKey();
-  if (!key) throw new Error('VITE_GROQ_API_KEY is not set in your .env file.');
-
   const body = {
-    model:       GROQ_MODEL,
+    model:       LLM_MODEL,
     temperature: 0.05,
     messages,
     ...(jsonMode ? { response_format: { type: 'json_object' } } : {}),
   };
 
-  const res = await fetch(GROQ_API_URL, {
+  const res = await fetch(LLM_PROXY_URL, {
     method:  'POST',
-    headers: {
-      'Authorization': `Bearer ${key}`,
-      'Content-Type':  'application/json',
-    },
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(body),
   });
 
   if (!res.ok) {
     const errText = await res.text();
-    throw new Error(`Groq API error (${res.status}): ${errText}`);
+    throw new Error(`LLM proxy error (${res.status}): ${errText}`);
   }
 
   const data    = await res.json();
@@ -211,7 +204,7 @@ async function callGroq(messages, jsonMode = true) {
 
   if (jsonMode) {
     try   { return JSON.parse(content); }
-    catch { throw new Error('Groq returned malformed JSON: ' + content.slice(0, 200)); }
+    catch { throw new Error('LLM returned malformed JSON: ' + content.slice(0, 200)); }
   }
   return content;
 }

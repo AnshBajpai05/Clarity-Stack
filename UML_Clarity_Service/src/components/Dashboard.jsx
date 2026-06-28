@@ -222,28 +222,23 @@ const buildPrompt = (req, srsContext = '') => {
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════
-   API config — Groq (primary) + Gemini (fallback)
+   API config — ALL model calls go through the backend /api/llm proxy so vendor
+   keys never reach the browser (§1.6). The server holds NVIDIA_API_KEY; the
+   browser only sends model + messages.
 ═══════════════════════════════════════════════════════════════════════════ */
-const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY || '';
-const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || '';
+const LLM_PROXY_URL = (import.meta.env.VITE_API_URL || 'http://localhost:8005') + '/api/llm';
+const NVIDIA_MODELS = ['meta/llama-3.3-70b-instruct', 'meta/llama-3.1-70b-instruct'];
 
-const GROQ_MODELS = ['llama-3.1-405b-reasoning', 'llama-3.3-70b-versatile', 'llama-3.1-8b-instant'];
-const GEMINI_MODELS = ['gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-2.0-flash-lite'];
-
-/** Call Groq (OpenAI-compatible). */
-const callGroq = async (prompt) => {
-    if (!GROQ_API_KEY) throw new Error('No Groq API key configured');
+/** Call the server-side LLM proxy with a model fallback chain. */
+const callAI = async (prompt) => {
     let lastMsg = 'Unknown error';
-    for (const model of GROQ_MODELS) {
+    for (const model of NVIDIA_MODELS) {
         for (let attempt = 0; attempt < 2; attempt++) {
             if (attempt > 0) await new Promise(r => setTimeout(r, 1000));
             try {
-                const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                const resp = await fetch(LLM_PROXY_URL, {
                     method: 'POST',
-                    headers: {
-                        'Content-Type': 'application/json',
-                        'Authorization': 'Bearer ' + GROQ_API_KEY,
-                    },
+                    headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({
                         model,
                         messages: [
@@ -254,92 +249,25 @@ const callGroq = async (prompt) => {
                         max_tokens: 4096,
                     }),
                 });
-                console.log('[Groq] model=' + model + ' attempt=' + attempt + ' status=' + resp.status);
+                console.log('[LLM] model=' + model + ' attempt=' + attempt + ' status=' + resp.status);
                 if (resp.ok) {
                     const data = await resp.json();
                     const text = data.choices?.[0]?.message?.content || '';
-                    return { text, provider: 'Groq (' + model + ')' };
+                    if (text) return { text, provider: 'NVIDIA (' + model + ')' };
+                    lastMsg = 'Empty response';
+                    continue;
                 }
                 const errBody = await resp.json().catch(() => ({}));
-                lastMsg = errBody?.error?.message || ('HTTP ' + resp.status);
-                if (resp.status === 400) throw new Error(lastMsg);
+                lastMsg = errBody?.detail || errBody?.error?.message || ('HTTP ' + resp.status);
                 if (resp.status === 429 || resp.status === 503) continue;
                 break;
             } catch (e) {
-                if (e.message.includes('400')) throw e;
                 lastMsg = e.message;
             }
         }
-        console.warn('[Groq] skipping ' + model + ': ' + lastMsg);
+        console.warn('[LLM] skipping ' + model + ': ' + lastMsg);
     }
-    throw new Error('Groq unavailable: ' + lastMsg);
-};
-
-/** Call Gemini (fallback). */
-const callGemini = async (prompt) => {
-    if (!GEMINI_API_KEY) throw new Error('No Gemini API key configured');
-    let lastMsg = 'Unknown error';
-    for (const model of GEMINI_MODELS) {
-        for (let attempt = 0; attempt < 2; attempt++) {
-            if (attempt > 0) await new Promise(r => setTimeout(r, 1500));
-            const url = 'https://generativelanguage.googleapis.com/v1beta/models/' + model + ':generateContent?key=' + GEMINI_API_KEY;
-            const resp = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    contents: [{ role: 'user', parts: [{ text: prompt }] }],
-                    generationConfig: { temperature: 0.1 },
-                }),
-            });
-            console.log('[Gemini] model=' + model + ' attempt=' + attempt + ' status=' + resp.status);
-            if (resp.ok) {
-                const data = await resp.json();
-                const text = data?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-                if (!text) {
-                    const reason = data?.candidates?.[0]?.finishReason || 'unknown';
-                    throw new Error('Gemini empty response (finishReason: ' + reason + ')');
-                }
-                return { text, provider: 'Gemini (' + model + ')' };
-            }
-            const errBody = await resp.json().catch(() => ({}));
-            lastMsg = errBody?.error?.message || ('HTTP ' + resp.status);
-            if (resp.status === 400) throw new Error(lastMsg);
-            if (resp.status === 429 || resp.status === 503) continue;
-            break;
-        }
-        console.warn('[Gemini] skipping ' + model + ': ' + lastMsg);
-    }
-    throw new Error('Gemini unavailable: ' + lastMsg);
-};
-
-/** Multi-provider call: Groq → Gemini. */
-const callAI = async (prompt) => {
-    // Try Groq first
-    if (GROQ_API_KEY) {
-        let lastGroqErr = '';
-        try { 
-            return await callGroq(prompt); 
-        } catch (e) {
-            console.warn('[Fallback] Groq failed:', e.message, '→ trying Gemini');
-            lastGroqErr = e.message;
-        }
-        
-        if (GEMINI_API_KEY) {
-            try { 
-                return await callGemini(prompt); 
-            } catch (e) {
-                console.error('[Fallback] Gemini failed:', e.message);
-                throw new Error(`AI generation failed. Groq: ${lastGroqErr} | Gemini: ${e.message}`);
-            }
-        }
-    }
-    
-    if (GEMINI_API_KEY) {
-        try { return await callGemini(prompt); } catch (e) {
-            throw e;
-        }
-    }
-    throw new Error('No API keys configured. Add VITE_GROQ_API_KEY or VITE_GEMINI_API_KEY to your .env file.');
+    throw new Error('AI generation failed via proxy: ' + lastMsg);
 };
 
 /* ═══════════════════════════════════════════════════════════════════════════

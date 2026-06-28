@@ -1,31 +1,33 @@
 // services/cardScheduler.js — v4 Auto-generation scheduler with timestamp gating
 const TemporalCard = require("../models/TemporalCard");
 const { autoGenerateCards, expireOldCards } = require("./cardChainer");
-const axios = require("axios");
+const jwt = require("jsonwebtoken");
 
 const CORE_API = process.env.CORE_API_URL || "http://127.0.0.1:8000";
 const CHECK_INTERVAL = parseInt(process.env.SCHEDULER_INTERVAL_HOURS || "6", 10) * 60 * 60 * 1000;
 
+// Reserved internal-automation identity. Must match Core's SERVICE_ACCOUNT_EMAIL,
+// which Core grants read-only project access to (Backend/main.py).
+const SERVICE_ACCOUNT_EMAIL = "service@claritystack.internal";
+
 let schedulerInterval = null;
 
 /**
- * Get a service-level token for automated operations.
+ * Mint a short-lived service token locally, signed with the shared JWT_SECRET.
+ * Replaces the old dependency on the unauthenticated /api/auth/client-login
+ * endpoint (§5.1) — a real service credential, not a forged guest token.
  */
-async function getServiceToken() {
-  try {
-    const anyCard = await TemporalCard.findOne().lean();
-    if (anyCard) {
-      const res = await axios.post(
-        `${CORE_API}/api/auth/client-login`,
-        { project_id: anyCard.projectId },
-        { timeout: 5000 }
-      );
-      return res.data.access_token;
-    }
-  } catch (err) {
-    // Fallback: no token available for auto-generation
+function getServiceToken() {
+  const JWT_SECRET = process.env.JWT_SECRET;
+  if (!JWT_SECRET) {
+    console.warn("⏰ [CardScheduler] JWT_SECRET not set — cannot mint service token.");
+    return null;
   }
-  return null;
+  return jwt.sign(
+    { sub: SERVICE_ACCOUNT_EMAIL, role: "service" },
+    JWT_SECRET,
+    { expiresIn: "10m" }
+  );
 }
 
 /**

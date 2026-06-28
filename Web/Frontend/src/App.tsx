@@ -32,6 +32,8 @@ import EditorSnapshot from "./pages/editor/Snapshot";
 import UMLDashboard from "./pages/uml/Dashboard";
 
 import { WalkthroughEngine } from "@/components/walkthrough/WalkthroughEngine";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { RequireAuth } from "@/components/RequireAuth";
 import { useEffect } from "react";
 import { applyAccentColor } from "@/lib/utils";
 
@@ -53,61 +55,59 @@ const App = () => {
   }, []);
 
   return (
-    <QueryClientProvider client={queryClient}>
-      <TooltipProvider>
-        <Toaster />
-        <Sonner />
-        <BrowserRouter>
-          <WalkthroughEngine />
-          <Routes>
-            <Route path="/" element={<Index />} />
-          <Route path="/login"  element={<Login />} />
-          <Route path="/register" element={<Register />} />
-  
-          <Route path="/projects" element={<ProjectsPage />} />
-          <Route path="/projects/search" element={<ProjectSearch />} />
-          <Route path="/project-search" element={<ProjectSearch />} />
-          
-          {/* Discovery Feed */}
-          <Route path="/discovery" element={<DiscoveryPage />} />
-  
-          <Route
-            path="/projects/:projectId/chats"
-            element={<ChatsPage />}
-          />
-  
-          <Route
-            path="/projects/:projectId/chats/:chatId"
-            element={<MessagesPage />}
-          />
-  
-          {/* Satellite Features per project */}
-          <Route path="/projects/:projectId/kg" element={<KnowledgeGraphPage />} />
-          <Route path="/projects/:projectId/delta" element={<DeltaTimelinePage />} />
-          <Route path="/projects/:projectId/cards" element={<TemporalCardsPage />} />
-  
-          {/* SRS-Clarity Feature */}
-          <Route path="/srs/dashboard" element={<SRSDashboard />} />
-          <Route path="/srs/issues" element={<SRSWorkspace />} />
-  
-          {/* Collaborative Editor Feature */}
-          <Route path="/editor/dashboard" element={<EditorDashboard />} />
-          <Route path="/editor/workspace/:id" element={<EditorWorkspace />} />
-          <Route path="/editor/snapshot/:id" element={<EditorSnapshot />} />
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <Toaster />
+          <Sonner />
+          <BrowserRouter>
+            <WalkthroughEngine />
+            <Routes>
+              {/* Public routes */}
+              <Route path="/" element={<Index />} />
+              <Route path="/login" element={<Login />} />
+              <Route path="/register" element={<Register />} />
 
-          {/* UML-Clarity Feature */}
-          <Route path="/uml/dashboard" element={<UMLDashboard />} />
-  
-          {/* Legacy global cards */}
-          <Route path="/cards" element={<CardsPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-  
-          <Route path="*" element={<NotFound />} />
-        </Routes>
-  
-        </BrowserRouter>
-      </TooltipProvider>
-    </QueryClientProvider>
+              {/* Protected routes — require a token (§7.1) */}
+              <Route element={<RequireAuth />}>
+                <Route path="/projects" element={<ProjectsPage />} />
+                <Route path="/projects/search" element={<ProjectSearch />} />
+                <Route path="/project-search" element={<ProjectSearch />} />
+
+                {/* Discovery Feed */}
+                <Route path="/discovery" element={<DiscoveryPage />} />
+
+                <Route path="/projects/:projectId/chats" element={<ChatsPage />} />
+                <Route path="/projects/:projectId/chats/:chatId" element={<MessagesPage />} />
+
+                {/* Satellite Features per project */}
+                <Route path="/projects/:projectId/kg" element={<KnowledgeGraphPage />} />
+                <Route path="/projects/:projectId/delta" element={<DeltaTimelinePage />} />
+                <Route path="/projects/:projectId/cards" element={<TemporalCardsPage />} />
+
+                {/* SRS-Clarity Feature */}
+                <Route path="/srs/dashboard" element={<SRSDashboard />} />
+                <Route path="/srs/issues" element={<SRSWorkspace />} />
+
+                {/* Collaborative Editor Feature */}
+                <Route path="/editor/dashboard" element={<EditorDashboard />} />
+                <Route path="/editor/workspace/:id" element={<EditorWorkspace />} />
+                <Route path="/editor/snapshot/:id" element={<EditorSnapshot />} />
+
+                {/* UML-Clarity Feature */}
+                <Route path="/uml/dashboard" element={<UMLDashboard />} />
+
+                {/* Legacy global cards */}
+                <Route path="/cards" element={<CardsPage />} />
+                <Route path="/settings" element={<SettingsPage />} />
+              </Route>
+
+              <Route path="*" element={<NotFound />} />
+            </Routes>
+          </BrowserRouter>
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 };
 

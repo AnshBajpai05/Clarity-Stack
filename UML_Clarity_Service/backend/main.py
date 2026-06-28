@@ -108,28 +108,52 @@ def extract_text_from_pdf(file_bytes: bytes) -> str:
 
 import httpx
 import os
+import random
+
+
+def _nvidia_keys() -> list[str]:
+    """All configured NVIDIA keys, in priority order (NVIDIA_API_KEY, then _2, _3…)."""
+    names = ["NVIDIA_API_KEY", "NVIDIA_API_KEY_2", "NVIDIA_API_KEY_3"]
+    return [k for k in (os.getenv(n) for n in names) if k]
+
 
 # ---------- LLM Proxy ----------
 @app.post("/api/llm")
 async def proxy_llm(payload: dict):
-    """Proxy request to NVIDIA to avoid CORS and keep keys secure."""
-    url = "https://integrate.api.nvidia.com/v1/chat/completions"
-    key = os.getenv("NVIDIA_API_KEY")
-    
-    if not key:
-        raise HTTPException(status_code=500, detail="NVIDIA_API_KEY not configured on server")
+    """Proxy request to NVIDIA to avoid CORS and keep keys server-side (§1.6).
 
-    headers = {
-        "Authorization": f"Bearer {key}",
-        "Content-Type": "application/json"
-    }
+    Load-balances across multiple NVIDIA keys: a random key is tried first to
+    spread quota, and on a 429 / transport error the request fails over to the
+    remaining keys before giving up.
+    """
+    url = "https://integrate.api.nvidia.com/v1/chat/completions"
+    keys = _nvidia_keys()
+    if not keys:
+        raise HTTPException(status_code=500, detail="No NVIDIA_API_KEY configured on server")
+
+    order = random.sample(keys, len(keys))  # randomize start → spreads load across keys
+    last_detail = "unknown error"
 
     async with httpx.AsyncClient() as client:
-        try:
-            resp = await client.post(url, json=payload, headers=headers, timeout=120.0)
+        for key in order:
+            headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+            try:
+                resp = await client.post(url, json=payload, headers=headers, timeout=120.0)
+            except Exception as e:
+                last_detail = str(e)
+                continue  # transport error → try the next key
+
+            if resp.status_code == 429:
+                last_detail = "429 rate-limited"
+                continue  # this key is throttled → fail over to the next one
+
+            if not resp.is_success:
+                # A real upstream error (bad request, etc.) — surface it, don't burn other keys.
+                raise HTTPException(status_code=resp.status_code, detail=resp.text[:500])
+
             return resp.json()
-        except Exception as e:
-            raise HTTPException(status_code=500, detail=str(e))
+
+    raise HTTPException(status_code=502, detail=f"All NVIDIA keys exhausted: {last_detail}")
 
 # ---------- Chunk Search Proxy (Stub or Real) ----------
 @app.post("/api/document/{doc_id}/chunks/search")

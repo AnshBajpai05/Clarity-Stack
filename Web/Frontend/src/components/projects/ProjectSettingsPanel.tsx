@@ -188,10 +188,10 @@ export function ProjectSettingsPanel({ projectId, projectName, currentUserEmail,
         {/* tabs */}
         <div className="flex items-center gap-1 px-6 pt-3 pb-0 shrink-0 border-b border-white/10">
           {([
-            {key:'members',  icon:Users,    label:'Members'},
-            {key:'requests', icon:Inbox,    label:'Requests', badge: pendingCount||undefined},
-            {key:'activity', icon:Activity, label:'Activity'},
-            {key:'danger',   icon:Trash2,   label:'Danger Zone'},
+            {key:'members',  icon:Users,    label:'Members',     badge: undefined as number|undefined},
+            {key:'requests', icon:Inbox,    label:'Requests',    badge: pendingCount||undefined},
+            {key:'activity', icon:Activity, label:'Activity',    badge: undefined as number|undefined},
+            {key:'danger',   icon:Trash2,   label:'Danger Zone', badge: undefined as number|undefined},
           ] as const).map(t=>(
             isPrivileged || t.key==='members' ? (
               <button

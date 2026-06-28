@@ -326,27 +326,8 @@ export async function inviteToProject(projectId: string, userEmail: string): Pro
 }
 
 export async function createProject(payload: CreateProjectPayload): Promise<Project> {
-  if (useDemoMode) {
-    const now = new Date().toISOString();
-
-    const newProject: Project = {
-      id: `demo-project-${Date.now()}`,
-      name: payload.name,
-
-      purpose: payload.purpose || 'Project purpose not yet defined.',
-      success_criteria: payload.success_criteria || 'Success criteria not yet defined.',
-      constraints: payload.constraints || 'No constraints specified.',
-      owner: payload.owner ?? null,
-
-      created_at: now,
-      updated_at: now,
-    };
-
-    mockProjects.push(newProject);
-    mockChats[newProject.id] = [];
-    return newProject;
-  }
-
+  // No demo-mode fakery on writes: if the backend is unreachable this must fail
+  // loudly, never return synthetic success (§3.1 — silent data loss).
   return api<Project>('/projects', {
     method: 'POST',
     body: JSON.stringify(payload),
@@ -415,34 +396,7 @@ export async function createChat(
   }
 ): Promise<Chat> {
 
-  if (useDemoMode) {
-    const now = new Date().toISOString();
-
-    const newChat: Chat = {
-      id: `demo-chat-${Date.now()}`,
-      project_id: projectId,
-      title: payload.title,
-      source_type: payload.source_type,
-
-      purpose: payload.purpose || "Chat purpose not yet defined.",
-      phase: payload.phase ?? null,
-      description: payload.description ?? null,
-      owner: payload.owner ?? null,
-
-      created_at: now,
-      updated_at: now,
-      pinned: false,
-      archived: false,
-      external_chat_id: undefined,
-    };
-
-    mockChats[projectId] ??= [];
-    mockChats[projectId].push(newChat);
-    mockMessages[newChat.id] = [];
-
-    return newChat;
-  }
-
+  // No demo-mode fakery on writes (§3.1).
   return api<Chat>(`/projects/${projectId}/chats`, {
     method: "POST",
     body: JSON.stringify(payload),
@@ -460,43 +414,7 @@ export async function getMessages(chatId: string): Promise<Message[]> {
   return api<Message[]>(`/chats/${chatId}/messages`);
 }
 export async function createMessage(chatId: string, payload: CreateMessagePayload): Promise<Message> {
-  if (useDemoMode) {
-    const now = new Date().toISOString();
-
-    const newMessage: Message = {
-      id: `msg-${Date.now()}`,
-      chat_id: chatId,
-
-      role: payload.role ?? 'user',
-      sender: payload.sender ?? null,
-
-      text: payload.text,
-
-      type: null,
-      topic: null,
-
-      include_in_summary: true,
-      accepted: false,
-
-      has_attachments: false,
-      attachments_json: null,
-
-      source_message_id: null,
-
-      created_at: now,
-      ingested_at: now,
-
-      reply_group_id: null,
-
-      signal_level: 'high',   // 👈 ADD THIS (default like DB)
-    };
-
-    mockMessages[chatId] ??= [];
-    mockMessages[chatId].push(newMessage);
-
-    return newMessage;
-  }
-
+  // No demo-mode fakery on writes (§3.1).
   return api<Message>(`/chats/${chatId}/messages`, {
     method: 'POST',
     body: JSON.stringify(payload),
@@ -527,15 +445,7 @@ export function getCurrentUserEmail(): string | null {
 
 // 🚨 ADD THIS — Delete Chat
 export async function deleteChat(chatId: string): Promise<void> {
-  if (useDemoMode) {
-    // remove from demo store
-    for (const projectId in mockChats) {
-      mockChats[projectId] = mockChats[projectId].filter(c => c.id !== chatId);
-    }
-    delete mockMessages[chatId];
-    return;
-  }
-
+  // No demo-mode fakery on writes (§3.1).
   await api(`/chats/${chatId}`, {
     method: 'DELETE',
   });
@@ -686,6 +596,13 @@ async function fetchSatellite<T>(endpoint: string, options?: RequestInit): Promi
   });
 
   if (!response.ok) {
+    // Consistent 401 handling, matching http.ts (§7.1).
+    if (response.status === 401) {
+      localStorage.removeItem("token");
+      window.location.href = "/login";
+      throw new Error("Session expired. Please log in again.");
+    }
+
     let errorData;
     try {
       errorData = await response.json();
@@ -693,7 +610,7 @@ async function fetchSatellite<T>(endpoint: string, options?: RequestInit): Promi
       const text = await response.text();
       errorData = { message: text };
     }
-    
+
     const err = new Error(errorData.message || `Satellite Error: ${response.status}`);
     (err as any).status = response.status;
     (err as any).data = errorData;

@@ -2,6 +2,10 @@
 const nodemailer = require("nodemailer");
 const JoinEmailLog = require("../models/JoinEmailLog");
 
+// Public frontend URL for email CTAs (§6.4). Was hardcoded to localhost:8080 —
+// the wrong port (the frontend runs on 8006) — so join-request links were dead.
+const FRONTEND_URL = process.env.FRONTEND_URL || "http://localhost:8006";
+
 let transporter = null;
 
 /**
@@ -84,7 +88,7 @@ async function sendJoinRequestEmail({ projectId, projectName, requesterEmail, pm
         </div>
         
         <div style="text-align: center; margin-top: 24px;">
-          <a href="http://localhost:8080/projects" 
+          <a href="${FRONTEND_URL}/projects"
              style="background: #8b5cf6; color: white; padding: 12px 32px; border-radius: 6px; text-decoration: none; font-weight: 600;">
             Open Dashboard
           </a>

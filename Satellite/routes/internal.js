@@ -6,7 +6,13 @@ const TemporalCard = require("../models/TemporalCard");
 const GraphDelta = require("../models/GraphDelta");
 const KGSnapshot = require("../models/KGSnapshot");
 
-const JWT_SECRET = process.env.JWT_SECRET || "HalaMadrid12345";
+const JWT_SECRET = process.env.JWT_SECRET;
+if (!JWT_SECRET) {
+  throw new Error(
+    "JWT_SECRET environment variable is not set. Satellite refuses to boot (fail-closed). " +
+    "Set it (matching the Core Backend's value) in Satellite/.env."
+  );
+}
 
 // Internal auth middleware
 function requireInternalAuth(req, res, next) {

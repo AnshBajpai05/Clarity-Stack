@@ -16,9 +16,16 @@ const {
   getCardHistory,
   getExpiredCards,
 } = require("../services/cardChainer");
-const { requireAuth } = require("../middleware/auth");
+const { requireAuth, requireProjectAccess, requireCardAccess } = require("../middleware/auth");
+const { rateLimit } = require("../middleware/rateLimit");
 
 const router = express.Router();
+
+// Object-level authZ (§1.3): gate every :projectId route on Core membership, and
+// every :cardId route on the card's own project (blocks cross-tenant card access,
+// incl. the previously-public GETs and the DELETE /:cardId route).
+router.param("projectId", requireProjectAccess);
+router.param("cardId", requireCardAccess);
 
 // ─── GET /api/satellite/cards/:projectId ────────────────────────────────────
 // Get all temporal cards for a project, chained in order.
@@ -78,7 +85,7 @@ router.get("/:projectId/history/:cardId", requireAuth, async (req, res) => {
 
 // ─── POST /api/satellite/cards/:projectId/generate ──────────────────────────
 // Legacy: Generate from latest delta.
-router.post("/:projectId/generate", requireAuth, async (req, res) => {
+router.post("/:projectId/generate", requireAuth, rateLimit(15, 60000, "cards-generate"), async (req, res) => {
   try {
     const { projectId } = req.params;
 
@@ -104,7 +111,7 @@ router.post("/:projectId/generate", requireAuth, async (req, res) => {
 
 // ─── POST /api/satellite/cards/:projectId/generate/chat/:chatId ─────────────
 // v4: Generate cards from a specific chat (one message → N cards).
-router.post("/:projectId/generate/chat/:chatId", requireAuth, async (req, res) => {
+router.post("/:projectId/generate/chat/:chatId", requireAuth, rateLimit(15, 60000, "cards-generate-chat"), async (req, res) => {
   try {
     const { projectId, chatId } = req.params;
     const token = req.headers.authorization?.split(" ")[1];
@@ -122,7 +129,7 @@ router.post("/:projectId/generate/chat/:chatId", requireAuth, async (req, res) =
 
 // ─── POST /api/satellite/cards/:projectId/generate/label/:label ─────────────
 // v4: Generate cards for a specific category from all project messages.
-router.post("/:projectId/generate/label/:label", requireAuth, async (req, res) => {
+router.post("/:projectId/generate/label/:label", requireAuth, rateLimit(15, 60000, "cards-generate-label"), async (req, res) => {
   try {
     const { projectId, label } = req.params;
     const token = req.headers.authorization?.split(" ")[1];
@@ -148,7 +155,7 @@ router.post("/:projectId/generate/label/:label", requireAuth, async (req, res) =
 
 // ─── POST /api/satellite/cards/:projectId/auto-generate ─────────────────────
 // Trigger the auto-generation check (scheduler-style).
-router.post("/:projectId/auto-generate", requireAuth, async (req, res) => {
+router.post("/:projectId/auto-generate", requireAuth, rateLimit(10, 60000, "cards-auto-generate"), async (req, res) => {
   try {
     const { projectId } = req.params;
     const { force } = req.body;

@@ -157,6 +157,18 @@ async function takeSnapshot(projectId, token) {
 }
 
 /**
+ * Stable key for an edge (§11.2). Edge ids coming from Core can be missing; keying
+ * a Set directly on `edgeId` would collapse every id-less edge to a single
+ * `undefined` bucket and silently corrupt the diff. Fall back to a composite of the
+ * endpoints + relation so distinct edges stay distinct.
+ */
+function edgeKey(e) {
+  return e.edgeId != null
+    ? `id:${e.edgeId}`
+    : `pair:${e.fromNodeId}->${e.toNodeId}:${e.relation ?? ""}`;
+}
+
+/**
  * Compute the delta between two snapshots.
  * If no "from" snapshot, the delta is everything in the "to" snapshot.
  */
@@ -164,14 +176,14 @@ function computeDiff(fromSnapshot, toSnapshot) {
   const fromNodeIds = new Set((fromSnapshot?.nodes || []).map((n) => n.nodeId));
   const toNodeIds = new Set((toSnapshot?.nodes || []).map((n) => n.nodeId));
 
-  const fromEdgeIds = new Set((fromSnapshot?.edges || []).map((e) => e.edgeId));
-  const toEdgeIds = new Set((toSnapshot?.edges || []).map((e) => e.edgeId));
+  const fromEdgeKeys = new Set((fromSnapshot?.edges || []).map(edgeKey));
+  const toEdgeKeys = new Set((toSnapshot?.edges || []).map(edgeKey));
 
   const addedNodes = (toSnapshot.nodes || []).filter((n) => !fromNodeIds.has(n.nodeId));
   const removedNodes = (fromSnapshot?.nodes || []).filter((n) => !toNodeIds.has(n.nodeId));
 
-  const addedEdges = (toSnapshot.edges || []).filter((e) => !fromEdgeIds.has(e.edgeId));
-  const removedEdges = (fromSnapshot?.edges || []).filter((e) => !toEdgeIds.has(e.edgeId));
+  const addedEdges = (toSnapshot.edges || []).filter((e) => !fromEdgeKeys.has(edgeKey(e)));
+  const removedEdges = (fromSnapshot?.edges || []).filter((e) => !toEdgeKeys.has(edgeKey(e)));
 
   return { addedNodes, removedNodes, addedEdges, removedEdges };
 }

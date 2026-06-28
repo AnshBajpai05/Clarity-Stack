@@ -19,8 +19,15 @@ const generateRoutes = require("./routes/generate");
 const app = express();
 const PORT = process.env.PORT || 8003;
 
+// CORS allow-list (§5.5) — explicit origins instead of reflecting any. Override
+// per environment with CORS_ORIGINS (comma-separated); defaults to local dev UIs.
+const ALLOWED_ORIGINS = (
+  process.env.CORS_ORIGINS ||
+  "http://localhost:8006,http://127.0.0.1:8006,http://localhost:8007,http://127.0.0.1:8007"
+).split(",").map((s) => s.trim()).filter(Boolean);
+
 // Middleware
-app.use(cors());
+app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
 app.use(express.json({ limit: "10mb" }));
 
 app.use((req, res, next) => {

@@ -98,10 +98,12 @@ export default function CardsPage() {
         map.set('project-context', { id: 'project-context', title: 'Project Context', phase: 'General', cards: [] });
         if (Array.isArray(ch)) ch.forEach(c => map.set(c.id, { ...c, cards: [] }));
         if (Array.isArray(cr)) {
-          cr.forEach(c => {
+          cr.forEach((c, idx) => {
             if (!c) return;
             const ui: ExtendedCardData = {
-              id: c._id || c.id || Math.random().toString(),
+              // §11.7: stable fallback id (index + title) instead of Math.random(),
+              // which produced a new key every render → collisions + remount churn.
+              id: c._id || c.id || `card-${idx}-${(c.title || 'untitled').slice(0, 24)}`,
               chat_id: c.sourceChatIds?.[0] || c.chat_id || 'project-context',
               chat_title: 'Chat',
               project_id: selectedProjectId,
