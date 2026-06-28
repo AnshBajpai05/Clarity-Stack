@@ -8,9 +8,16 @@ from database import get_db
 from models import Project
 
 from providers import ask_groq, ask_gemini, ask_hf, ask_direct_answer
+import asyncio
 from uuid import uuid4
 from signal_classify import classify_signal
-from synthesis_service import generate_and_store_synthesis
+from synthesis_service import (
+    generate_and_store_synthesis,
+    synthesize_content,
+    save_or_update_synthesis,
+    build_synthesis_message,
+    build_kg_for_synthesis,
+)
 from auth import hash_password, verify_password, create_access_token, get_current_user
 from models import User
 from pydantic import BaseModel, EmailStr
@@ -21,15 +28,56 @@ app = FastAPI()
 
 from fastapi.middleware.cors import CORSMiddleware
 
-from database import engine
-from models import Base
+# ─── §2.3: Alembic is the single source of truth for the schema ───────────────
+# `Base.metadata.create_all` was removed: it only creates *missing* tables and
+# silently ignores column/constraint drift, so fresh and migrated DBs diverged
+# (the old chain was missing 6 tables + 16 columns it had been masking). On
+# startup we bring the DB to the migration head instead.
+#
+# Adoption: a pre-existing create_all-built DB has the tables but no
+# alembic_version row — stamp it at head rather than re-running DDL (which would
+# fail "table already exists"). Fresh/empty DBs get a normal upgrade.
+#
+# Multi-worker prod: set RUN_MIGRATIONS_ON_STARTUP=0 and run `alembic upgrade head`
+# once in the deploy step so workers don't race on DDL.
+import os
 
-Base.metadata.create_all(bind=engine)
+
+def _ensure_schema_at_head() -> None:
+    from alembic.config import Config
+    from alembic import command
+    from alembic.runtime.migration import MigrationContext
+    from sqlalchemy import inspect
+    from database import engine
+
+    backend_dir = os.path.dirname(os.path.abspath(__file__))
+    cfg = Config(os.path.join(backend_dir, "alembic.ini"))
+
+    with engine.connect() as conn:
+        current = MigrationContext.configure(conn).get_current_revision()
+    legacy_untracked = current is None and inspect(engine).has_table("users")
+
+    if legacy_untracked:
+        command.stamp(cfg, "head")    # adopt existing create_all DB
+    else:
+        command.upgrade(cfg, "head")  # fresh DB → build; tracked DB → no-op/apply
+
+
+if os.getenv("RUN_MIGRATIONS_ON_STARTUP", "1") == "1":
+    _ensure_schema_at_head()
 
 # ---------- Health ----------
 @app.get("/health")
 def health_check(db: Session = Depends(get_db)):
-    return {"status": "ok"}
+    # §2.6: actually exercise the DB so the check fails (503) when it is unreachable,
+    # instead of reporting healthy on a broken pod.
+    from sqlalchemy import text
+    try:
+        db.execute(text("SELECT 1"))
+    except Exception as e:
+        logging.error(f"Health check DB failure: {e}")
+        raise HTTPException(status_code=503, detail="Database unavailable")
+    return {"status": "ok", "db": "connected"}
 
 class UserCreate(BaseModel):
     email: EmailStr
@@ -39,8 +87,10 @@ class UserLogin(BaseModel):
     email: EmailStr
     password: str
 
+from rate_limit import RateLimiter
+
 @app.post("/api/auth/register")
-def register(user: UserCreate, db: Session = Depends(get_db)):
+def register(user: UserCreate, db: Session = Depends(get_db), _rl: None = Depends(RateLimiter(5, 60, "register"))):
     existing = db.query(User).filter(User.email == user.email).first()
 
     if existing:
@@ -59,7 +109,7 @@ def register(user: UserCreate, db: Session = Depends(get_db)):
 
 
 @app.post("/api/auth/login")
-def login(user: UserLogin, db: Session = Depends(get_db)):
+def login(user: UserLogin, db: Session = Depends(get_db), _rl: None = Depends(RateLimiter(10, 60, "login"))):
     db_user = db.query(User).filter(User.email == user.email).first()
 
     if not db_user or not verify_password(user.password, db_user.password):
@@ -73,24 +123,11 @@ def login(user: UserLogin, db: Session = Depends(get_db)):
     }
 
 
-class ClientLogin(BaseModel):
-    project_id: str
-
-@app.post("/api/auth/client-login")
-def client_login(payload: ClientLogin, db: Session = Depends(get_db)):
-    project = db.query(Project).filter(Project.id == payload.project_id).first()
-    if not project:
-        raise HTTPException(status_code=404, detail="Project not found")
-
-    token = create_access_token({
-        "email": f"client_{payload.project_id}",
-        "role": "client",
-        "project_id": payload.project_id
-    })
-    return {
-        "access_token": token,
-        "token_type": "bearer",
-    }
+# NOTE: The anonymous `POST /api/auth/client-login` endpoint was removed (§5.1).
+# It minted a valid JWT for any project given only its id — passwordless access by
+# enumeration. The legitimate "share a project with a client/stakeholder" use case
+# should return as an explicit, owner-initiated invite/share flow (future work).
+# Internal automation now uses a locally-minted service token (SERVICE_ACCOUNT_EMAIL).
 
 
 
@@ -145,6 +182,12 @@ def _get_project_member(db: Session, project_id: str, user_email: str):
         ProjectMember.user_email == user_email
     ).first()
 
+# Reserved identity for internal server-to-server automation (e.g. the Satellite
+# card scheduler). Tokens for this principal are signed with the shared JWT_SECRET,
+# so trust is bounded by that secret — not by the open client-login endpoint.
+SERVICE_ACCOUNT_EMAIL = "service@claritystack.internal"
+
+
 def get_project_or_403(
     db: Session,
     project_id: str,
@@ -160,6 +203,12 @@ def get_project_or_403(
     project = db.query(Project).filter(Project.id == project_id).first()
     if not project:
         raise HTTPException(status_code=404, detail="Project not found")
+
+    # Internal automation principal: read-only access to any project (only GET
+    # routes use this identity). Replaces the scheduler's old reliance on the
+    # anonymous client-login token-minting hole (§5.1).
+    if user_email == SERVICE_ACCOUNT_EMAIL:
+        return project
 
     is_owner = project.owner == user_email
     member_obj = _get_project_member(db, project_id, user_email)
@@ -642,18 +691,27 @@ def create_message(
 
 
 
+from fastapi import Query
+
 @app.get("/chats/{chat_id}/messages", response_model=List[MessageOut])
 def list_messages(
     chat_id: str,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    limit: int = Query(default=500, ge=1, le=1000),
+    offset: int = Query(default=0, ge=0),
 ):
+    # §3.5: bound the payload. Defaults to the latest 500 messages (covers virtually
+    # all chats); pass limit/offset to page through longer histories. Uses the
+    # existing idx_messages_chatid_createdat index.
     chat = get_chat_or_403(db, chat_id, current_user["email"], allow_public=True)
 
     messages = (
         db.query(Message)
         .filter(Message.chat_id == chat_id)
-        .order_by(Message.created_at.desc())   # NEW — latest first
+        .order_by(Message.created_at.desc())   # latest first
+        .offset(offset)
+        .limit(limit)
         .all()
     )
 
@@ -713,8 +771,10 @@ def _call_satellite_cleanup(scope: str, target_id: str):
         token = create_access_token({"email": "backend-service", "role": "internal"})
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
         payload = {"scope": scope, "id": target_id}
-        # Call satellite
-        resp = requests.post("http://127.0.0.1:8003/api/satellite/internal/cleanup", json=payload, headers=headers, timeout=5)
+        # Call satellite (URL configurable for non-localhost deployment, §6.4)
+        import os
+        satellite_url = os.getenv("SATELLITE_API_URL", "http://127.0.0.1:8003")
+        resp = requests.post(f"{satellite_url}/api/satellite/internal/cleanup", json=payload, headers=headers, timeout=5)
         
         if resp.status_code == 200:
             logging.info(f"Satellite cleanup success for {scope} {target_id}: {resp.json().get('deleted')}")
@@ -917,11 +977,12 @@ def tag_with_provider(provider: str, block: str) -> str:
 
 
 @app.post("/chats/{chat_id}/ask")
-def ask_multi_model(
+async def ask_multi_model(
     chat_id: str,
     payload: AskPayload,
     db: Session = Depends(get_db),
-    current_user: dict = Depends(get_current_user)
+    current_user: dict = Depends(get_current_user),
+    _rl: None = Depends(RateLimiter(30, 60, "ask"))
 ):
     get_chat_or_403(db, chat_id, current_user["email"])
 
@@ -981,50 +1042,50 @@ def ask_multi_model(
         ("huggingface", ask_hf),
     ]
 
-    ai_msgs = []
-    extracted_blocks = []
-
-    for name, fn in providers:
+    # §2.5: fan the (blocking) provider calls out concurrently instead of a serial
+    # for-loop (~3× latency cut). `to_thread` keeps the event loop free; importantly,
+    # NO database access happens inside these threads.
+    async def _extract_one(name, fn):
         try:
-            raw_block = fn(prompt)   # returns SOURCE:: tagged text
-            if not raw_block or not raw_block.strip():
-                raise ValueError("Empty model output")
-
-            # 👇 Only synthesis sees provider names
-            tagged_block = tag_with_provider(name, raw_block)
-
-            # 👇 UI stores clean SOURCE:: version
-            m = Message(
-                chat_id=chat_id,
-                role="assistant",
-                sender=name,
-                text=raw_block,
-                reply_group_id=group,
-                include_in_summary=False,  # never in summary
-                accepted=False,            # can be accepted
-                signal_level=None
-            )
-
-            db.add(m)
-            ai_msgs.append(m)
-            extracted_blocks.append(tagged_block)
-
+            raw = await asyncio.to_thread(fn, prompt)   # returns SOURCE:: tagged text
+            if not raw or not raw.strip():
+                return None
+            return (name, raw)
         except Exception as e:
             print(f"[LLM] Provider '{name}' failed: {e}")
-            continue
+            return None
 
-    db.commit()
-    for m in ai_msgs:
-        db.refresh(m)
+    results = await asyncio.gather(*[_extract_one(n, f) for n, f in providers])
+
+    extracted_blocks = []
+    for r in results:
+        if r is None:
+            continue
+        name, raw_block = r
+        # UI stores the clean SOURCE:: text; only synthesis sees the provider tag.
+        db.add(Message(
+            chat_id=chat_id,
+            role="assistant",
+            sender=name,
+            text=raw_block,
+            reply_group_id=group,
+            include_in_summary=False,  # never in summary
+            accepted=False,            # can be accepted
+            signal_level=None
+        ))
+        extracted_blocks.append(tag_with_provider(name, raw_block))
+
+    # §3.2: provider messages are staged but NOT committed here — they commit
+    # atomically with the synthesis below (all-or-nothing).
 
     # ADDED — guard against total provider failure
     if not extracted_blocks:
+        db.rollback()  # discard anything staged; the fallback is its own clean unit
         print("[LLM] All extraction providers failed. Falling back to direct answer.")
         try:
-            fallback_text = ask_direct_answer(prompt)
-            
-            # Create a simple synthesis-like message for the fallback
-            synth_msg = Message(
+            fallback_text = await asyncio.to_thread(ask_direct_answer, prompt)
+
+            db.add(Message(
                 chat_id=chat_id,
                 role="assistant",
                 sender="clarity-stack",
@@ -1033,17 +1094,16 @@ def ask_multi_model(
                 include_in_summary=False,
                 accepted=True,
                 signal_level=signal
-            )
-            db.add(synth_msg)
+            ))
             db.commit()
-            db.refresh(synth_msg)
-            
+
             return {
                 "status": "ok",
                 "reply_group_id": group,
                 "note": "fallback_direct_answer"
             }
         except Exception as e:
+            db.rollback()
             from fastapi.responses import JSONResponse
             return JSONResponse(
                 status_code=503,
@@ -1053,47 +1113,46 @@ def ask_multi_model(
                 }
             )
 
-    # 4. Deterministic synthesis (compiler-grade merge)
+    # 4. Synthesis: run the (blocking) LLM merge off the event loop (§2.5), then
+    #    persist the whole AI unit ATOMICALLY (§3.2). Provider messages + Synthesis
+    #    row + synthesis Message commit together or not at all; on failure we roll
+    #    the unit back (the user message, committed earlier, survives).
+    #    NOTE: temperature=0 on a hosted LLM is NOT bit-reproducible (§8.1 / §11.6).
     try:
-        synth = generate_and_store_synthesis(
+        content = await asyncio.to_thread(synthesize_content, extracted_blocks)
+        synth = save_or_update_synthesis(
             db=db,
             chat_id=chat_id,
             reply_group_id=group,
-            assistant_replies=extracted_blocks
+            content=content,
+            model_used="hf-qwen2.5-7b-synthesis",
+            commit=False,    # commit together with the provider messages, below
+            build_kg=False,  # KG is a derived follow-on, built after the commit
         )
-    except RuntimeError as e:
-        return {
-            "status": "synthesis_validation_failed",
-            "reply_group_id": group,
-            "error": str(e)
-        }
+        db.add(build_synthesis_message(chat_id, group, synth))  # §3.4 single factory
+        db.commit()
+        synthesis_id = synth.id
+    except Exception as e:
+        db.rollback()
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=503,
+            content={"status": "error", "detail": f"Synthesis failed: {str(e)}"}
+        )
 
+    # 5. Derived KG build — best-effort follow-on; never breaks the response.
+    try:
+        build_kg_for_synthesis(db, chat_id, synthesis_id, content)
+    except Exception as e:
+        db.rollback()
+        print(f"[KG] build failed (non-fatal): {e}")
 
-    synth_msg = Message(
-        chat_id=chat_id,
-        role="synthesis",
-        sender="synthesis",
-        type="synthesis",
-        text=synth.content,
-        reply_group_id=group,
-        synthesis_id=synth.id,        # 🔥 THIS IS THE MISSING WIRE
-        include_in_summary=True,
-        accepted=True,
-        signal_level="high"
-    )
-
-
-
-    db.add(synth_msg)
-    db.commit()
-    db.refresh(synth_msg)
-
-    print("SYNTHESIS SAVED TO DB:", synth_msg.id)
+    print("SYNTHESIS SAVED TO DB:", synthesis_id)
 
     return {
         "status": "ok",
         "reply_group_id": group,
-        "synthesis_id": synth.id
+        "synthesis_id": synthesis_id
     }
 
 class AcceptUpdate(BaseModel):
@@ -1188,17 +1247,12 @@ def count_signal_words(text: str):
     return score
 
 
-def classify_signal(text: str):
-    score = count_signal_words(text)
-
-    if score >= 6:
-        return "high"
-    if score >= 3:
-        return "medium"
-    if score >= 1:
-        return "low"
-
-    return "noise"
+# NOTE (§6.2 / §11.3): `classify_signal` is imported at the top of this file from
+# `signal_classify` (trained DistilBERT + heuristic fallback). An inline redefinition
+# used to live here and *shadowed* that import with a weaker keyword-only heuristic —
+# silently leaving the trained model unused. It has been removed so the intended
+# classifier is the one that actually runs. `count_signal_words` above is now unused
+# and is left for the dedicated dead-code purge.
 
 @app.patch("/projects/{project_id}", response_model=ProjectOut)
 def update_project(
@@ -1218,7 +1272,10 @@ def update_project(
     if project.owner != user_email and not is_pm:
         raise HTTPException(status_code=403, detail="Only project owner or PM can edit project details")
 
-    allowed = {"purpose", "success_criteria", "constraints", "owner"}
+    # NOTE: `owner` is intentionally NOT editable here. Allowing it let a PM set
+    # themselves as owner (privilege escalation, §5.2). Ownership transfer must be a
+    # separate, owner-only, audited action.
+    allowed = {"purpose", "success_criteria", "constraints"}
     for key, value in payload.items():
         if key in allowed:
             setattr(project, key, value)
@@ -1356,8 +1413,10 @@ class SynthesisResponse(BaseModel):
 def create_or_update_synthesis(
     chat_id: str,
     payload: SynthesisCreatePayload,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
+    get_chat_or_403(db, chat_id, current_user["email"])
     if not payload.content.strip():
         raise HTTPException(status_code=400, detail="Synthesis content cannot be empty")
 
@@ -1377,8 +1436,10 @@ from prompts.synthesis_prompt import SYNTHESIS_SYSTEM_PROMPT, SYNTHESIS_USER_PRO
 @app.get("/chats/{chat_id}/synthesis", response_model=list[SynthesisResponse])
 def list_chat_synthesis(
     chat_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
+    get_chat_or_403(db, chat_id, current_user["email"], allow_public=True)
     return list_synthesis_for_chat(db, chat_id)
 
 
@@ -1386,8 +1447,10 @@ def list_chat_synthesis(
 def get_chat_synthesis(
     chat_id: str,
     reply_group_id: str,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
 ):
+    get_chat_or_403(db, chat_id, current_user["email"], allow_public=True)
     synthesis = get_synthesis(db, chat_id, reply_group_id)
     if not synthesis:
         raise HTTPException(status_code=404, detail="Synthesis not found")
@@ -1421,8 +1484,12 @@ from synthesis_service import generate_and_store_synthesis
 def generate_synthesis(
     chat_id: str,
     payload: ReplyGroupInput,
-    db: Session = Depends(get_db)
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+    _rl: None = Depends(RateLimiter(20, 60, "synthesis"))
 ):
+    # Members-only: this triggers a paid LLM synthesis call (no allow_public).
+    get_chat_or_403(db, chat_id, current_user["email"])
     replies = get_assistant_replies(db, payload.reply_group_id)
 
     if not replies:
@@ -1439,19 +1506,8 @@ def generate_synthesis(
         raise HTTPException(status_code=500, detail="Synthesis generation failed")
 
 
-    # 👇 Make it visible in chat UI
-    synth_msg = Message(
-        chat_id=chat_id,
-        role="assistant",
-        sender="synthesis",
-        text=synthesis.content,
-        reply_group_id=payload.reply_group_id,
-        include_in_summary=True,
-        accepted=False,
-        signal_level=None
-    )
-
-
+    # 👇 Make it visible in chat UI — identical row shape to /ask (§3.4 factory)
+    synth_msg = build_synthesis_message(chat_id, payload.reply_group_id, synthesis)
     db.add(synth_msg)
     db.commit()
     db.refresh(synth_msg)

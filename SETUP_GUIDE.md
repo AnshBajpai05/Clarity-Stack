@@ -88,9 +88,10 @@ Ensure `.env` files are present in all service roots with the following keys:
 ### 🐍 Python Services
 
 **1. Core Backend (`/Backend/.env`)**
-- `SECRET_KEY`: Security salt for JWTs.
+- `JWT_SECRET`: Signing secret for JWTs. **Must be identical across Backend, Satellite, and Editor** (shared, stateless auth). Generate with `python -c "import secrets; print(secrets.token_hex(32))"`. Services fail-closed (refuse to boot) if unset.
 - `ALGORITHM`: `HS256`
-- `DATABASE_URL`: `sqlite:///./claritystack.db`
+- `DATABASE_URL`: `sqlite:///./claritystack.db` (Postgres: `postgresql+psycopg2://user:pass@host:5432/claritystack`)
+- `RUN_MIGRATIONS_ON_STARTUP`: `1` (default). Schema is owned by **Alembic** (§2.3) — on boot the Core runs `alembic upgrade head` (a pre-existing `create_all` DB is auto-adopted via `alembic stamp head`). For **multi-worker prod**, set `0` and run `alembic upgrade head` once in your deploy step so workers don't race on DDL.
 - `GROQ_API_KEY`: Required for Mixtral/Llama inference.
 - `NVIDIA_API_KEY`: Required for NVIDIA NIM microservices.
 - `HF_ACCESS_TOKEN`: Required for HuggingFace model access.
@@ -122,7 +123,7 @@ Ensure `.env` files are present in all service roots with the following keys:
 
 **6. Collaborative Editor (`/Editor_Service/.env`)**
 - `SUPABASE_URL` / `SUPABASE_KEY`: Required for document synchronization.
-- `SECRET_KEY`: Security salt for socket sessions.
+- `JWT_SECRET`: Must match the Backend's secret key (verifies user tokens). Previously named `SECRET_KEY` — the mismatch silently disabled Editor auth.
 - `PORT`: `8004`
 
 **7. Main Dashboard [_frontend] (`/Web/Frontend/.env`)**

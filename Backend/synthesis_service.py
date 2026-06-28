@@ -1,7 +1,7 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import select
 from typing import Optional, List
-from models import Synthesis, gen_id
+from models import Synthesis, gen_id, Message
 from datetime import datetime, timezone
 
 from providers import ask_hf_synthesis
@@ -104,8 +104,18 @@ def save_or_update_synthesis(
     reply_group_id: str,
     content: str,
     model_used: Optional[str] = None,
+    *,
+    commit: bool = True,
+    build_kg: bool = True,
 ) -> Synthesis:
+    """Upsert the Synthesis row.
 
+    §3.2: `commit=False` flushes (so the caller gets `synth.id`) but leaves the
+    commit to the caller, letting the whole AI unit (provider messages + synthesis
+    row + synthesis message) commit atomically. `build_kg=False` skips the derived
+    KG build so it can run as a best-effort follow-on *after* that commit (the KG
+    builder commits internally, which would otherwise break atomicity).
+    """
     existing = get_synthesis(db, chat_id, reply_group_id)
     if existing:
         old_id = existing.id
@@ -113,14 +123,17 @@ def save_or_update_synthesis(
         existing.content = content
         existing.model_used = model_used
         existing.updated_at = now()
-        db.commit()
-        db.refresh(existing)
+        if commit:
+            db.commit()
+            db.refresh(existing)
+        else:
+            db.flush()
 
-        ir = parse_ir_from_synthesis(existing.content)
-        build_graph_from_ir(db, chat_id, existing.id, ir)   # ✅ FIXED
-
-        link_previous_decisions(db, old_id, existing.id)
-        return existing   
+        if build_kg:
+            ir = parse_ir_from_synthesis(existing.content)
+            build_graph_from_ir(db, chat_id, existing.id, ir)
+            link_previous_decisions(db, chat_id, old_id, existing.id)  # FIX: chat_id was missing
+        return existing
 
     synth = Synthesis(
         id=gen_id(),
@@ -133,11 +146,15 @@ def save_or_update_synthesis(
     )
 
     db.add(synth)
-    db.commit()
-    db.refresh(synth)
+    if commit:
+        db.commit()
+        db.refresh(synth)
+    else:
+        db.flush()
 
-    ir = parse_ir_from_synthesis(synth.content)
-    build_graph_from_ir(db, chat_id, synth.id, ir)   # ✅ FIXED
+    if build_kg:
+        ir = parse_ir_from_synthesis(synth.content)
+        build_graph_from_ir(db, chat_id, synth.id, ir)
 
     return synth
 
@@ -204,16 +221,42 @@ def get_latest_synthesis(db: Session, chat_id: str, reply_group_id: str):
     return db.scalars(stmt).first()
 
 
+SYNTHESIS_MODEL = "hf-qwen2.5-7b-synthesis"
+
+
+# =========================================================
+# SYNTHESIS MESSAGE FACTORY (§3.4)
+# =========================================================
+def build_synthesis_message(chat_id: str, reply_group_id: str, synth: Synthesis) -> Message:
+    """Single source of truth for the chat-visible synthesis Message row.
+
+    Both `/ask` and `/synthesis/generate` build the row here so its shape never
+    diverges (role/type/synthesis_id/accepted/signal_level were previously set
+    differently in the two paths — see existing_issues §3.4).
+    """
+    return Message(
+        chat_id=chat_id,
+        role="synthesis",
+        sender="synthesis",
+        type="synthesis",
+        text=synth.content,
+        reply_group_id=reply_group_id,
+        synthesis_id=synth.id,
+        include_in_summary=True,
+        accepted=True,
+        signal_level="high",
+    )
+
+
 # =========================================================
 # STABLE SYNTHESIS PIPELINE
 # =========================================================
-def generate_and_store_synthesis(
-    db: Session,
-    chat_id: str,
-    reply_group_id: str,
-    assistant_replies: List[str],
-):
+def synthesize_content(assistant_replies: List[str]) -> str:
+    """Blocking LLM merge + cleanup, with NO database access.
 
+    §2.5: kept DB-free so it can be run via `asyncio.to_thread` from the async
+    `/ask` handler — the event loop stays free during the (slow) synthesis call.
+    """
     raw_merged = ask_hf_synthesis(assistant_replies)
     print("\n=== RAW SYNTHESIS FROM MODEL ===\n", raw_merged)
 
@@ -224,16 +267,37 @@ def generate_and_store_synthesis(
     except Exception:
         pass  # even if prune fails, still save raw
 
-    final_clean = strip_empty_sections(raw_merged)
+    return strip_empty_sections(raw_merged)
 
-    synth = save_or_update_synthesis(
+
+def build_kg_for_synthesis(db: Session, chat_id: str, synthesis_id: str, content: str) -> None:
+    """Derived, rebuildable KG build for a *committed* synthesis row.
+
+    §3.2: runs as a best-effort follow-on OUTSIDE the atomic conversation-graph
+    transaction (the KG builder commits internally).
+    """
+    ir = parse_ir_from_synthesis(content)
+    build_graph_from_ir(db, chat_id, synthesis_id, ir)
+
+
+def generate_and_store_synthesis(
+    db: Session,
+    chat_id: str,
+    reply_group_id: str,
+    assistant_replies: List[str],
+):
+    """Synchronous convenience wrapper (LLM merge → persist + commit + KG).
+
+    Used by the `/synthesis/generate` endpoint. The atomic `/ask` path instead
+    calls `synthesize_content` + `save_or_update_synthesis(commit=False)` +
+    `build_kg_for_synthesis` so it controls the transaction boundary itself.
+    """
+    final_clean = synthesize_content(assistant_replies)
+    return save_or_update_synthesis(
         db=db,
         chat_id=chat_id,
         reply_group_id=reply_group_id,
         content=final_clean,
-        model_used="hf-qwen2.5-7b-synthesis"
+        model_used=SYNTHESIS_MODEL,
     )
-
-    
-    return synth
 
