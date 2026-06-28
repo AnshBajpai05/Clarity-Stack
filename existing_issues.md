@@ -78,7 +78,7 @@ This document is the intended single source of truth for technical risk. Finding
 - **Recommended direction:** Move extraction+synthesis to a background job (task queue / `BackgroundTasks` + polling or WebSocket push); make providers concurrent (`asyncio.gather`) with per-provider timeouts.
 
 ### §2.2 — Collaborative editor (Python variant) keeps state only in memory
-- **Severity:** High
+- **Severity:** High · **Status:** ✅ FIXED (Clarity_Stack_V3) — the in-memory Python backend (`Editor_Service/main.py`, `rooms_data = {}`) and the other competing backends (`socket_server.py`, their `database.py`, `test_db.js`) are **deleted**. The single remaining backend is the file-based, Tier-0-hardened `Editor_Service/server.js` (the one `start_project.bat` / `npm start` actually launches), which persists every change to disk with atomic writes. Behavior no longer depends on which file is run.
 - **Evidence:** `Editor_Service/main.py:20` `rooms_data = {}`; `send_changes` (`:34`) overwrites the in-memory dict; nothing is persisted (the Supabase insert on `create_workspace` writes empty content once). There are **three** competing editor backends: `Editor_Service/main.py` (Socket.IO/Supabase), `Editor_Service/socket_server.py`, and `Editor_Service/server.js` (file-based, the one `start_project.bat` launches).
 - **Why it matters:** On the Python path, all collaborative content is lost on restart and `rooms_data` grows unbounded (memory leak). The triple implementation means behavior depends on which file is run; reviewers and operators cannot reason about it.
 - **Recommended direction:** Pick one backend, delete the others, and persist on every change (debounced) with a durable store.
@@ -124,7 +124,7 @@ This document is the intended single source of truth for technical risk. Finding
 - **Recommended direction:** Wrap the unit of work in one transaction (or saga with compensation); only surface success after the synthesis row commits.
 
 ### §3.3 — Editor file persistence is non-atomic and shares one debounce timer
-- **Severity:** Medium · **Status:** 🟡 PARTIAL (2026-06-28) — `writeJSON` now writes to a temp file and `rename()`s into place (atomic on the same filesystem), so a crash mid-write can no longer truncate/corrupt `workspaces.json`. **Still OPEN:** the single shared `saveTimers["_main"]` debounce and per-record (vs whole-file) persistence remain — a crash within the debounce window can still lose the most recent edits.
+- **Severity:** Medium · **Status:** ✅ FIXED (Clarity_Stack_V3) — `writeJSON` writes to a temp file and `rename()`s into place (atomic on the same filesystem), so a crash mid-write can't truncate/corrupt `workspaces.json`. The debounce now has a **`MAX_SAVE_WAIT` cap**: the old version reset the timer on every keystroke, so a continuously-edited room never flushed (unbounded crash-loss window) — it now force-flushes at least every 10s under sustained edits (verified). Whole-file (vs per-workspace) persistence is kept **by design** at this scale; revisit per-workspace files only if it grows.
 - **Evidence:** `Editor_Service/server.js:43` `writeJSON` uses `fs.writeFileSync` (non-atomic, no temp+rename); `scheduleSave` (`:89`) keys every workspace's save under a single `saveTimers["_main"]`.
 - **Why it matters:** A crash during write can truncate `workspaces.json` (all workspaces in one file). A crash within the 1.5s debounce window loses recent edits. The committed `Editor_Service/data/*.json` files are also rewritten at runtime, so a clean checkout immediately has a dirty working tree.
 - **Recommended direction:** Atomic write (temp file + `rename`), per-record persistence, and stop committing runtime data (see §9.1).
@@ -224,9 +224,10 @@ This document is the intended single source of truth for technical risk. Finding
 - **Evidence:**
   - `classify_signal` is imported from `signal_classify` (`Backend/main.py:12`) **and** redefined inline (`:1191`), shadowing the import.
   - `Web/Frontend/src/lib/api.ts` vs dead `Web/Frontend/src/lib/backup.ts` — the latter is an older copy whose `fetchApi` sends **no Authorization header** and hardcodes `127.0.0.1:8000` (`backup.ts:1`, `:262`). Confirmed unused (no imports), but a trap waiting to be re-wired.
-  - Three editor backends (§2.2).
+  - Three editor backends (§2.2). ✅ **NOW CLOSED (Clarity_Stack_V3)** — the two dead Python backends + helpers deleted; `server.js` is the sole editor backend.
 - **Why it matters:** Divergent copies drift; a future import of the wrong one silently disables auth or signal logic.
 - **Recommended direction:** Delete dead modules; one canonical implementation each; lint for unused files.
+- **Status:** ✅ FIXED (Clarity_Stack_V3) — all three sub-items now closed (inline shadow removed, dead `backup.ts` deleted, editor backends consolidated).
 
 ### §6.3 — Environment/secret naming is inconsistent across services
 - **Severity:** Medium · **Status:** 🟡 PARTIAL (2026-06-28) — the **secret name is now unified on `JWT_SECRET`** across Backend/Satellite/Editor (Editor's `SECRET_KEY` retired); SETUP_GUIDE updated. Other env divergence (frontend `VITE_*`, Satellite `MONGO_URI`/`CORE_API_URL`, no validated loader) remains OPEN.

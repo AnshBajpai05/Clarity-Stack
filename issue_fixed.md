@@ -128,6 +128,17 @@ Designed and shipped as one coordinated change to the `/ask` flow (shared blast 
 
 ---
 
+### C4. Editor backend consolidation [⭐⭐] (existing_issues §6.2, §2.2, §3.3)
+- **One backend.** Deleted the two dead competing editor backends and their helpers — `Editor_Service/main.py`
+  (Socket.IO/Supabase, in-memory `rooms_data` that lost all state on restart — the §2.2 defect), `socket_server.py`
+  (standalone aiohttp Socket.IO on a conflicting port), `database.py` (supabase client only those used), and the
+  `test_db.js`/`test_socket.py` scratch tests. The sole remaining backend is the file-based, Tier-0-hardened
+  `Editor_Service/server.js` that `start_project.bat` / `npm start` actually launches.
+- **§3.3 persistence.** Atomic temp-file+`rename` write was already in place; added a `MAX_SAVE_WAIT` cap to the
+  debounce so a continuously-edited room can't starve persistence (the old debounce reset every keystroke and never
+  flushed under sustained typing). Verified the cap fires under continuous edits. Whole-file persistence kept by
+  design at this scale.
+
 ## Net result
 
 The **entire Tier-0 security gate is closed system-wide** (Core + Satellite + Editor + UML), with the sole exception of

@@ -107,13 +107,34 @@ function createRoom(roomId) {
 }
 
 // ─── Debounced file save ──────────────────────────────────────────────────────
+// §3.3: the debounce coalesces edit bursts, but a *cap* (MAX_SAVE_WAIT) guarantees
+// continuous editing can't starve persistence — the old version reset the timer on
+// every keystroke, so a busy room never flushed until edits paused >1.5s, widening
+// the crash-loss window unboundedly. Writes are atomic (see writeJSON), and the whole
+// `rooms` map is intentionally one file at this scale (revisit per-workspace files if
+// it grows). §2.2 (the in-memory Python backend that lost state on restart) is gone —
+// this file-based server.js is now the single editor backend.
 const saveTimers = {};
+const MAX_SAVE_WAIT = 10000; // force a flush at least this often under continuous edits
+let lastWorkspaceSaveAt = Date.now();
+
+function flushWorkspaces() {
+    if (saveTimers["_main"]) {
+        clearTimeout(saveTimers["_main"]);
+        saveTimers["_main"] = null;
+    }
+    writeJSON(WORKSPACES_FILE, rooms);
+    lastWorkspaceSaveAt = Date.now();
+    console.log(`[FILE] Workspaces saved to disk`);
+}
+
 function scheduleSave(delay = 1500) {
+    if (Date.now() - lastWorkspaceSaveAt >= MAX_SAVE_WAIT) {
+        flushWorkspaces();   // cap reached → don't let the debounce keep deferring the save
+        return;
+    }
     if (saveTimers["_main"]) clearTimeout(saveTimers["_main"]);
-    saveTimers["_main"] = setTimeout(() => {
-        writeJSON(WORKSPACES_FILE, rooms);
-        console.log(`[FILE] Workspaces saved to disk`);
-    }, delay);
+    saveTimers["_main"] = setTimeout(flushWorkspaces, delay);
 }
 
 // ─── Auth Middleware ──────────────────────────────────────────────────────────
