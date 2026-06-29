@@ -1,3 +1,11 @@
+# Load .env FIRST — before importing `database` (which builds the engine from
+# DATABASE_URL at import time). Previously the only load_dotenv lived in providers.py
+# and ran AFTER database was imported, so .env's DATABASE_URL was silently ignored for
+# the engine and a stray shell export could flip the DB unnoticed. override=False so a
+# real environment variable (prod / orchestrator) still wins over the committed .env.
+from dotenv import load_dotenv
+load_dotenv(override=False)
+
 from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query, Request
 from sqlalchemy.orm import Session
 from typing import List
@@ -134,7 +142,13 @@ def register(user: UserCreate, db: Session = Depends(get_db), _rl: None = Depend
 def login(user: UserLogin, request: Request, db: Session = Depends(get_db), _rl: None = Depends(RateLimiter(10, 60, "login"))):
     db_user = db.query(User).filter(User.email == user.email).first()
 
-    if not db_user or not verify_password(user.password, db_user.password):
+    # UX: when the email has no account, tell the client to register instead of a
+    # dead-end "Invalid credentials". NOTE: this trades a little account-enumeration
+    # resistance (an attacker can learn whether an email is registered) for usability
+    # — an explicit product choice for this app. Wrong password stays generic.
+    if not db_user:
+        raise HTTPException(status_code=404, detail="account_not_found")
+    if not verify_password(user.password, db_user.password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
     token_data = {"email": db_user.email}

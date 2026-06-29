@@ -121,3 +121,23 @@ def test_ask_noise_is_filtered(client, monkeypatch):
                     json={"sender": TEST_EMAIL, "text": "lol ok"})
     assert r.status_code == 200
     assert r.json()["status"] == "noise_filtered"
+
+
+def test_login_unknown_email_signals_register(client):
+    # Unknown email -> 404 account_not_found, so the UI can prompt registration
+    # instead of dead-ending on a generic 401.
+    r = client.post("/api/auth/login",
+                    json={"email": "nobody@example.com", "password": "whatever"})
+    assert r.status_code == 404
+    assert r.json()["detail"] == "account_not_found"
+
+
+def test_register_then_login_and_wrong_password(client):
+    email = "newuser@example.com"
+    assert client.post("/api/auth/register",
+                       json={"email": email, "password": "secret123"}).status_code == 200
+    assert client.post("/api/auth/login",
+                       json={"email": email, "password": "secret123"}).status_code == 200
+    # Existing account, wrong password -> generic 401 (no enumeration leak here).
+    assert client.post("/api/auth/login",
+                       json={"email": email, "password": "wrong"}).status_code == 401

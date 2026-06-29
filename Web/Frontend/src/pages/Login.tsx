@@ -22,6 +22,8 @@ function Login() {
   });
 
   const [errors, setErrors] = useState<Errors>({});
+  // true when the backend reports the email has no account (404) — show a Register CTA.
+  const [noAccount, setNoAccount] = useState(false);
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
@@ -29,6 +31,8 @@ function Login() {
       ...prev,
       [name]: value,
     }));
+    setNoAccount(false);
+    setErrors((prev) => ({ ...prev, general: undefined }));
   };
 
   const validate = () => {
@@ -43,6 +47,7 @@ function Login() {
     e.preventDefault();
     if (!validate()) return;
 
+    setNoAccount(false);
     try {
       const res = await fetch("http://127.0.0.1:8000/api/auth/login", {
         method: "POST",
@@ -54,15 +59,23 @@ function Login() {
         }),
       });
 
-      if (!res.ok) {
-        throw new Error("Invalid credentials");
+      if (res.ok) {
+        // We no longer store the JWT in localStorage
+        localStorage.setItem("cs_email", formData.email || "");
+        navigate("/projects");
+        return;
       }
 
-      // We no longer store the JWT in localStorage
-      localStorage.setItem("cs_email", formData.email || "");
-      navigate("/projects");
-    } catch (err) {
+      if (res.status === 404) {
+        // No account for this email — guide the user to register instead of dead-ending.
+        setNoAccount(true);
+        setErrors({ general: "No account found for this email." });
+        return;
+      }
+
       setErrors({ general: "Invalid credentials" });
+    } catch (err) {
+      setErrors({ general: "Couldn't reach the server. Please try again." });
     }
   };
 
@@ -106,6 +119,16 @@ function Login() {
           </div>
 
           {errors.general && <p className="text-destructive text-sm text-center">{errors.general}</p>}
+
+          {noAccount && (
+            <button
+              type="button"
+              onClick={() => navigate("/register", { state: { email: formData.email } })}
+              className="w-full py-3 rounded-xl font-medium border border-primary/50 text-primary hover:bg-primary/10 transition-[color,background-color] duration-normal ease-smooth"
+            >
+              Create an account for {formData.email} →
+            </button>
+          )}
 
           <button
             type="submit"

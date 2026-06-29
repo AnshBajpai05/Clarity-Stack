@@ -1,6 +1,6 @@
 import React, { useState } from "react";
 import axios from "axios";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, useLocation } from "react-router-dom";
 import { Sparkles } from "lucide-react";
 
 type FormData = {
@@ -17,9 +17,12 @@ type Errors = {
 
 function Register() {
   const navigate = useNavigate();
+  const location = useLocation();
+  // Prefill the email when arriving from the Login page's "no account" CTA.
+  const prefilledEmail = (location.state as { email?: string } | null)?.email ?? "";
 
   const [formData, setFormData] = useState<FormData>({
-    email: "",
+    email: prefilledEmail,
     password: "",
     confirmPassword: "",
   });

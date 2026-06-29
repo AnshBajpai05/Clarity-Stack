@@ -7,7 +7,9 @@ import llm_gateway as gateway  # §5.1/§10.2 — single chokepoint: cache, retr
 # =========================================================
 # LOAD ENV
 # =========================================================
-load_dotenv(override=True)
+# override=False so a real environment variable (or a .env already loaded by main.py)
+# wins — providers must not clobber the process env when imported after startup (§env precedence fix).
+load_dotenv(override=False)
 
 import logging
 
