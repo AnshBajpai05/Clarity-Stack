@@ -1,0 +1,35 @@
+# §10.7 — real Postgres to retire the SQLite single-writer ceiling.
+#
+# SQLite was fine for single-worker dev, but it serializes writes and can't back a
+# multi-worker / concurrent deployment. The app's DATABASE_URL path + Alembic
+# (single source of truth, §2.3) already support Postgres; this compose stands one
+# up so that path is actually exercised, not just theoretical.
+#
+# Usage:
+#   docker compose -f docker-compose.postgres.yml up -d
+#   export DATABASE_URL=postgresql+psycopg2://clarity:clarity@localhost:5433/claritystack
+#   (cd Backend && python -m alembic upgrade head)   # build schema on Postgres
+#   uvicorn main:app                                  # app now runs on Postgres
+#
+# Host port is 5433 (not 5432) to avoid clashing with a local Postgres install.
+# This is the seed the whole-stack compose (§10.4) will extend.
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: clarity_postgres
+    environment:
+      POSTGRES_USER: clarity
+      POSTGRES_PASSWORD: clarity
+      POSTGRES_DB: claritystack
+    ports:
+      - "5433:5432"
+    volumes:
+      - clarity_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clarity -d claritystack"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  clarity_pgdata:
