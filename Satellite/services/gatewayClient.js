@@ -28,18 +28,25 @@ async function gatewayChat(messages, opts = {}) {
 
   const {
     candidates, provider, model, temperature = 0.2,
-    max_tokens, response_format, tenant, tags,
+    max_tokens, response_format, tenant, tags, requestId,
   } = opts;
 
   const body = { messages, temperature, max_tokens, response_format, tenant, tags };
   if (candidates && candidates.length) body.candidates = candidates;
   else { body.provider = provider; body.model = model; }
 
+  // §10.5: forward a correlation id so the gateway's logs stitch to this caller's.
+  const rid = requestId || (require("crypto").randomUUID ? require("crypto").randomUUID() : undefined);
+
   const res = await axios.post(
     `${GATEWAY_URL.replace(/\/$/, "")}/llm/chat`,
     body,
     {
-      headers: { "X-Service-Token": GATEWAY_TOKEN, "Content-Type": "application/json" },
+      headers: {
+        "X-Service-Token": GATEWAY_TOKEN,
+        "Content-Type": "application/json",
+        ...(rid ? { "X-Request-ID": rid } : {}),
+      },
       timeout: 120000,
     }
   );

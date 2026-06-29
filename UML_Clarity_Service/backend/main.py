@@ -18,7 +18,7 @@ from dotenv import load_dotenv
 # Load environment variables from .env in the root UML service folder
 load_dotenv(Path(__file__).resolve().parent.parent / ".env")
 
-from fastapi import FastAPI, UploadFile, File, HTTPException
+from fastapi import FastAPI, UploadFile, File, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
@@ -125,7 +125,7 @@ CLARITY_GATEWAY_URL = os.getenv("CLARITY_GATEWAY_URL")          # e.g. http://lo
 GATEWAY_SERVICE_TOKEN = os.getenv("GATEWAY_SERVICE_TOKEN")
 
 
-async def _llm_via_gateway(payload: dict) -> dict | None:
+async def _llm_via_gateway(payload: dict, request_id: str | None = None) -> dict | None:
     """Try the central gateway. Returns an OpenAI-shaped dict on success, None to
     fall back. Re-raises HTTPException for real policy errors (budget/auth) so they
     are NOT silently masked by the local fallback."""
@@ -140,12 +140,15 @@ async def _llm_via_gateway(payload: dict) -> dict | None:
         "response_format": payload.get("response_format"),
         "tags": "uml",
     }
+    headers = {"X-Service-Token": GATEWAY_SERVICE_TOKEN}
+    if request_id:
+        headers["X-Request-ID"] = request_id   # §10.5: chain correlation id to the gateway
     try:
         async with httpx.AsyncClient(timeout=120.0) as client:
             resp = await client.post(
                 f"{CLARITY_GATEWAY_URL.rstrip('/')}/llm/chat",
                 json=body,
-                headers={"X-Service-Token": GATEWAY_SERVICE_TOKEN},
+                headers=headers,
             )
         if resp.status_code == 200:
             content = resp.json().get("content", "")
@@ -165,7 +168,7 @@ async def _llm_via_gateway(payload: dict) -> dict | None:
 
 # ---------- LLM Proxy ----------
 @app.post("/api/llm")
-async def proxy_llm(payload: dict):
+async def proxy_llm(payload: dict, request: Request):
     """Proxy request to NVIDIA to avoid CORS and keep keys server-side (§1.6).
 
     §10.2: prefers the central Clarity gateway (shared cache/breaker/budget/stats);
@@ -173,7 +176,7 @@ async def proxy_llm(payload: dict):
     a random key is tried first to spread quota, and on a 429 / transport error the
     request fails over to the remaining keys before giving up.
     """
-    gw = await _llm_via_gateway(payload)
+    gw = await _llm_via_gateway(payload, request_id=request.headers.get("x-request-id"))
     if gw is not None:
         return gw
 

@@ -105,6 +105,16 @@ def test_ask_persists_honest_labels_and_measured_confidence(client, monkeypatch)
         db.close()
 
 
+def test_correlation_id_header_generated_and_echoed(client):
+    # §10.5: every response carries an X-Request-ID; an inbound one is reused.
+    r = client.get("/health")
+    assert r.headers.get("x-request-id")                 # minted when absent
+
+    rid = "fixed-correlation-id-abc123"
+    r2 = client.get("/health", headers={"X-Request-ID": rid})
+    assert r2.headers.get("x-request-id") == rid         # inbound reused (chains across services)
+
+
 def test_ask_noise_is_filtered(client, monkeypatch):
     monkeypatch.setattr(main, "classify_signal", lambda text: "noise")
     r = client.post(f"/chats/{client._chat_id}/ask",

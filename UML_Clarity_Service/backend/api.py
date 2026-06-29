@@ -15,7 +15,7 @@ try:
 except ImportError:
     pass  # dotenv not installed — key must be set in system environment
 
-from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse, PlainTextResponse
 
@@ -437,7 +437,7 @@ class LLMProxyRequest(_BaseModel):
 
 
 @app.post("/api/llm")
-async def llm_proxy(req: LLMProxyRequest):
+async def llm_proxy(req: LLMProxyRequest, request: Request):
     """
     Proxy LLM requests to NVIDIA NIM from the server side.
     This avoids CORS blocks when calling external APIs from the browser.
@@ -457,11 +457,14 @@ async def llm_proxy(req: LLMProxyRequest):
             "response_format": req.response_format,
             "tags": "uml",
         }
+        headers = {"X-Service-Token": gw_token}
+        rid = request.headers.get("x-request-id")
+        if rid:
+            headers["X-Request-ID"] = rid   # §10.5: chain correlation id to the gateway
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
                 gw = await client.post(
-                    f"{gw_url.rstrip('/')}/llm/chat", json=body,
-                    headers={"X-Service-Token": gw_token},
+                    f"{gw_url.rstrip('/')}/llm/chat", json=body, headers=headers,
                 )
             if gw.status_code == 200:
                 content = gw.json().get("content", "")

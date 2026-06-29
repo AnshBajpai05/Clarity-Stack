@@ -1004,31 +1004,41 @@ import time
 import logging
 from fastapi import Request
 
-# --- Basic logger setup ---
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s - %(levelname)s - %(message)s"
-)
+# §10.5: structured JSON logs + per-request correlation id (replaces the old plain
+# basicConfig). Every log line in a request — including ones from the LLM gateway and
+# from asyncio.to_thread workers — is stamped with the same request_id.
+from logging_setup import configure_logging, set_request_id, request_id_var, new_request_id
+configure_logging()
+
+REQUEST_ID_HEADER = "X-Request-ID"
+
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
+    # Chain the id across services: reuse an inbound X-Request-ID if present, else mint
+    # one. Reset the ContextVar in finally so ids never leak between requests.
+    rid = request.headers.get(REQUEST_ID_HEADER) or new_request_id()
+    token = set_request_id(rid)
     start_time = time.time()
-
     try:
-        response = await call_next(request)
-    except Exception as e:
-        logging.exception(f"❌ ERROR handling request {request.method} {request.url}")
-        raise e
-
-    process_time = (start_time - time.time()) * -1000
-
-    logging.info(
-        f"➡ {request.method} {request.url.path} "
-        f"→ {response.status_code} "
-        f"({process_time:.2f} ms)"
-    )
-
-    return response
+        try:
+            response = await call_next(request)
+        except Exception:
+            logging.exception("request_error", extra={
+                "method": request.method, "path": request.url.path,
+            })
+            raise
+        process_time = (time.time() - start_time) * 1000
+        logging.info("request", extra={
+            "method": request.method,
+            "path": request.url.path,
+            "status": response.status_code,
+            "duration_ms": round(process_time, 2),
+        })
+        response.headers[REQUEST_ID_HEADER] = rid
+        return response
+    finally:
+        request_id_var.reset(token)
 
 
 from pydantic import BaseModel, Field
