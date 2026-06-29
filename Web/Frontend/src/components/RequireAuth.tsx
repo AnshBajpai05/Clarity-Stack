@@ -1,5 +1,7 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 
+import { getCookie } from "../lib/http";
+
 /**
  * Client-side route guard (§7.1).
  *
@@ -10,7 +12,8 @@ import { Navigate, Outlet, useLocation } from "react-router-dom";
  */
 export function RequireAuth() {
   const location = useLocation();
-  const token = localStorage.getItem("token");
+  // §5.4: We check for csrf_token (which is JS-readable) as a proxy for being logged in
+  const token = getCookie("csrf_token");
 
   if (!token) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;

@@ -22,13 +22,40 @@
 
 **Legend:** ✅ **DONE** (shipped & verified in code) · 🟡 **PARTIAL** (started, gaps remain) · ⏳ **PENDING** (untouched).
 
+**✅ Issues Fixed [REVIEW REQUIRED]:**
+- **§5.4** localStorage tokens → httpOnly cookies (Hybrid Auth + CSRF + Refresh Tokens). Files touched:
+  - `Backend/auth.py`
+  - `Backend/main.py`
+  - `Satellite/middleware/auth.js`
+  - `Satellite/server.js`
+  - `Editor_Service/server.js`
+  - `Web/Frontend/src/lib/http.ts`
+  - `Web/Frontend/src/lib/api.ts`
+  - `Web/Frontend/src/pages/Login.tsx`
+  - `Web/Frontend/src/pages/Register.tsx`
+  - `Web/Frontend/src/components/RequireAuth.tsx`
+  - `Web/Frontend/src/pages/editor/socket.js`
+  - `Web/Frontend/src/pages/MessagesPage.tsx`
+  - `Web/Frontend/src/pages/SettingsPage.tsx`
+  - `Web/Frontend/src/pages/editor/Dashboard.jsx`
+  - `Web/Frontend/src/pages/editor/Workspace.jsx`
+- **§1.7** Auth Operational Hardening (Refresh Rotation, Session Management, RBAC, Silent Refresh). Files touched:
+  - `Backend/models.py` (new `RefreshToken` table)
+  - `Backend/auth.py` (`jti`, `get_cookie_name`, `require_permissions`, cookie prefix helpers)
+  - `Backend/main.py` (`/refresh` rotation, `/logout` revoke, `/me` richer, rate-limit `/refresh`)
+  - `Backend/migrations/versions/0029088d6806_add_refresh_tokens.py`
+  - `Web/Frontend/src/lib/http.ts` (silent refresh state machine, `__Host-` cookie prefix support)
+  - `Web/Frontend/src/lib/api.ts` (`fetchSatellite` 401 → silent refresh, not hard redirect)
+  - 📄 See [`auth_hardening_walkthrough.md`](./auth_hardening_walkthrough.md) for full details. Also in [`issue_fixed.md §D`](./issue_fixed.md).
+
+
 
 **🟡 Partial:**
 - **§2.3** Browser key leak — ✅ **NOW CLOSED (2026-06-28).** `Dashboard.jsx` + `pureFrontendEngine.js` rewritten to call the server proxy `${VITE_API_URL}/api/llm`; all `VITE_GROQ/GEMINI/NVIDIA_API_KEY` usages and direct `api.groq.com`/`generativelanguage` fetches deleted (grep-verified). Proxy load-balances two server-side NVIDIA keys. See `existing_issues.md` §1.6.
 - **§2.4** SQLite — integrity hardened (WAL/FK/single-engine) but **still SQLite**; Postgres is only a comment block, no migration.
 - **Dead-code purge (§6/§10)** — `test_*.py`/`alter_db.py`/`fix_db.py`/`check_*.py` removed from `Backend/`, **but relocated to a top-level `scratch/`** (not deleted); `ollama_provider.py` and both service `scratch/` dirs remain.
 
-**⏳ Pending (everything else):** §2.5 (async/queue — `ask_multi_model` still sync, sequential for-loop), all of §5 (Gateway, RAG, honest/parallel ensemble, queue, verification, eval, observability, Docker/CI, agent), §6.2–6.9 (incl. localStorage tokens, `Math.random` ids), all of §7 (MCP), and §8 local-first inference. **§6.10–6.11 (ThreatLens SSRF + CORS `*`) deferred — ThreatLens is held entirely out of scope this pass (see `existing_issues.md` banner).**
+**⏳ Pending (everything else):** §2.5 (async/queue — `ask_multi_model` still sync, sequential for-loop), most of §5 (**§5.1 LLM Gateway now 🟡 v1 — library shipped & wired into Core, see below**; RAG, honest/parallel ensemble, queue, verification, eval, observability, Docker/CI, agent still pending), §6.2–6.9 (incl. localStorage tokens, `Math.random` ids), all of §7 (MCP), and §8 local-first inference. **§6.10–6.11 (ThreatLens SSRF + CORS `*`) deferred — ThreatLens is held entirely out of scope this pass (see `existing_issues.md` banner).**
 
 ---
 
@@ -225,7 +252,9 @@ re-done per service.
 
 ## 5. Major "Step Forward" Improvements
 
-### 5.1 Unified LLM Gateway (model router + cache + retry + budget) [⭐⭐⭐⭐⭐] — **highest single ROI** · ⏳ PENDING
+### 5.1 Unified LLM Gateway (model router + cache + retry + budget) [⭐⭐⭐⭐⭐] — **highest single ROI** · 🟡 PARTIAL (v1)
+
+> **v1 shipped (Clarity_Stack_V3):** `Backend/llm_gateway.py` — single server-side chokepoint that `providers._generic_chat` routes through. Delivers temp-0 caching, retry+backoff, per-provider circuit breaker, ordered fallback chains (synthesis Groq→NVIDIA), token accounting + per-call logging, optional token budget, admin `GET /llm/stats`. Offline-tested 14/14. **Remaining:** in-process→Redis (with §5.4 queue), route the Node Satellite (`hfClient.js`) + UML `/api/llm` proxy through a shared gateway, per-tenant budgets + cost/latency routing. See `existing_issues.md §10.2`.
 
 **Problem:** model calls are scattered across Python (`providers.py`), Node (`hfClient.js`),
 and even the browser (`promptEngine.js`), each with its own URL, key, error handling, and no

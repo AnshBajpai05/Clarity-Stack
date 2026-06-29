@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Settings, Server, Palette, Bell, Shield, Database, Save, Check, Plus } from 'lucide-react';
+import { Settings, Server, Palette, Bell, Shield, Database, Save, Check, Plus, LogOut } from 'lucide-react';
+import { getCookie } from '@/lib/http';
 import { applyAccentColor } from '@/lib/utils';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { Button } from '@/components/ui/button';
@@ -214,13 +215,13 @@ export default function SettingsPage() {
               <div className="flex items-center gap-2">
                 <div className={cn(
                   "w-2 h-2 rounded-full animate-pulse",
-                  localStorage.getItem('token') ? "bg-neon-mint" : "bg-neon-peach"
+                  getCookie('csrf_token') ? "bg-neon-mint" : "bg-neon-peach"
                 )} />
                 <span className={cn(
                   "text-sm",
-                  localStorage.getItem('token') ? "text-neon-mint" : "text-neon-peach"
+                  getCookie('csrf_token') ? "text-neon-mint" : "text-neon-peach"
                 )}>
-                  {localStorage.getItem('token') ? "Connected" : "Local / Demo Mode"}
+                  {getCookie('csrf_token') ? "Connected" : "Local / Demo Mode"}
                 </span>
               </div>
             </div>
@@ -394,8 +395,11 @@ export default function SettingsPage() {
             <Button 
               variant="outline" 
               className="w-full text-destructive border-destructive/30 hover:bg-destructive/10"
-              onClick={() => {
-                if (window.confirm("Are you sure? This will clear all local settings and preferences.")) {
+              onClick={async () => {
+                if (window.confirm("Are you sure? This will clear all local settings and log you out.")) {
+                  try {
+                    await fetch('http://127.0.0.1:8000/api/auth/logout', { method: 'POST', credentials: 'include' });
+                  } catch (e) {}
                   localStorage.clear();
                   sessionStorage.clear();
                   window.location.reload();

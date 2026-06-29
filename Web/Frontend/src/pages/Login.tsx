@@ -44,13 +44,21 @@ function Login() {
     if (!validate()) return;
 
     try {
-      const res = await axios.post("http://127.0.0.1:8000/api/auth/login", {
-        email: formData.email,
-        password: formData.password,
+      const res = await fetch("http://127.0.0.1:8000/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include", // §5.4: Backend will set httpOnly cookies
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password,
+        }),
       });
 
-      const token = res.data.access_token;
-      localStorage.setItem("token", token);
+      if (!res.ok) {
+        throw new Error("Invalid credentials");
+      }
+
+      // We no longer store the JWT in localStorage
       localStorage.setItem("cs_email", formData.email || "");
       navigate("/projects");
     } catch (err) {

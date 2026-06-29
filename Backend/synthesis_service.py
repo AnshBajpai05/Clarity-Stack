@@ -1,10 +1,10 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import select
-from typing import Optional, List
+from typing import Optional, List, Tuple
 from models import Synthesis, gen_id, Message
 from datetime import datetime, timezone
 
-from providers import ask_hf_synthesis
+from providers import ask_hf_synthesis, SYNTHESIS_MODEL as SYNTHESIS_MODEL_ID
 
 from ir_schema import SYNTHESIS_IR as SECTIONS
 def prune_to_synthesis_ir(text: str) -> str:
@@ -163,7 +163,19 @@ def save_or_update_synthesis(
 # HARD IR STRUCTURE VALIDATOR (PHASE 1 - LEVEL 1)
 # =========================================================
 
-def validate_ir_structure(text: str) -> (bool, List[str]):
+def validate_ir_structure(text: str, *, require_all_sections: bool = True) -> Tuple[bool, List[str]]:
+    """Structural gate for synthesis IR.
+
+    Common invariants (always enforced): every non-blank line is either a known
+    section header (`SECTION:`) or a `- ` bullet under one — no hallucinated free
+    text — and no section header repeats.
+
+    `require_all_sections=True` (default, strict): the section set/order must match
+    SECTIONS exactly. `require_all_sections=False` (subset mode, used by the live
+    synthesis gate): the pipeline drops *empty* sections, so we only require that
+    the sections that ARE present are known, non-empty, and appear in canonical
+    relative order — dropping an empty section is legal, hallucinating one isn't.
+    """
     errors = []
     seen = []
     current = None
@@ -181,15 +193,29 @@ def validate_ir_structure(text: str) -> (bool, List[str]):
         else:
             errors.append(f"Invalid free text line: '{line}'")
 
-    # Check exact section set
-    if set(seen) != set(SECTIONS):
-        errors.append(f"Section mismatch. Found {seen}, expected {SECTIONS}")
+    if require_all_sections:
+        # Check exact section set
+        if set(seen) != set(SECTIONS):
+            errors.append(f"Section mismatch. Found {seen}, expected {SECTIONS}")
 
-    # Check order
-    if seen != SECTIONS:
-        errors.append(f"Section order invalid. Found {seen}, expected {SECTIONS}")
+        # Check order
+        if seen != SECTIONS:
+            errors.append(f"Section order invalid. Found {seen}, expected {SECTIONS}")
+    else:
+        # Subset mode: at least one known section, all known, in canonical order.
+        if not seen:
+            errors.append("No known sections found")
+        canonical = [s for s in SECTIONS if s in seen]
+        deduped = []
+        for s in seen:
+            if s not in deduped:
+                deduped.append(s)
+        if deduped != canonical:
+            errors.append(
+                f"Section order invalid. Found {seen}, expected canonical order {canonical}"
+            )
 
-    # Check duplicates
+    # Check duplicates (both modes)
     if len(seen) != len(set(seen)):
         errors.append("Duplicate section headers found")
 
@@ -201,7 +227,7 @@ def validate_ir_structure(text: str) -> (bool, List[str]):
 
 CONFLICT_MARKERS = [" vs ", " but ", " however", " whereas", " while ", " on the other hand"]
 
-def validate_conflict_semantics(text: str) -> (bool, List[str]):
+def validate_conflict_semantics(text: str) -> Tuple[bool, List[str]]:
     errors = []
     sections = parse_sections(text)
     conflicts = sections.get("CONFLICT", [])
@@ -221,7 +247,10 @@ def get_latest_synthesis(db: Session, chat_id: str, reply_group_id: str):
     return db.scalars(stmt).first()
 
 
-SYNTHESIS_MODEL = "hf-qwen2.5-7b-synthesis"
+# §11.5: record the REAL pinned model id on each synthesis row (the old
+# "hf-qwen2.5-7b-synthesis" label was wrong — synthesis runs on Groq, see
+# providers.SYNTHESIS_MODEL). Truthful provenance is what makes a run reproducible.
+SYNTHESIS_MODEL = SYNTHESIS_MODEL_ID
 
 
 # =========================================================
@@ -267,7 +296,23 @@ def synthesize_content(assistant_replies: List[str]) -> str:
     except Exception:
         pass  # even if prune fails, still save raw
 
-    return strip_empty_sections(raw_merged)
+    cleaned = strip_empty_sections(raw_merged)
+
+    # §8.1 / §10.6: the "synthesis" is an LLM call (temperature 0, but still a model),
+    # NOT a deterministic compiler merge. Before it reaches the DB/KG, enforce that
+    # the output is well-formed IR — known sections only, canonical order, no
+    # hallucinated free text — and that any CONFLICT bullets express real opposition.
+    # Fail-closed: invalid synthesis raises, and both LLM callers (`/ask`,
+    # `/synthesis/generate`) roll the unit back and surface a 503 instead of
+    # persisting garbage. This makes the previously-dead validators the real gate.
+    ok_struct, struct_errs = validate_ir_structure(cleaned, require_all_sections=False)
+    ok_conflict, conflict_errs = validate_conflict_semantics(cleaned)
+    if not (ok_struct and ok_conflict):
+        errs = struct_errs + conflict_errs
+        print("\n=== SYNTHESIS VALIDATION FAILED ===\n" + "\n".join(errs))
+        raise RuntimeError("synthesis_validation_failed: " + "; ".join(errs))
+
+    return cleaned
 
 
 def build_kg_for_synthesis(db: Session, chat_id: str, synthesis_id: str, content: str) -> None:

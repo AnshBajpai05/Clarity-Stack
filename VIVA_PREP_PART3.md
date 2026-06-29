@@ -35,18 +35,16 @@ The Satellite is the **AI orchestration and intelligence layer**. It runs separa
 | `GET /api/satellite/discovery` | Public projects feed |
 | `POST /api/satellite/join/:projectId` | Join request via email |
 
-## 8.3 JWT Auth Middleware (`middleware/auth.js`)
+## 8.3 JWT Auth & Authorization (`middleware/auth.js`)
 
 ```js
-const { requireAuth } = require("../middleware/auth");
-router.get("/:projectId", requireAuth, async (req, res) => { ... });
+const { requireAuth, requireProjectAccess } = require("../middleware/auth");
+router.get("/:projectId", requireAuth, requireProjectAccess, async (req, res) => { ... });
 ```
 
-The Satellite verifies the **same JWT** issued by the FastAPI backend:
-- Reads `Authorization: Bearer <token>` header
-- Verifies with `jsonwebtoken.verify(token, process.env.JWT_SECRET)`
-- Attaches decoded payload to `req.user`
-- **Cross-service JWT sharing**: Both Backend and Satellite use the same `SECRET_KEY` — this enables stateless auth without a shared session store
+1. **Authentication (`requireAuth`)**: Verifies the JWT (`access_token` cookie or `Bearer` header) using the unified `JWT_SECRET` (fail-closed if unset).
+2. **Authorization (`requireProjectAccess` / `requireCardAccess`)**: Closes the cross-tenant IDOR vulnerability (§1.3 fix). It delegates to Core's object-level authZ (`GET /projects/:id`) to ensure the user is a member of the requested project before proceeding.
+3. **Public Routes**: `discovery.js` and `join.js` remain intentionally ungated.
 
 ## 8.4 Temporal Card System — Version Chaining
 
@@ -140,43 +138,41 @@ await mongoose.connect(uri, {
 ## 9.1 Purpose
 
 Real-time **collaborative document editor** where teams can:
-- Create named workspaces
+- Create named workspaces (public or private)
 - Edit documents in sections simultaneously
 - See live user count
-- Create immutable snapshots for version recovery
 - View activity logs
 
-## 9.2 Architecture: In-Memory + Supabase Dual Storage
+*(Note: Supabase dual-storage and snapshots were removed in §6.2/§2.2 cleanup in favor of reliable file-based persistence).*
+
+## 9.2 Architecture: In-Memory + File-based Persistence
 
 ```js
 const rooms = {};      // { roomId: { sections: [...] } }
 const roomUsers = {};  // { roomId: Set<socketId> }
-const snapshots = {};  // { snapshotId: { content, created_at } }
 ```
 
 **Why in-memory first?**
 - Sub-millisecond read/write for real-time operations
-- Supabase (PostgreSQL) is updated via debounced save — reduces DB writes during rapid typing
+- File system is updated via debounced atomic writes — reduces disk I/O during rapid typing
 
-**Supabase Fallback:**
-```js
-const supabase = supabaseUrl && supabaseKey ? createClient(supabaseUrl, supabaseKey) : null;
-if (!supabase) console.log("Using in-memory storage only");
-```
-Service works without Supabase — falls back to in-memory (data lost on restart).
+**File Fallback (Tier-0 Hardened):**
+The single hardened backend (`server.js`) writes atomic JSON temp-files + `rename` to prevent corruption. It includes a `MAX_SAVE_WAIT` cap so continuous typing cannot starve persistence (§3.3 fix).
+
 
 ## 9.3 HTTP REST Endpoints
 
 | Method | Route | Purpose |
 |---|---|---|
 | POST | `/workspace` | Create new workspace (returns `room_id`) |
-| GET | `/workspaces` | List all workspaces (memory + Supabase) |
-| GET | `/workspace/:id` | Get workspace sections |
+| GET | `/workspaces` | List all workspaces |
+| GET | `/workspace/:id` | Get workspace sections (403 if non-owner of private room) |
 | DELETE | `/workspace/:id` | Delete workspace |
-| POST | `/snapshot` | Create immutable snapshot |
-| GET | `/snapshot/:id` | Read snapshot |
 | POST | `/activity` | Log user action |
 | GET | `/activity/:workspace_id` | Read activity logs |
+
+*(Snapshot routes were removed).*
+
 
 ## 9.4 Socket.io Event System
 
@@ -190,6 +186,10 @@ Service works without Supabase — falls back to in-memory (data lost on restart
 | `add_section` | `{ room }` | Add new section, broadcast to ALL users |
 | `delete_section` | `{ room, sectionId }` | Delete section (min 1 kept), broadcast |
 | `reorder_sections` | `{ room, sections }` | Replace section order, broadcast to others |
+
+**Authentication (§1.5 fix):**
+Socket handshake is authenticated via `handshake.headers.cookie` (`access_token`). The `io.use` middleware verifies the JWT using `JWT_SECRET` and attaches `socket.user`. Every mutator event is gated by `canAccessRoom()` (owners only for private rooms).
+
 
 ### Server → Client Events
 
@@ -211,27 +211,16 @@ Service works without Supabase — falls back to in-memory (data lost on restart
 ## 9.5 Debounced Persistence
 
 ```js
-const saveTimers = {};
 function debouncedSave(roomId) {
     if (saveTimers[roomId]) clearTimeout(saveTimers[roomId]);
     saveTimers[roomId] = setTimeout(async () => {
-        const content = JSON.stringify(rooms[roomId].sections);
-        await supabase.from("workspaces").upsert({ id: roomId, content, updated_at: new Date() });
+        await atomicWriteFile(path, data);
     }, 1000); // 1 second idle window
 }
 ```
 
-**Why debounce?** A fast typist produces ~10 keystrokes/second. Without debouncing, that's 10 DB writes/second per user. Debouncing collapses rapid changes into 1 write per second of idle time.
+**Why debounce?** A fast typist produces ~10 keystrokes/second. Without debouncing, that's 10 disk writes/second per user. Debouncing collapses rapid changes into 1 write per second of idle time. The `MAX_SAVE_WAIT` cap forces a write if typing continues uninterrupted for too long.
 
-**Tradeoff:** If the server crashes in the 1-second window after a change, that change is lost.
-
-## 9.6 Supabase Tables Used
-
-| Table | Columns | Purpose |
-|---|---|---|
-| `workspaces` | id, content (JSON), name, owner_id, is_public, created_at, updated_at | Workspace storage |
-| `snapshots` | id, content, workspace_id, created_at | Immutable point-in-time versions |
-| `activity_logs` | id, workspace_id, user_id, action, content_preview, cursor_position, created_at | Audit trail |
 
 ---
 
@@ -401,7 +390,7 @@ Goes beyond simple extraction by performing a "Multi-Pass" analysis. The LLM rev
 A: Socket.io is a library built on top of WebSockets that adds: automatic fallback to HTTP long-polling (if WebSocket is blocked), room/namespace abstractions, automatic reconnection, and event-based messaging. Raw WebSockets are lower-level — you handle everything manually.
 
 **Q2: What is debouncing and why is it used in the Editor Service?**
-A: Debouncing delays execution of a function until after a specified idle period. In the editor, every keystroke would trigger a Supabase write without it — potentially 600 DB writes per minute per user. Debouncing collapses all keystrokes within a 1-second idle window into a single write, drastically reducing DB load.
+A: Debouncing delays execution of a function until after a specified idle period. In the editor, every keystroke would trigger a disk write without it. Debouncing collapses all keystrokes within a 1-second idle window into a single atomic JSON write. A `MAX_SAVE_WAIT` cap ensures data flushes even during continuous typing.
 
 **Q3: What is the Temporal Card version chain?**
 A: Cards use a singly linked list pattern. Each card has a `previousCardId` pointing to its predecessor. When a new version is generated, the old card is marked "superseded" and the new one gets `version: old.version + 1`. This preserves full project history — you can traverse from the latest card back to the original.
@@ -409,8 +398,8 @@ A: Cards use a singly linked list pattern. Each card has a `previousCardId` poin
 **Q4: What does FAISS do in the SRS pipeline?**
 A: FAISS (Facebook AI Similarity Search) is a library for fast vector similarity search. In Stage 5, requirement sentences are embedded into vectors using sentence-transformers. FAISS finds semantically similar requirements efficiently — O(log n) search instead of O(n²) pairwise comparison.
 
-**Q5: Why does the Satellite use its own JWT verification instead of calling the Core API?**
-A: Calling the Core API for every request would add network latency and create a dependency. Since both services share the same `JWT_SECRET` environment variable, the Satellite can verify tokens locally with `jsonwebtoken.verify()` — stateless, fast, no cross-service call needed.
+**Q5: How does Satellite handle Cross-Tenant IDOR?**
+A: Previously, Satellite only checked if a JWT was valid, not if the user belonged to the requested project. Now, the `requireProjectAccess` middleware delegates to Core's `GET /projects/:id` endpoint. It verifies the JWT and confirms project membership before allowing access to graphs or cards, effectively closing the IDOR vulnerability.
 
 **Q6: What is PyMuPDF (fitz) and why is it used?**
 A: PyMuPDF is a Python binding for the MuPDF library — one of the fastest PDF rendering engines. It extracts text with layout information (page numbers, coordinates) more accurately than pdfminer or PyPDF2. The `marker-pdf` library extends this with vision-model-based layout understanding for complex PDFs.

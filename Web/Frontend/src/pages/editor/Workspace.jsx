@@ -7,8 +7,6 @@ import { toast } from "sonner";
 function Workspace() {
     const { id } = useParams();
     
-    // Replace AuthContext with ClarityStack standard auth
-    const token = localStorage.getItem("token");
     const currentUserEmail = localStorage.getItem("cs_email");
 
     const [sections, setSections] = useState([]);

@@ -1,7 +1,14 @@
 // server.js — Main Express Application
 require("dotenv").config({ override: true });
+
+// §6.3: validate required env up-front (aggregated, fail-fast) BEFORE requiring
+// routes/middleware, so a misconfig surfaces as one clear boot error.
+const { loadEnv } = require("./config/env");
+const env = loadEnv();
+
 const express = require("express");
 const cors = require("cors");
+const cookieParser = require("cookie-parser");
 const { connectDB, getConnectionStatus } = require("./config/db");
 const { initMailer } = require("./services/mailer");
 const { startCardScheduler } = require("./services/cardScheduler");
@@ -17,17 +24,16 @@ const internalRoutes = require("./routes/internal");
 const generateRoutes = require("./routes/generate");
 
 const app = express();
-const PORT = process.env.PORT || 8003;
+const PORT = env.PORT;
 
 // CORS allow-list (§5.5) — explicit origins instead of reflecting any. Override
 // per environment with CORS_ORIGINS (comma-separated); defaults to local dev UIs.
-const ALLOWED_ORIGINS = (
-  process.env.CORS_ORIGINS ||
-  "http://localhost:8006,http://127.0.0.1:8006,http://localhost:8007,http://127.0.0.1:8007"
-).split(",").map((s) => s.trim()).filter(Boolean);
+const ALLOWED_ORIGINS = env.CORS_ORIGINS
+  .split(",").map((s) => s.trim()).filter(Boolean);
 
 // Middleware
 app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
+app.use(cookieParser());  // §5.4: parse cookies for httpOnly access_token
 app.use(express.json({ limit: "10mb" }));
 
 app.use((req, res, next) => {
@@ -61,9 +67,9 @@ app.get("/health", (req, res) => {
   });
 });
 
-// Start Server
-app.listen(PORT, "0.0.0.0", () => {
+// Start Server — §5.5: bind to env.BIND_HOST (localhost by default).
+app.listen(PORT, env.BIND_HOST, () => {
   console.log(`=========================================`);
-  console.log(`🚀 Clarity Satellite running on http://0.0.0.0:${PORT}`);
+  console.log(`🚀 Clarity Satellite running on http://${env.BIND_HOST}:${PORT}`);
   console.log(`=========================================`);
 });

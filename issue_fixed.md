@@ -148,3 +148,38 @@ The **entire Tier-0 security gate is closed system-wide** (Core + Satellite + Ed
 **Out of scope / intentionally deferred (still in `take_step_forward.md`):** Tier-1 platform work (LLM Gateway,
 Postgres migration, Docker/CI, observability, honest/parallel ensemble), local-first inference (the system stays
 cloud-dependent by decision), and the remaining non-Tier-0 defects.
+
+---
+
+## D. Auth hardening — httpOnly cookies + operational security (2026-06-28)
+
+> 📄 **Full walkthrough:** [`auth_hardening_walkthrough.md`](./auth_hardening_walkthrough.md)
+> Cross-referenced in `existing_issues.md §1.7`.
+
+### D1. §5.4 — localStorage tokens → httpOnly cookies (Hybrid Auth + CSRF) [⭐⭐⭐⭐⭐]
+- Cookie-first (browser) / Bearer-header-fallback (service-to-service) auth pipeline.
+- `httpOnly` access (15 min) + refresh (30 days) cookies; JS-readable `csrf_token` cookie.
+- Double-submit CSRF check on all mutating cookie-auth requests.
+- All 15 frontend files migrated off `localStorage`; `http.ts` / `api.ts` rebuilt; `fetchSatellite` uses `credentials: "include"`.
+- Socket.IO handshakes read `handshake.headers.cookie` — no query-param token leakage.
+
+### D2. §1.7 — Auth Operational Hardening (Rotation, Sessions, RBAC, Silent Refresh) [⭐⭐⭐⭐⭐]
+- **Refresh token rotation** — every `/refresh` call revokes the old JTI and issues a new `(token, jti)` pair.
+- **Anomaly detection** — presenting a revoked JTI triggers immediate revocation of *all* user sessions.
+- **Server-side sessions** — new `RefreshToken` table (`jti`, `user_id`, `revoked`, `device_info`); Alembic migration `0029088d6806` applied.
+- **Richer `/me`** — returns `id, email, role, nickname, permissions[], avatar, createdAt`.
+- **RBAC middleware** — `require_permissions(*perms)` FastAPI Depends factory; admin gets full permission set.
+- **`__Host-` cookie prefixes** — `get_cookie_name()` prepends `__Host-` in production; `getCookie()` in frontend checks both variants.
+- **Rate limiting** — `/refresh` now capped at 20/min alongside existing `/login` (10/min) and `/register` (5/min).
+- **Silent refresh UX** — `http.ts` state machine: queues inflight requests on 401, refreshes once, retries all; `/login` redirect only on refresh failure. `fetchSatellite` in `api.ts` integrated identically.
+- Build verified: ✅ `npm run build` — 3586 modules, zero errors.
+
+### D3. §5.4 follow-up — post-session correctness pass (2026-06-29) [⭐⭐⭐⭐⭐]
+
+Audit of the D1/D2 work (which was interrupted mid-edit by a session limit) found the cookie pipeline was one line short of working, plus a cosmetic authZ mismatch. Both fixed:
+
+- **Login 500 (blocker)** — `POST /api/auth/login` (`Backend/main.py`) read `request.headers` for `device_info` but the handler signature no longer declared `request: Request` (it was dropped when `device_info`/session-storage was added; `logout` and `refresh` kept theirs). Result: **every login raised `NameError` → 500**, locking all browser auth out. Re-added `request: Request` to the signature. Verified `python -m py_compile`.
+- **`/me` admin permissions mismatch** — `GET /api/auth/me` returned admin `["project.read", "project.write"]`, but the RBAC source of truth (`auth.py:require_permissions` role map) grants admin `["admin", "project.read", "project.write", "project.delete", "users.manage"]`. Aligned `/me` to the full set so the display payload matches enforced authZ. (Display only — `require_permissions` was always the real gate.)
+
+Re-verified the rest of the §5.4/§1.7 surface end-to-end (auth.py cookie/CSRF/rotation, models + migration `0029088d6806`, Satellite cookie→Bearer forwarding, Editor socket handshake + `canAccessRoom`, frontend silent-refresh + `withCredentials`). Grep confirms **zero** access tokens in `localStorage` across `Web/Frontend/src` — the XSS-exposure crux of §5.4 holds. No other partials found.
+

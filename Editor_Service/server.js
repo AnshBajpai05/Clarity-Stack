@@ -2,27 +2,24 @@ const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
+const cookieParser = require("cookie-parser");
 const { v4: uuidv4 } = require("uuid");
 const jwt = require("jsonwebtoken");
 const fs = require("fs");
 const path = require("path");
 require("dotenv").config();
 
-// Unified secret name across all services (Core/Satellite/Editor all use JWT_SECRET).
-// Fail-closed: refuse to boot if unset, instead of silently signing/verifying with a
-// public fallback (was the §1.1/§1.5 auth-bypass: wrong env name → all real tokens failed).
-const JWT_SECRET = process.env.JWT_SECRET;
-if (!JWT_SECRET) {
-  throw new Error(
-    "JWT_SECRET environment variable is not set. Editor refuses to boot (fail-closed). " +
-    "Set it (matching the Core Backend's value) in Editor_Service/.env."
-  );
-}
+// §6.3: validated, aggregated, fail-fast env loader (replaces the old inline
+// one-at-a-time JWT_SECRET throw). Still fail-closed — unified on JWT_SECRET
+// across Core/Satellite/Editor (was the §1.1/§1.5 auth-bypass when names diverged).
+const { loadEnv } = require("./config/env");
+const env = loadEnv();
+const JWT_SECRET = env.JWT_SECRET;
 
 // ─── Supabase (optional) ──────────────────────────────────────────────────────
 const { createClient } = require("@supabase/supabase-js");
-const supabaseUrl = process.env.SUPABASE_URL || "";
-const supabaseKey = process.env.SUPABASE_KEY || "";
+const supabaseUrl = env.SUPABASE_URL;
+const supabaseKey = env.SUPABASE_KEY;
 const isValidUrl = supabaseUrl.startsWith("http://") || supabaseUrl.startsWith("https://");
 const supabase = supabaseUrl && supabaseKey && isValidUrl ? createClient(supabaseUrl, supabaseKey) : null;
 
@@ -80,13 +77,12 @@ if (supabase) {
 // ─── Express + Socket.IO Setup ────────────────────────────────────────────────
 // CORS allow-list (§5.5) — explicit origins instead of "*". Override per
 // environment with CORS_ORIGINS (comma-separated); defaults to local dev UIs.
-const ALLOWED_ORIGINS = (
-    process.env.CORS_ORIGINS ||
-    "http://localhost:8006,http://127.0.0.1:8006,http://localhost:8007,http://127.0.0.1:8007"
-).split(",").map((s) => s.trim()).filter(Boolean);
+const ALLOWED_ORIGINS = env.CORS_ORIGINS
+    .split(",").map((s) => s.trim()).filter(Boolean);
 
 const app = express();
 app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
+app.use(cookieParser()); // §5.4: parse httpOnly cookies
 app.use(express.json());
 
 const server = http.createServer(app);
@@ -139,9 +135,16 @@ function scheduleSave(delay = 1500) {
 
 // ─── Auth Middleware ──────────────────────────────────────────────────────────
 const optionalAuth = (req, res, next) => {
+    let token = null;
     const authHeader = req.headers.authorization;
+    
     if (authHeader && authHeader.startsWith("Bearer ")) {
-        const token = authHeader.split(" ")[1];
+        token = authHeader.split(" ")[1];
+    } else if (req.cookies && req.cookies.access_token) {
+        token = req.cookies.access_token;
+    }
+
+    if (token) {
         try {
             const payload = jwt.verify(token, JWT_SECRET);
             // ClarityStack JWT stores user email in `sub`
@@ -151,6 +154,8 @@ const optionalAuth = (req, res, next) => {
             // Token invalid — treat as anonymous
             req.user = null;
         }
+    } else {
+        req.user = null;
     }
     next();
 };
@@ -377,7 +382,20 @@ app.get("/activity/:workspace_id", optionalAuth, (req, res) => {
 // workspaces stay collaboratively viewable) — instead we attach the identity and
 // gate *private* rooms per-event below.
 io.use((socket, next) => {
-    const token = socket.handshake.auth && socket.handshake.auth.token;
+    let token = socket.handshake.auth && socket.handshake.auth.token;
+    
+    if (!token && socket.handshake.headers.cookie) {
+        // Fallback to httpOnly cookie for WS connection from browser
+        const cookies = socket.handshake.headers.cookie.split(';').reduce((acc, c) => {
+            const parts = c.split('=');
+            if (parts.length >= 2) {
+                acc[parts[0].trim()] = parts[1].trim();
+            }
+            return acc;
+        }, {});
+        token = cookies.access_token;
+    }
+
     socket.user = null;
     if (token) {
         try {
@@ -513,9 +531,9 @@ io.on("connection", (socket) => {
 });
 
 // ─── Start Server ─────────────────────────────────────────────────────────────
-const PORT = process.env.PORT || 8004;
-server.listen(PORT, "0.0.0.0", () => {
-    console.log(`\n🚀 Clarity Editor backend running on http://0.0.0.0:${PORT}`);
+const PORT = env.PORT;
+server.listen(PORT, env.BIND_HOST, () => {
+    console.log(`\n🚀 Clarity Editor backend running on http://${env.BIND_HOST}:${PORT}`);
     console.log(`   Socket.IO ready | Persistence: FILE (data/workspaces.json)\n`);
 });
 

@@ -15,10 +15,11 @@ ClarityStack is a **multi-service AI intelligence platform** that solves the "kn
 4. **SRS Intelligence** — a PDF-ingestion pipeline to process Software Requirements Specification documents
 5. **System Hardening** — a high-availability layer with global error traps and defensive render guards
 
-## 1.1b Production Hardening (New)
-*   **Global Error Trap:** Caught-at-the-source boot crash detection in `main.tsx`.
+## 1.1b Production Hardening (Updated 2026-06-28)
+*   **Global Error Trap:** `ErrorBoundary` component wraps the whole app in `App.tsx` with reset + "Go home" fallback (§2.4 fixed).
 *   **Render Guards:** Defensive `try-catch` boundaries around complex AI components.
-*   **API Resilience:** Null-safe mapping and restricted storage (Brave/Incognito) support.
+*   **API Resilience:** Null-safe mapping, restricted storage (Brave/Incognito) support.
+*   **Auth Hardening:** httpOnly cookies + CSRF double-submit + refresh token rotation + RBAC middleware (§5.4 + §1.7).
 
 ## 1.2 Real-World Problem Solved
 
@@ -37,8 +38,9 @@ ClarityStack acts as a **Semantic Sieve** — it doesn't just store messages, it
 | Lost architectural decisions | Temporal Cards with full version chain |
 | Duplicate reasoning | Knowledge Graph detects semantic conflicts |
 | Unreadable SRS PDFs | 6-stage NLP pipeline auto-extracts actors, stories, ambiguities |
-| Fragmented team docs | Real-time collaborative editor with Supabase persistence |
+| Fragmented team docs | Real-time collaborative editor with file-based persistence |
 | Single AI model hallucinations | Multi-model consensus (Groq + NVIDIA NIM + Mixtral) |
+
 
 ## 1.4 Existing System vs Proposed System
 
@@ -112,12 +114,13 @@ Raw Text → Signal Classification → Context Assembly
 |---|---|---|---|---|
 | Core API (Backend) | Python / FastAPI | 8000 | SQLite | Auth, Projects, Chats, Messages, KG, Synthesis |
 | SRS Service | Python / FastAPI | 8001 | Filesystem (JSON) | PDF ingestion + 6-stage NLP pipeline |
-| ThreatLens Service | Python / FastAPI | 8002 | ML Model (BERT) | AI Phishing Detection (BERT + Heuristics) |
+| ThreatLens Service | Python / FastAPI | 8002 | ML Model (BERT) | AI Phishing Detection (BERT + Heuristics) — *out of scope this cycle* |
 | Satellite | Node.js / Express | 8003 | MongoDB Atlas | Temporal Cards, KG Snapshots, Delta, Mailer |
-| Editor Service | Node.js / Socket.io | 8004 | Supabase (PostgreSQL) | Real-time collaborative editor |
+| Editor Service | Node.js / Socket.io | 8004 | File-based (atomic JSON) | Real-time collaborative editor |
 | UML API | Python / FastAPI | 8005 | — | UML diagram generation + Semantic chunking |
 | Frontend (Main) | React / Vite | 8006 | — | Complete UI, routes to all services |
 | UML UI | React / Vite | 8007 | — | UML visualizer interface |
+
 
 **Why Microservices?**
 - Each service has different scaling needs (AI inference is slow; editor must be real-time)
@@ -150,12 +153,15 @@ npm run dev -- --port 8007              (UML UI)
 
 ## 2.4 CORS Configuration
 
-Each backend service explicitly allows the frontend origin:
-- Backend (`main.py`): allows `localhost:8080`, `8081`, `8082`
-- SRS Service (`api.py`): allows `localhost:5173`, `8080`, `8081`, `3000`
-- Editor Service (`server.js`): `cors({ origin: "*" })` — open for dev
+Each backend service explicitly allows the frontend origin with credentials support:
+- **Backend** (`main.py`): per-origin allowlist (localhost:8006, 8007 in dev), `allow_credentials=True`
+- **SRS Service** (`api.py`): allows `localhost:5173`, `8000`, `8006`
+- **Editor Service** (`server.js`): configured origins with `credentials: true`
+- **Satellite** (`server.js`): configured origins with `credentials: true`
 
-**Security Note**: Production deployments must replace wildcard CORS with explicit origins.
+**CSRF:** All mutating cookie-auth requests must include `X-CSRF-Token` header matching the JS-readable `csrf_token` cookie (double-submit pattern).
+
+**Security Note**: Production deployments use `COOKIE_SECURE=True` with `__Host-` prefixed cookie names.
 
 ---
 
@@ -171,7 +177,7 @@ Each backend service explicitly allows the frontend origin:
 | TanStack Query | 5.83.0 | Server state management, caching, polling |
 | React Router DOM | 6.30.1 | Client-side SPA routing |
 | Zustand | 5.0.12 | Lightweight client state store |
-| Axios | 1.14.0 | HTTP client with interceptor support |
+| `fetch` API (native) | — | HTTP client (`http.ts` wrapper with CSRF + silent refresh) |
 | Socket.io-client | 4.8.3 | WebSocket to Editor Service |
 | Tailwind CSS | 3.4.17 | Utility-first CSS framework |
 | Radix UI | Various | Headless, accessible UI primitives |
@@ -186,6 +192,7 @@ Each backend service explicitly allows the frontend origin:
 | date-fns | 3.6.0 | Date formatting utilities |
 | cmdk | 1.1.1 | Command palette component |
 | vaul | 0.9.9 | Drawer / bottom sheet component |
+
 
 ## 3.2 Application Entry Point
 
@@ -351,7 +358,7 @@ const { register, handleSubmit, formState: { errors } } = useForm({
 });
 ```
 
-**JWT Storage:** On successful login, token stored in `localStorage`. Axios interceptor injects it into every request header automatically.
+**Auth Model (§5.4):** On successful login, the server sets three httpOnly cookies: `access_token` (15 min), `refresh_token` (30 days), and a JS-readable `csrf_token`. The frontend never touches JWTs directly. User state is loaded via `GET /api/auth/me`.
 
 ### `DiscoveryPage.tsx` (9KB)
 **Purpose**: Feed of public projects.
@@ -389,13 +396,16 @@ useEffect(() => {
 
 ## 3.7 Key npm Packages — Internal Working
 
-### `axios`
-- Creates HTTP requests, returns Promises
-- Interceptors inject JWT into every request automatically
-- Error handling: `err.response.data` extracts backend error message
+### `http.ts` (custom fetch wrapper — replaces Axios)
+- Centralized `api()` function with `credentials: "include"` (auto-sends httpOnly cookies)
+- Reads `csrf_token` cookie, injects `X-CSRF-Token` header on every mutating request
+- **Silent refresh state machine**: on 401, queues inflight requests, hits `/api/auth/refresh`, retries all queued calls; falls back to `/login` only if refresh itself fails
+- `getCookie()` checks `__Host-` prefixed variants first (production) then plain (dev)
+- 120s timeout with AbortController; slow-request warnings in dev mode
 
 ### `socket.io-client`
 - Establishes WebSocket connection, falls back to HTTP long-polling
+- Auth: token sent via `socket.handshake.headers.cookie` (no query-param token leakage)
 - Events used: `join`, `section_change`, `load-sections`, `user-count`, `section_added`, `section_deleted`
 
 ### `react-force-graph-2d`
@@ -447,8 +457,8 @@ A: A form element whose value is driven by React state. Every keystroke triggers
 **Q5: Why is Vite faster than CRA?**
 A: CRA bundles everything with Webpack before serving. Vite serves native ES modules directly to the browser in dev mode — no bundling step. Production builds use Rollup + SWC (Rust-based compiler), which is 10-20x faster than Babel.
 
-**Q6: How does JWT authentication work in the frontend?**
-A: After login, the JWT is stored in `localStorage`. An Axios request interceptor runs before every HTTP call and injects `Authorization: Bearer <token>` into the header. The FastAPI backend verifies this token using `python-jose` and `passlib` (bcrypt).
+**Q6: How does authentication work in the frontend?**
+A: After login, the server sets three cookies: an `httpOnly` `access_token` (15 min), an `httpOnly` `refresh_token` (30 days), and a JS-readable `csrf_token`. The browser auto-sends the access cookie with every request (via `credentials: "include"`). The frontend reads the `csrf_token` cookie and injects it as `X-CSRF-Token` on all mutating requests (double-submit CSRF pattern). On 401, the `http.ts` silent refresh state machine transparently calls `/api/auth/refresh` and retries — the user never sees a redirect unless the refresh itself fails. JWTs never touch `localStorage`.
 
 **Q7: What is reconciliation?**
 A: When React state changes, it creates a new Virtual DOM tree and diffs it against the previous tree (using the diffing algorithm). Only actual DOM nodes that changed are updated. This makes UI updates faster than direct DOM manipulation.

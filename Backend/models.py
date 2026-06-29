@@ -38,6 +38,21 @@ class User(Base):
     role = Column(String(50), default="user", nullable=False)
 
 
+class RefreshToken(Base):
+    """§1.7 Auth Hardening: Stateful refresh tokens for session management."""
+    __tablename__ = "refresh_tokens"
+
+    id = Column(String, primary_key=True, default=gen_id) # Acts as the JTI (JWT ID)
+    user_id = Column(String, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    
+    issued_at = Column(DateTime(timezone=True), default=now, nullable=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    revoked = Column(Boolean, default=False, nullable=False)
+    
+    device_info = Column(String(255), nullable=True) # e.g. "Chrome on Windows 10"
+
+
+
 class Project(Base):
     __tablename__ = "projects"
 

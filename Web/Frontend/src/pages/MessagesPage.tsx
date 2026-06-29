@@ -101,13 +101,10 @@ export default function MessagesPage() {
 
   useEffect(() => {
     if (!chatId) return;
-    const token = localStorage.getItem('token');
-    if (!token) return;
-
     const backendHost = (import.meta as any).env?.VITE_BACKEND_URL
       ? new URL((import.meta as any).env.VITE_BACKEND_URL).host
       : `${window.location.hostname}:8000`;
-    const wsUrl = `ws://${backendHost}/ws/chats/${chatId}?token=${encodeURIComponent(token)}`;
+    const wsUrl = `ws://${backendHost}/ws/chats/${chatId}`;
 
     const ws = new WebSocket(wsUrl);
     wsRef.current = ws;

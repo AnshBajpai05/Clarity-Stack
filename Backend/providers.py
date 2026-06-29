@@ -1,7 +1,8 @@
 import os
-import requests
 from typing import List, Dict
 from dotenv import load_dotenv
+
+import llm_gateway as gateway  # §5.1/§10.2 — single chokepoint: cache, retry, breaker, fallback
 
 # =========================================================
 # LOAD ENV
@@ -43,49 +44,14 @@ if not NVIDIA_KEY:
 
 
 # =========================================================
-# SAFE HTTP CALL
+# PROVIDER LABEL (for gateway routing / breaker / stats)
 # =========================================================
-def _call_chat(
-    api_url: str,
-    headers: dict,
-    payload: dict,
-    timeout: int = 60
-) -> str:
-
-    try:
-
-        response = requests.post(
-            api_url,
-            headers=headers,
-            json=payload,
-            timeout=timeout
-        )
-
-        try:
-            response.raise_for_status()
-
-        except Exception:
-            # §9.3: don't surface the upstream provider body to callers; log it
-            # server-side and raise a generic message.
-            logging.error("Provider HTTP %s on %s: %s", response.status_code, api_url, response.text)
-            raise Exception(f"Provider request failed (HTTP {response.status_code})")
-
-        data = response.json()
-
-        if "choices" not in data:
-            logging.error("Provider returned unexpected payload on %s: %s", api_url, data)
-            raise Exception("Provider returned an unexpected response")
-
-        return data["choices"][0]["message"]["content"]
-
-    except requests.exceptions.Timeout:
-        raise Exception("Request timed out")
-
-    except requests.exceptions.ConnectionError:
-        raise Exception("Connection error")
-
-    except Exception as e:
-        raise Exception(str(e))
+def _provider_for(api_url: str) -> str:
+    if "groq.com" in api_url:
+        return "groq"
+    if "nvidia.com" in api_url:
+        return "nvidia"
+    return "llm"
 
 
 # =========================================================
@@ -124,30 +90,22 @@ def _generic_chat(
     temperature: float = 0.0,
     timeout: int = 60
 ) -> str:
-
-    payload = {
-        "model": model,
-        "messages": [
-            {
-                "role": "system",
-                "content": system_prompt
-            },
-            {
-                "role": "user",
-                "content": user_prompt
-            }
-        ],
-        "temperature": temperature
-    }
-
-    return _call_chat(
+    # Single-candidate call through the gateway: gains caching (temp-0), retry+backoff,
+    # circuit breaker, and token accounting without changing this function's contract.
+    # Seed (§11.5) is forwarded; the gateway only attaches it when not None.
+    cand = gateway.Candidate(
+        provider=_provider_for(api_url),
         api_url=api_url,
-        headers={
-            "Authorization": f"Bearer {api_key}",
-            "Content-Type": "application/json"
-        },
-        payload=payload,
-        timeout=timeout
+        api_key=api_key,
+        model=model,
+    )
+    return gateway.chat(
+        candidates=[cand],
+        system_prompt=system_prompt,
+        user_prompt=user_prompt,
+        temperature=temperature,
+        timeout=timeout,
+        seed=MODEL_SEED,
     )
 
 
@@ -160,6 +118,55 @@ NVIDIA_URL = "https://integrate.api.nvidia.com/v1/chat/completions"
 
 
 # =========================================================
+# MODEL REGISTRY (§11.5 — pinned, single source of truth)
+# =========================================================
+# Vendor model ids are deprecated on the *vendor's* timeline, not ours. The day a
+# model is retired the result silently changes with no code change and no alert.
+# So: pin every id in ONE place, allow a deliberate override via env, and log the
+# active set at import — a vendor retirement now shows up as a config/log change,
+# not silent drift. `MODEL_SEED` is sent to vendors that honor it (Groq & NVIDIA
+# are OpenAI-compatible) for best-effort reproducibility — NOT bit-determinism,
+# hosted LLMs are never bit-reproducible (§11.6).
+def _model(env_key: str, default: str) -> str:
+    return os.getenv(env_key, default).strip()
+
+MODELS = {
+    "groq_llama":     _model("MODEL_GROQ_LLAMA",     "llama-3.3-70b-versatile"),
+    "groq_instant":   _model("MODEL_GROQ_INSTANT",   "llama-3.1-8b-instant"),
+    "groq_gemma":     _model("MODEL_GROQ_GEMMA",     "gemma2-9b-it"),
+    "nvidia_llama":   _model("MODEL_NVIDIA_LLAMA",   "meta/llama-3.1-70b-instruct"),
+    "nvidia_mixtral": _model("MODEL_NVIDIA_MIXTRAL", "mistralai/mixtral-8x22b-instruct-v0.1"),
+    "nvidia_gemma":   _model("MODEL_NVIDIA_GEMMA",   "google/gemma-2-9b-it"),
+}
+
+# Logical roles → which pinned model backs each task (so callers never hardcode ids).
+SYNTHESIS_MODEL     = MODELS["groq_llama"]
+EXTRACTION_PRIMARY  = MODELS["groq_llama"]
+DIRECT_ANSWER_MODEL = MODELS["groq_llama"]
+
+# Deterministic seed for vendors that honor it. Set MODEL_SEED="" (or "none") to
+# omit it entirely (e.g. if a provider rejects the param).
+def _parse_seed(raw):
+    raw = (raw or "").strip().lower()
+    if raw in ("", "none", "off", "false"):
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        logging.warning("[providers] MODEL_SEED=%r is not an int — seeding disabled.", raw)
+        return None
+
+MODEL_SEED = _parse_seed(os.getenv("MODEL_SEED", "42"))
+
+
+def get_model_manifest() -> dict:
+    """Active pinned model set + seed. For boot logging, /version, and §10.10 eval."""
+    return {"models": dict(MODELS), "seed": MODEL_SEED}
+
+logging.info("[providers] Pinned model manifest: %s", get_model_manifest())
+
+
+# =========================================================
 # GROQ MODELS
 # =========================================================
 def ask_groq_llama(prompt: str) -> str:
@@ -169,7 +176,7 @@ def ask_groq_llama(prompt: str) -> str:
         raw = _generic_chat(
             api_url=GROQ_URL,
             api_key=GROQ_KEY,
-            model="llama-3.3-70b-versatile",
+            model=MODELS["groq_llama"],
             system_prompt=EXTRACTION_SYSTEM_PROMPT,
             user_prompt=prompt
         )
@@ -187,7 +194,7 @@ def ask_groq_mixtral(prompt: str) -> "str | None":
         raw = _generic_chat(
             api_url=GROQ_URL,
             api_key=GROQ_KEY,
-            model="llama-3.1-8b-instant",
+            model=MODELS["groq_instant"],
             system_prompt=EXTRACTION_SYSTEM_PROMPT,
             user_prompt=prompt
         )
@@ -205,7 +212,7 @@ def ask_groq_gemma(prompt: str) -> "str | None":
         raw = _generic_chat(
             api_url=GROQ_URL,
             api_key=GROQ_KEY,
-            model="gemma2-9b-it",
+            model=MODELS["groq_gemma"],
             system_prompt=EXTRACTION_SYSTEM_PROMPT,
             user_prompt=prompt
         )
@@ -226,7 +233,7 @@ def ask_nvidia_llama(prompt: str) -> "str | None":
         raw = _generic_chat(
             api_url=NVIDIA_URL,
             api_key=NVIDIA_KEY,
-            model="meta/llama-3.1-70b-instruct",
+            model=MODELS["nvidia_llama"],
             system_prompt=EXTRACTION_SYSTEM_PROMPT,
             user_prompt=prompt
         )
@@ -244,7 +251,7 @@ def ask_nvidia_mixtral(prompt: str) -> "str | None":
         raw = _generic_chat(
             api_url=NVIDIA_URL,
             api_key=NVIDIA_KEY,
-            model="mistralai/mixtral-8x22b-instruct-v0.1",
+            model=MODELS["nvidia_mixtral"],
             system_prompt=EXTRACTION_SYSTEM_PROMPT,
             user_prompt=prompt
         )
@@ -262,7 +269,7 @@ def ask_nvidia_gemma(prompt: str) -> "str | None":
         raw = _generic_chat(
             api_url=NVIDIA_URL,
             api_key=NVIDIA_KEY,
-            model="google/gemma-2-9b-it",
+            model=MODELS["nvidia_gemma"],
             system_prompt=EXTRACTION_SYSTEM_PROMPT,
             user_prompt=prompt
         )
@@ -332,19 +339,26 @@ def ask_synthesis(
             + joined_blocks
         )
 
-        raw = _generic_chat(
-            api_url=GROQ_URL,
-            api_key=GROQ_KEY,
-            model="llama-3.3-70b-versatile",
+        # Fallback chain: Groq Llama is primary; on a Groq outage/quota the gateway
+        # falls over to NVIDIA Llama (both OpenAI-compatible) instead of failing the
+        # whole synthesis. Previously a single Groq failure 503'd every "ask".
+        candidates = [
+            gateway.Candidate("groq", GROQ_URL, GROQ_KEY, SYNTHESIS_MODEL),
+            gateway.Candidate("nvidia", NVIDIA_URL, NVIDIA_KEY, MODELS["nvidia_llama"]),
+        ]
+
+        return gateway.chat(
+            candidates=candidates,
             system_prompt=SYNTHESIS_SYSTEM_PROMPT,
             user_prompt=user_prompt,
-            timeout=120
+            temperature=0.0,
+            timeout=120,
+            seed=MODEL_SEED,
+            tags="synthesis",
         )
 
-        return raw
-
     except Exception as e:
-        # Synthesis itself failed — raise so the caller can return a clean 503
+        # Synthesis itself failed (all providers) — raise so the caller returns a clean 503
         raise RuntimeError(f"Synthesis failed: {str(e)}") from e
 
 
@@ -384,7 +398,7 @@ def ask_direct_answer(prompt: str) -> str:
         return _generic_chat(
             api_url=GROQ_URL,
             api_key=GROQ_KEY,
-            model="llama-3.3-70b-versatile",
+            model=DIRECT_ANSWER_MODEL,
             system_prompt=system_prompt,
             user_prompt=prompt,
             temperature=0.3

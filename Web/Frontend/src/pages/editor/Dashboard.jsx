@@ -42,9 +42,8 @@ export default function Dashboard() {
     const fetchWorkspaces = async () => {
         setLoading(true);
         try {
-            const token = localStorage.getItem('token');
             const base = import.meta.env.VITE_EDITOR_BACKEND_URL || `http://${window.location.hostname}:8004`;
-            const res  = await fetch(`${base}/workspaces`, { headers: { Authorization: `Bearer ${token}` } });
+            const res  = await fetch(`${base}/workspaces`, { credentials: "include" });
             if (res.ok) setWorkspaces(await res.json());
         } catch (e) { console.error(e); }
         setLoading(false);
@@ -53,9 +52,14 @@ export default function Dashboard() {
     const deleteWorkspace = async (e, id) => {
         e.preventDefault();
         if (!window.confirm("Permanently delete this workspace?")) return;
-        const token = localStorage.getItem('token');
+        const { getCookie } = await import("../../lib/http");
+        const csrfToken = getCookie("csrf_token");
         const base = import.meta.env.VITE_EDITOR_BACKEND_URL || `http://${window.location.hostname}:8004`;
-        const res  = await fetch(`${base}/workspace/${id}`, { method: "DELETE", headers: { Authorization: `Bearer ${token}` } });
+        const res  = await fetch(`${base}/workspace/${id}`, { 
+            method: "DELETE", 
+            credentials: "include", 
+            headers: { ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}) } 
+        });
         if (res.ok) setWorkspaces((p) => p.filter((w) => w.id !== id));
     };
 
@@ -172,11 +176,16 @@ function NewWorkspaceModal({ onClose, onCreated }) {
         if (!name.trim()) return;
         setCreating(true);
         try {
-            const token = localStorage.getItem('token');
+            const { getCookie } = await import("../../lib/http");
+            const csrfToken = getCookie("csrf_token");
             const base = import.meta.env.VITE_EDITOR_BACKEND_URL || `http://${window.location.hostname}:8004`;
             const res  = await fetch(`${base}/workspace`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                credentials: "include",
+                headers: { 
+                    "Content-Type": "application/json",
+                    ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {})
+                },
                 body: JSON.stringify({ name: name.trim(), is_public: isPublic }),
             });
             if (res.ok) { const d = await res.json(); onCreated(d.room_id); }

@@ -1,4 +1,4 @@
-from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query
+from fastapi import FastAPI, Depends, HTTPException, WebSocket, WebSocketDisconnect, Query, Request
 from sqlalchemy.orm import Session
 from typing import List
 from pydantic import BaseModel, Field
@@ -17,8 +17,15 @@ from synthesis_service import (
     save_or_update_synthesis,
     build_synthesis_message,
     build_kg_for_synthesis,
+    SYNTHESIS_MODEL,
 )
-from auth import hash_password, verify_password, create_access_token, get_current_user
+from auth import (
+    hash_password, verify_password, create_access_token, create_refresh_token,
+    generate_csrf_token, get_current_user, set_auth_cookies, clear_auth_cookies,
+    _verify_token, _extract_token_from_request, require_permissions,
+    SECRET_KEY, ALGORITHM,
+)
+import llm_gateway as gateway  # §5.1/§10.2 LLM Gateway — stats/observability surface
 from models import User
 from pydantic import BaseModel, EmailStr
 
@@ -79,6 +86,13 @@ def health_check(db: Session = Depends(get_db)):
         raise HTTPException(status_code=503, detail="Database unavailable")
     return {"status": "ok", "db": "connected"}
 
+
+@app.get("/llm/stats")
+def llm_stats(_admin: dict = Depends(require_permissions("admin"))):
+    # §10.2/§10.5: surface the LLM Gateway's process-wide accounting (calls, cache hits,
+    # tokens per provider, errors) + active config. Admin-only — it reveals usage/cost.
+    return {"config": gateway.config_summary(), "stats": gateway.get_stats()}
+
 class UserCreate(BaseModel):
     email: EmailStr
     password: str
@@ -109,18 +123,138 @@ def register(user: UserCreate, db: Session = Depends(get_db), _rl: None = Depend
 
 
 @app.post("/api/auth/login")
-def login(user: UserLogin, db: Session = Depends(get_db), _rl: None = Depends(RateLimiter(10, 60, "login"))):
+def login(user: UserLogin, request: Request, db: Session = Depends(get_db), _rl: None = Depends(RateLimiter(10, 60, "login"))):
     db_user = db.query(User).filter(User.email == user.email).first()
 
     if not db_user or not verify_password(user.password, db_user.password):
         raise HTTPException(status_code=401, detail="Invalid credentials")
 
-    token = create_access_token({"email": db_user.email})
+    token_data = {"email": db_user.email}
+    access_token = create_access_token(token_data)
+    refresh_token, jti = create_refresh_token(token_data)
+    csrf_token = generate_csrf_token()
 
-    return {
-        "access_token": token,
+    # §1.7 Auth Hardening: Store session in DB
+    from models import RefreshToken
+    from datetime import datetime, timedelta
+    from auth import REFRESH_TOKEN_EXPIRE_DAYS
+    device_info = request.headers.get("User-Agent", "Unknown")[:255]
+    db_session = RefreshToken(
+        id=jti,
+        user_id=db_user.id,
+        expires_at=datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+        device_info=device_info
+    )
+    db.add(db_session)
+    db.commit()
+
+    from fastapi.responses import JSONResponse
+    response = JSONResponse(content={
+        # §5.4: access_token in body is DEPRECATED — kept temporarily for migration.
+        # Clients should rely on httpOnly cookies instead.  Will be removed.
+        "access_token": access_token,
         "token_type": "bearer",
+    })
+    set_auth_cookies(response, access_token, refresh_token, csrf_token)
+    return response
+
+
+@app.post("/api/auth/logout")
+def logout(request: Request, db: Session = Depends(get_db)):
+    """Clear all auth cookies and revoke session in DB."""
+    from models import RefreshToken
+    token = _extract_token_from_request(request, token_type="refresh")
+    if token:
+        try:
+            payload = _verify_token(token, expected_type="refresh")
+            jti = payload.get("jti")
+            if jti:
+                db_token = db.query(RefreshToken).filter(RefreshToken.id == jti).first()
+                if db_token:
+                    db_token.revoked = True
+                    db.commit()
+        except:
+            pass # Ignore invalid tokens during logout
+
+    from fastapi.responses import JSONResponse
+    response = JSONResponse(content={"message": "Logged out"})
+    clear_auth_cookies(response)
+    return response
+
+
+@app.get("/api/auth/me")
+def me(current_user: dict = Depends(get_current_user), db: Session = Depends(get_db)):
+    """Return the authenticated user's profile.  Frontend uses this instead of decoding JWTs."""
+    db_user = db.query(User).filter(User.email == current_user["email"]).first()
+    if not db_user:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {
+        "id": str(db_user.id),
+        "email": db_user.email,
+        "role": current_user.get("role", "user"),
+        # §1.7 Richer profile response
+        "nickname": db_user.email.split("@")[0],
+        "permissions": ["admin", "project.read", "project.write", "project.delete", "users.manage"] if current_user.get("role") == "admin" else [],
+        "avatar": "",
+        "createdAt": "2026-06-28T00:00:00Z" # Mocked for now, until DB adds createdAt to Users
     }
+
+
+@app.post("/api/auth/refresh")
+def refresh(request: Request, db: Session = Depends(get_db), _rl: None = Depends(RateLimiter(20, 60, "refresh"))):
+    """
+    Issue a new access token using the refresh token cookie, and rotate the refresh token.
+    """
+    token = _extract_token_from_request(request, token_type="refresh")
+    if not token:
+        raise HTTPException(status_code=401, detail="No refresh token")
+
+    payload = _verify_token(token, expected_type="refresh")
+    email = payload["sub"]
+    role = payload.get("role", "user")
+    jti = payload.get("jti")
+
+    from models import RefreshToken
+    from datetime import datetime, timedelta
+    if not jti:
+        raise HTTPException(status_code=401, detail="Invalid refresh token (missing JTI)")
+        
+    db_token = db.query(RefreshToken).filter(RefreshToken.id == jti).first()
+    if not db_token:
+        raise HTTPException(status_code=401, detail="Session not found")
+        
+    if db_token.revoked:
+        # Anomaly detection: Token reuse detected. Revoke all sessions for this user.
+        db.query(RefreshToken).filter(RefreshToken.user_id == db_token.user_id).update({"revoked": True})
+        db.commit()
+        raise HTTPException(status_code=401, detail="Token reuse detected. All sessions revoked.")
+        
+    # Rotate token
+    db_token.revoked = True
+    
+    new_access = create_access_token({"email": email, "role": role})
+    new_refresh_token, new_jti = create_refresh_token({"email": email, "role": role})
+    
+    from auth import REFRESH_TOKEN_EXPIRE_DAYS
+    new_db_token = RefreshToken(
+        id=new_jti,
+        user_id=db_token.user_id,
+        expires_at=datetime.utcnow() + timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS),
+        device_info=request.headers.get("User-Agent", "Unknown")[:255]
+    )
+    db.add(new_db_token)
+    db.commit()
+
+    csrf_token = generate_csrf_token()
+
+    from fastapi.responses import JSONResponse
+    response = JSONResponse(content={"refreshed": True})
+
+    # Re-set access + refresh + csrf cookies
+    from auth import set_auth_cookies
+    set_auth_cookies(response, new_access, new_refresh_token, csrf_token)
+    
+    return response
 
 
 # NOTE: The anonymous `POST /api/auth/client-login` endpoint was removed (§5.1).
@@ -645,7 +779,7 @@ class MessageOut(BaseModel):
 
 
 import json
-from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.exc import SQLAlchemyError, IntegrityError
 from models import QuarantinedMessage
 
 @app.post("/chats/{chat_id}/messages", response_model=MessageOut)
@@ -677,17 +811,31 @@ def create_message(
         db.refresh(message)
         return message
 
-    except Exception as e:
-        # store quarantine record
-        qm = QuarantinedMessage(
-            chat_id=chat_id,
-            raw_payload=json.dumps(payload.model_dump(), default=str),
-            error_reason=str(e)
-        )
-        db.add(qm)
-        db.commit()
-
+    except IntegrityError as e:
+        # Bad/rejected message content (constraint/FK violation) — quarantine for review.
+        # This is a client-data problem (400), distinct from an operational DB outage below.
+        db.rollback()
+        logging.warning(f"Message quarantined for chat {chat_id}: {type(e).__name__}: {e}")
+        try:
+            qm = QuarantinedMessage(
+                chat_id=chat_id,
+                raw_payload=json.dumps(payload.model_dump(), default=str),
+                error_reason=f"{type(e).__name__}: {e}"
+            )
+            db.add(qm)
+            db.commit()
+        except SQLAlchemyError:
+            # Don't let a quarantine-write failure mask the original rejection.
+            db.rollback()
+            logging.exception(f"Failed to persist quarantine record for chat {chat_id}")
         raise HTTPException(status_code=400, detail="Message rejected & quarantined for review")
+
+    except SQLAlchemyError as e:
+        # Operational DB failure (locked / unreachable) — NOT the message's fault, so do
+        # not quarantine. Surface 503 so the client can retry; log full detail server-side.
+        db.rollback()
+        logging.exception(f"DB error storing message for chat {chat_id}")
+        raise HTTPException(status_code=503, detail="Message storage temporarily unavailable")
 
 
 
@@ -1125,7 +1273,7 @@ async def ask_multi_model(
             chat_id=chat_id,
             reply_group_id=group,
             content=content,
-            model_used="hf-qwen2.5-7b-synthesis",
+            model_used=SYNTHESIS_MODEL,
             commit=False,    # commit together with the provider messages, below
             build_kg=False,  # KG is a derived follow-on, built after the commit
         )
@@ -1191,68 +1339,13 @@ def accept_message(
     db.commit()
 
     return {"ok": True}
-import re
-from difflib import SequenceMatcher
-
-TECH_KEYWORDS = [
-    "deploy","database","db","pipeline","model","training","frontend",
-    "backend","api","server","auth","docker","kubernetes","config",
-    "query","optimize","latency","testing","bug","issue","crash",
-    "risk","security","security","vulnerability","threat","cost","limit",
-    "performance","scalability","architecture","design","requirement"
-]
-
-STOPWORDS = set([
-    "the","a","an","to","and","or","of","in","for","non",
-    "on","at","is","are","am","be","was","were",
-    "it","this","that","i","you"
-])
 
 
-def normalize(text: str):
-    text = text.lower()
-    text = re.sub(r"[^a-z0-9\s]", " ", text)
-    text = re.sub(r"\s+", " ", text)
-    return text.strip()
-
-
-def fuzzy_ratio(a, b):
-    return SequenceMatcher(None, a, b).ratio()
-
-
-def is_similar(word, keyword, threshold=0.80):
-    return fuzzy_ratio(word, keyword) >= threshold
-
-
-def count_signal_words(text: str):
-    normalized_text = normalize(text)
-    tokens = [t for t in normalized_text.split() if t not in STOPWORDS]
-    score = 0
-
-    # Question bonus
-    if any(q in normalized_text for q in ["what", "how", "why", "when", "where", "who", "?"]):
-        score += 2
-
-    for t in tokens:
-        # match tech keywords fuzzily
-        for kw in TECH_KEYWORDS:
-            if is_similar(t, kw):
-                score += 2
-                break
-
-        # informative long word bonus
-        if len(t) >= 7:
-            score += 1
-
-    return score
-
-
-# NOTE (§6.2 / §11.3): `classify_signal` is imported at the top of this file from
-# `signal_classify` (trained DistilBERT + heuristic fallback). An inline redefinition
-# used to live here and *shadowed* that import with a weaker keyword-only heuristic —
-# silently leaving the trained model unused. It has been removed so the intended
-# classifier is the one that actually runs. `count_signal_words` above is now unused
-# and is left for the dedicated dead-code purge.
+# NOTE (§6.2 / §11.3 / §4.3): signal classification lives in `signal_classify`
+# (trained DistilBERT + heuristic fallback), imported at the top of this file — that is
+# the live path. A stale inline keyword heuristic (`count_signal_words` + `normalize` /
+# `fuzzy_ratio` / `is_similar` / `TECH_KEYWORDS` / `STOPWORDS`) once shadowed it and was
+# left dead after the shadow was removed; it has now been purged (§4.3 hot-path dup gone).
 
 @app.patch("/projects/{project_id}", response_model=ProjectOut)
 def update_project(
@@ -1580,8 +1673,9 @@ app.add_middleware(
 # WEBSOCKET: Real-Time Chat Presence & Typing Indicators
 # ─────────────────────────────────────────────────────────────────────────────
 
-from auth import SECRET_KEY, ALGORITHM
+# SECRET_KEY and ALGORITHM already imported from auth at the top of the file.
 from jose import jwt, JWTError
+from http.cookies import SimpleCookie
 import json
 from typing import Dict, Set
 
@@ -1631,23 +1725,40 @@ presence_manager = ChatPresenceManager()
 async def chat_websocket_endpoint(
     websocket: WebSocket,
     chat_id: str,
-    token: str = Query(...),
+    token: str = Query(None),   # §5.4: query-param kept for backward compat only
 ):
     """
     WebSocket endpoint for real-time chat presence.
-    Auth: JWT token passed as ?token= query param.
+    Auth: httpOnly cookie (preferred) or ?token= query param (legacy/fallback).
     Protocol events (JSON):
       Client -> Server: { "type": "typing_start" | "typing_stop" }
       Server -> Client: { "type": "user_joined" | "user_left" | "typing_start" | "typing_stop"
                           | "presence_sync", "user": email, "nickname": str, "users": [...] }
     """
-    # ── 1. Authenticate ──────────────────────────────────────────────────────
+    # ── 1. Authenticate (cookie-first, query-param fallback) ─────────────────
+    ws_token = None
+
+    # Try cookie from the WS upgrade request
+    cookie_header = websocket.headers.get("cookie", "")
+    if cookie_header:
+        sc = SimpleCookie(cookie_header)
+        if "access_token" in sc:
+            ws_token = sc["access_token"].value
+
+    # Fallback: legacy query param (will be removed in future)
+    if not ws_token and token:
+        ws_token = token
+
+    if not ws_token:
+        await websocket.close(code=4001)  # Unauthorized
+        return
+
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        payload = jwt.decode(ws_token, SECRET_KEY, algorithms=[ALGORITHM])
         user_email = payload.get("sub")
         nickname = payload.get("nickname") or user_email.split("@")[0] if user_email else "User"
         if not user_email:
-            await websocket.close(code=4001)  # Unauthorized
+            await websocket.close(code=4001)
             return
     except JWTError:
         await websocket.close(code=4001)

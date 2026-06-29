@@ -67,6 +67,20 @@ This document is the intended single source of truth for technical risk. Finding
 - **Reproduction:** Build the UML UI; open the bundle or devtools network tab on a model call → the `Authorization: Bearer <key>` is present client-side.
 - **Recommended direction:** Never expose provider keys to the client. Route all model calls through a server-side proxy (the UML backend already exposes `/api/llm`); delete the `VITE_*_API_KEY` usages and rotate the leaked keys. Effort ~2–4h.
 
+### §1.7 — Authentication Operational Hardening (Refresh Rotation, Session Management, RBAC)
+- **Severity:** High · **Status:** ✅ FIXED (2026-06-28) — all seven sub-items implemented:
+  1. **Refresh Token Rotation** — `auth.py:create_refresh_token` now embeds a `jti` (UUID). On `/refresh`, the old token is revoked in the DB and a brand-new `(token, jti)` pair is issued. If a *revoked* `jti` is presented, all sessions for that user are immediately wiped (anomaly detection / token reuse guard).
+  2. **Server-side Session Storage** — new `RefreshToken` model (`Backend/models.py`) with `id/jti`, `user_id`, `issued_at`, `expires_at`, `revoked`, `device_info`. Alembic migration `0029088d6806` applied. Logout marks the session revoked in DB.
+  3. **Richer `/me`** — endpoint now returns `id, email, role, nickname, permissions[], avatar, createdAt`.
+  4. **RBAC Middleware** — `auth.py:require_permissions(*permissions)` is a reusable FastAPI Depends factory; role→permission map baked in; admin gets `[admin, project.read, project.write, project.delete, users.manage]`.
+  5. **`__Host-` Cookie Prefixes** — `auth.py:get_cookie_name()` prepends `__Host-` in production (`COOKIE_SECURE=True`); all cookie reads/writes/deletes use it consistently.
+  6. **Rate Limiting on Auth Endpoints** — `/refresh` now has `RateLimiter(20, 60)` in addition to existing `/login` (10/min) and `/register` (5/min).
+  7. **Silent Refresh UX** — `http.ts` implements a full silent-refresh state machine: on 401, in-flight requests are queued, `/refresh` is called once, all queued requests retry on success, `/login` redirect only fires if refresh itself fails. `fetchSatellite` in `api.ts` integrates the same pattern.
+- **Files touched:** `Backend/models.py`, `Backend/auth.py`, `Backend/main.py`, `Backend/migrations/versions/0029088d6806_add_refresh_tokens.py`, `Web/Frontend/src/lib/http.ts`, `Web/Frontend/src/lib/api.ts`.
+- 📄 **Full walkthrough:** [`auth_hardening_walkthrough.md`](./auth_hardening_walkthrough.md) — implementation details, verification steps, file-by-file summary. Also logged in [`issue_fixed.md §D`](./issue_fixed.md).
+
+
+
 ---
 
 ## §2 Reliability
@@ -96,7 +110,7 @@ This document is the intended single source of truth for technical risk. Finding
 - **Recommended direction:** Add a top-level error boundary with a reset path and a route-level fallback.
 
 ### §2.5 — `Promise.race` DB timeout leaks the losing query
-- **Severity:** Low
+- **Severity:** Low · **Status:** ✅ FIXED (Clarity_Stack_V3) — `Satellite/routes/kg.js` now uses driver-level `.maxTimeMS(2000)` on the `KGSnapshot.findOne(...)` query instead of racing it against an uncancelled `setTimeout`. Mongo cancels the query server-side on overrun, so orphaned queries no longer pile up under the DB slowness that triggers the timeout. The catch detects the deadline via `err.code === 50 / codeName "MaxTimeMSExpired"` and still pivots to Live-Fetch.
 - **Evidence:** `Satellite/routes/kg.js:41` races `KGSnapshot.findOne(...)` against a 2s timer; the Mongo query is not cancelled when the timer wins.
 - **Why it matters:** Under DB slowness, orphaned queries accumulate, worsening the very contention that triggered the timeout.
 - **Recommended direction:** Use driver-level `maxTimeMS`, and treat the timeout as the query's own deadline rather than racing an uncancelled promise.
@@ -158,7 +172,7 @@ This document is the intended single source of truth for technical risk. Finding
 - **Recommended direction:** Read `DATABASE_URL` from env (default SQLite for dev), make pragmas conditional on the SQLite dialect, and validate the Postgres path before launch.
 
 ### §4.3 — Fuzzy signal classifier on every message
-- **Severity:** Low
+- **Severity:** Low · **Status:** ✅ FIXED (Clarity_Stack_V3) — the duplicated hot-path heuristic is gone. `count_signal_words` (+ its `normalize`/`fuzzy_ratio`/`is_similar`/`TECH_KEYWORDS`/`STOPWORDS` and the local `import re`/`SequenceMatcher`) was already dead after the §6.2 shadow removal — it has now been **deleted** from `main.py`. The single live classifier is `signal_classify` (DistilBERT + heuristic fallback); no per-token `SequenceMatcher` runs on the `ask` path anymore.
 - **Evidence:** `Backend/main.py:1168` `count_signal_words` runs `SequenceMatcher` for each token × ~30 keywords on every `ask`.
 - **Why it matters:** Cheap individually, but it is duplicated logic (see §6.2) and runs on the hot path; worth consolidating.
 - **Recommended direction:** Precompute keyword sets / use token hashing; single implementation.
@@ -180,19 +194,19 @@ This document is the intended single source of truth for technical risk. Finding
 - **Recommended direction:** Drop `owner` from the editable set; ownership transfer should be an explicit, owner-only, audited endpoint.
 
 ### §5.3 — `requirePM` is a no-op; role is trusted from the JWT
-- **Severity:** Medium
+- **Severity:** Medium · **Status:** ✅ FIXED (Clarity_Stack_V3) — `requirePM` (`Satellite/middleware/auth.js`) is now an async guard that no longer trusts the JWT `role`. It reads `:projectId`, calls Core `GET /projects/:id/members` with the caller's Bearer token, and grants only if the **caller's own email** maps to `owner`/`pm` in Core's authoritative membership list (Core remains the single source of truth, same pattern as `requireProjectAccess`). Verified role is stashed on `req.user.projectRole`. Fail-closed: missing `:projectId` → 500, no token → 401, Core 401/403/404 → 401/403, Core unreachable → 502.
 - **Evidence:** `Satellite/middleware/auth.js:59` "For now, trust the role from JWT. Phase 2 will add core API verification." It only checks `req.user` is set.
 - **Why it matters:** Authorization decisions rely on a self-asserted role claim; combined with §1.1/§5.1, role gates are meaningless.
 - **Recommended direction:** Verify role/membership against core per request, or sign short-lived scoped claims server-side.
 
 ### §5.4 — Tokens in `localStorage`; no revocation/refresh
-- **Severity:** Medium
+- **Severity:** Medium · **Status:** ✅ FIXED (2026-06-28, hardened 2026-06-29) — migrated to hybrid auth: `httpOnly` access (15 min) + refresh (30 day) cookies with a JS-readable `csrf_token` and double-submit CSRF on cookie-authed mutations; service-to-service keeps the `Authorization: Bearer` path (cookie-first, header-fallback in `auth.py`). Stateful refresh-token rotation + DB session store (`RefreshToken`, migration `0029088d6806`) gives real revocation; a replayed (revoked) JTI wipes all of that user's sessions. Frontend reads **zero** tokens from `localStorage` (grep-verified). Full detail in [`issue_fixed.md §D`](./issue_fixed.md) and [`auth_hardening_walkthrough.md`](./auth_hardening_walkthrough.md). **2026-06-29 follow-up (`issue_fixed.md §D3`):** fixed a login `NameError`→500 (missing `request: Request` param) that the interrupted session left, and aligned the `/me` admin permission list with the `require_permissions` map.
 - **Evidence:** `Web/Frontend/src/lib/http.ts:19` reads `localStorage.getItem("token")`; `Backend/auth.py:20` 60-min expiry, no refresh, no server-side revocation list.
 - **Why it matters:** Any XSS exfiltrates a long-lived bearer token; logout cannot invalidate an issued token.
 - **Recommended direction:** Prefer httpOnly cookies with CSRF protection or short access + rotating refresh tokens; add a revocation/jti mechanism.
 
 ### §5.5 — Over-permissive CORS in three services
-- **Severity:** Medium · **Status:** 🟡 PARTIAL (2026-06-28) — **Satellite** (`server.js`) and **Editor** (`server.js`, both Express + Socket.IO) now use an explicit `ALLOWED_ORIGINS` allow-list (env-overridable via `CORS_ORIGINS`, defaulting to the local dev UIs on 8006/8007) instead of reflecting any origin / `"*"`. **Still OPEN:** both still `listen(0.0.0.0)` (bind hardening deferred), and the ThreatLens `allow_origins=["*"]` portion is DEFERRED (out of scope).
+- **Severity:** Medium · **Status:** ✅ FIXED (Clarity_Stack_V3) — bind hardening done: **Satellite** and **Editor** now `listen` on a configurable `BIND_HOST` that **defaults to `127.0.0.1`** (localhost-only); set `BIND_HOST=0.0.0.0` deliberately only when a reverse proxy/container fronts the service. Combined with the earlier (2026-06-28) explicit `ALLOWED_ORIGINS` allow-list (env-overridable via `CORS_ORIGINS`), both services no longer reflect arbitrary origins nor expose themselves on the LAN by default. The ThreatLens `allow_origins=["*"]` portion remains ⛔ DEFERRED (out of scope).
 - **Evidence:** `Satellite/server.js:23` `app.use(cors())` (reflect any origin) + `app.listen(PORT,"0.0.0.0")`; `ThreatLens_Service/app.py:38` `allow_origins=["*"]` with `allow_credentials=True` (an invalid/unsafe combination); `Editor_Service/server.js:72` `cors:{origin:"*"}`.
 - **Why it matters:** Any website can call these APIs from a victim's browser; binding to `0.0.0.0` exposes them on the LAN/host network.
 - **Recommended direction:** Explicit origin allow-list per environment; never combine `*` with credentials; bind to localhost unless a reverse proxy fronts it.
@@ -230,7 +244,7 @@ This document is the intended single source of truth for technical risk. Finding
 - **Status:** ✅ FIXED (Clarity_Stack_V3) — all three sub-items now closed (inline shadow removed, dead `backup.ts` deleted, editor backends consolidated).
 
 ### §6.3 — Environment/secret naming is inconsistent across services
-- **Severity:** Medium · **Status:** 🟡 PARTIAL (2026-06-28) — the **secret name is now unified on `JWT_SECRET`** across Backend/Satellite/Editor (Editor's `SECRET_KEY` retired); SETUP_GUIDE updated. Other env divergence (frontend `VITE_*`, Satellite `MONGO_URI`/`CORE_API_URL`, no validated loader) remains OPEN.
+- **Severity:** Medium · **Status:** ✅ FIXED (Clarity_Stack_V3) — the secret name is unified on `JWT_SECRET` across Backend/Satellite/Editor (2026-06-28), and both Node services now ship a **validated, fail-fast env loader** (`Satellite/config/env.js`, `Editor_Service/config/env.js`). Each declares a required/optional schema, **aggregates every missing required var into one actionable boot error** (Satellite: `JWT_SECRET` + `MONGO_URI`; Editor: `JWT_SECRET`), and loads BEFORE routes/middleware so a misconfig fails loudly at boot instead of silently failing DB ops later. Optional vars (`PORT`/`BIND_HOST`/`CORE_API_URL`/`CORS_ORIGINS`/`SUPABASE_*`) carry safe local-dev defaults. Core Backend already fail-closes on `JWT_SECRET` (`Backend/auth.py`). Remaining tail (not loader-shaped): frontend `VITE_*` are **build-time** Vite vars (documented, not runtime-validatable) and a Backend aggregated loader is a nice-to-have on top of its existing fail-close.
 - **Evidence:** Core uses `JWT_SECRET`; Editor uses `SECRET_KEY` (§1.5); frontend uses `VITE_API_BASE_URL`/`VITE_SRS_API_URL`/`VITE_SATELLITE_URL`/`VITE_EDITOR_BACKEND_URL`/`VITE_SUPABASE_*` with localhost fallbacks; Satellite uses `MONGO_URI`/`CORE_API_URL`/`SMTP_*`.
 - **Why it matters:** A correct deployment is nearly impossible without tribal knowledge; mismatches fail silently (Editor) rather than loudly.
 - **Recommended direction:** One documented env schema with a validated loader per service that fails fast on missing required vars.
@@ -268,7 +282,7 @@ This document is the intended single source of truth for technical risk. Finding
 ## §8 Product Logic
 
 ### §8.1 — "Deterministic / compiler-grade merge" is actually a non-deterministic LLM call
-- **Severity:** Low · **Status:** 🟡 PARTIAL (2026-06-28) — the misleading "deterministic / compiler-grade" wording is corrected to "LLM-assisted synthesis" (§11.6), so the claim no longer overstates a guarantee the code doesn't provide. **Still OPEN:** the drafted IR validators (`validate_ir_structure` / `validate_conflict_semantics`) are still not wired into `generate_and_store_synthesis` — making them a real gate is the §10.6 grounding work.
+- **Severity:** Low · **Status:** ✅ FIXED (Clarity_Stack_V3) — the drafted IR validators are now the **live gate**. `synthesize_content` (`Backend/synthesis_service.py`) — the single chokepoint for both LLM synthesis paths (`/ask` and `/chats/{id}/synthesis/generate`) — runs `validate_ir_structure(..., require_all_sections=False)` + `validate_conflict_semantics` on the cleaned output and raises `RuntimeError("synthesis_validation_failed: …")` on any violation. Fail-closed: both callers already catch → roll the AI unit back → return 503 instead of persisting/KG-ingesting malformed IR. Added a **subset mode** to `validate_ir_structure` (dropping an *empty* section is legal — the pipeline prunes them — but hallucinating one, emitting free-text, wrong order, or dup headers is not). Also fixed a pre-existing tuple-literal return annotation on both validators (`-> Tuple[bool, List[str]]`). Behavior verified: valid pruned output passes, free-text / wrong-order / bad-conflict / empty all rejected. (The earlier 2026-06-28 pass fixed the misleading "compiler-grade" wording → §11.6.) This is the enforcement half of §10.6; grounding synthesis *against source* is the remaining §10.6 work.
 - **Evidence:** `Backend/main.py:1056` comment "Deterministic synthesis (compiler-grade merge)" → `generate_and_store_synthesis` → `providers.ask_synthesis` (`providers.py:318`, Groq Llama, temperature 0 but still a model). Meanwhile `synthesis_service.validate_ir_structure` and `validate_conflict_semantics` (`:149`, `:187`) are defined but **never called** in the pipeline (`generate_and_store_synthesis:210` skips them).
 - **Why it matters:** The code/marketing claims a guarantee the implementation does not provide; the structural validators that *would* enforce it are dead code. The `RuntimeError`→"synthesis_validation_failed" branch (`main.py:1064`) is therefore effectively unreachable for validation reasons.
 - **Recommended direction:** Either wire the validators in (enforce IR structure before commit) or correct the language to "LLM-assisted synthesis."
@@ -294,13 +308,13 @@ This document is the intended single source of truth for technical risk. Finding
 - **Recommended direction:** Add these to `.gitignore`, `git rm --cached` them, and store large datasets/models out-of-band (LFS or a bucket).
 
 ### §9.2 — Dual lockfiles / dependency hygiene
-- **Severity:** Low
+- **Severity:** Low · **Status:** 🟡 PARTIAL (Clarity_Stack_V3) — the lockfile half is resolved: `bun.lockb` was already gitignored (`.gitignore:81 *.lockb`) so only `package-lock.json` is committed; the stale on-disk `Web/Frontend/bun.lockb` leftover has now been **deleted**, so npm is unambiguous locally too. **Still OPEN (flagged, not changed):** the `requirements_relaxed.txt` vs pinned split — left alone deliberately, removing a requirements file risks breaking `start_project.bat` / setup docs that may reference it; needs a deliberate consolidation pass.
 - **Evidence:** `Web/Frontend/` ships both `bun.lockb` and `package-lock.json`; multiple `requirements_*` split into "relaxed" vs pinned (e.g. `Backend/requirements_relaxed.txt`).
 - **Why it matters:** Ambiguous, non-reproducible installs; two package managers disagree.
 - **Recommended direction:** One package manager + one lockfile per service; pin and audit (`npm audit` / `pip-audit`).
 
 ### §9.3 — Inconsistent/over-broad exception handling
-- **Severity:** Low · **Status:** 🟡 PARTIAL (2026-06-28) — `Backend/providers.py` no longer echoes the upstream provider `response.text` (or raw `data`) into the exception surfaced to callers; it logs the detail server-side and raises a generic "Provider request failed (HTTP …)". **Still OPEN:** the catch-all quarantine in `main.py` (masking validation vs DB errors) and the ThreatLens bare-`except` (DEFERRED) remain.
+- **Severity:** Low · **Status:** 🟡 PARTIAL (Clarity_Stack_V3) — two of three closed. (1) `Backend/providers.py` no longer echoes the upstream provider body into caller-facing errors (the HTTP layer is now the gateway's `_requests_transport`, which logs `resp.text[:500]` server-side and raises typed `_Retryable`/`_Fatal` errors — no upstream body leaks). (2) The catch-all quarantine in `create_message` (`main.py`) is **split**: `IntegrityError` → quarantine + 400 (genuine bad data), any other `SQLAlchemyError` (locked/unreachable DB) → `db.rollback()` + **503** (not the message's fault, no spurious quarantine), and the failed-commit session is rolled back before reuse; full detail logged server-side. **Still OPEN:** only the ThreatLens bare-`except` (⛔ DEFERRED) remains.
 - **Evidence:** `Backend/providers.py:87` re-wraps everything as bare `Exception(str(e))` and can surface upstream API `response.text` (`:69`) into errors; `ThreatLens_Service/app.py:340` bare `except:`; `Backend/main.py:631` catches all exceptions to quarantine (masking real validation vs DB errors).
 - **Why it matters:** Loss of error fidelity, potential provider-detail leakage, and harder debugging.
 - **Recommended direction:** Catch specific exceptions; never echo upstream bodies to clients; log with context server-side.
@@ -323,7 +337,7 @@ This document is the intended single source of truth for technical risk. Finding
 - **Why it matters:** every other initiative becomes 3–5× cheaper and the §6.3/§6.4 fragmentation (per-service CORS, secrets, datastores, ports) stops multiplying with each new feature. Directly addresses the "wide but thin" architecture.
 
 ### §10.2 — Unified LLM Gateway (routing + cache + retry + fallback + budget)
-- **Priority:** P1 · **Effort:** 1–2 wk · **take §5.1 (highest single ROI)**
+- **Priority:** P1 · **Effort:** 1–2 wk · **take §5.1 (highest single ROI)** · **Status:** 🟡 PARTIAL — **v1 library shipped (Clarity_Stack_V3).** `Backend/llm_gateway.py` is the single server-side chokepoint and `providers._generic_chat` now routes every Core model call through it, providing: temp-0 response cache (TTL+LRU, sha256 key over provider/model/messages/temp/seed), retry + exponential backoff on 429/5xx/timeout, per-provider circuit breaker (open after N consecutive transient fails, cooldown), ordered fallback chains (synthesis now Groq→NVIDIA instead of 503-on-Groq-outage), process-wide token accounting + per-call structured logging, and an optional `LLM_BUDGET_TOKENS` cap. Config is all env-overridable; admin-only `GET /llm/stats` surfaces the counters. Behavior verified by an offline fake-transport test (14/14: cache hit/miss, retry-recovery, fallback, breaker open/skip, all-fail `GatewayError`, budget gate). **Still OPEN:** in-process only (cache/breaker/budget reset per worker — move to Redis with §10.9); the **Node Satellite `hfClient.js`** and the **UML `/api/llm` proxy** are not yet routed through a shared gateway; per-*tenant* (vs per-process) budgets + model routing-by-cost/latency are not implemented.
 - **Why it matters:** model calls are scattered across Python (`providers.py`), Node (`hfClient.js`) and the browser (§1.6); no caching, retry, fallback, or cost telemetry. A single vendor outage or quota exhaustion takes down core reasoning. A gateway also *structurally* fixes §1.6 (keys never leave the server), §5.6 (rate limiting), and the import-time hard-fail risk. `temperature=0` extraction is perfectly cacheable.
 
 ### §10.3 — Make the ensemble honest + parallel + config-driven
@@ -377,7 +391,7 @@ This document is the intended single source of truth for technical risk. Finding
 - **§11.2 — Edge dedup by possibly-undefined id.** `Satellite/services/deltaEngine.js` `computeDiff` keys edges on `edgeId`; if the Core ever omits an edge id, all edges collapse to one `undefined` key and diffs become silently wrong. **Severity: Medium.** · **Status:** ✅ FIXED (2026-06-28) — added an `edgeKey()` helper that uses `edgeId` when present and otherwise a stable `from->to:relation` composite, so id-less edges no longer collapse into one bucket.
 - **§11.3 — Heuristic classifier gates the whole pipeline.** `classify_signal` (fuzzy word-count) decides what is "noise" and silently drops substantive messages from all downstream knowledge with a canned reply; a trained BERT classifier sits unused on disk (`Backend/Signal_Classifier/`). **Severity: Medium.** (See also §4.3, §6.2.) · **Status:** 🟡 PARTIAL (2026-06-28) — the inline shadow that kept the trained classifier dead is removed (§6.2), so `signal_classify` (DistilBERT when weights are present, richer heuristic otherwise) is now the live path. **Still OPEN:** add the model weights to enable the ML path, and reconsider hard-dropping "noise" messages.
 - **§11.4 — Self-reported confidence surfaced as measured.** The `CONFIDENCE` IR field is whatever the LLM claims, but the UI shows "HIGH confidence" as if computed. Research-integrity hazard. **Severity: Low/Medium.** (Fixed by §10.3's measured agreement.)
-- **§11.5 — Reproducibility decay.** Hardcoded vendor model ids (`llama-3.3-70b-versatile`, etc.) are deprecated on the vendors' timeline, not yours; the day a model is retired, results change with no code change and no alert. No pinned snapshots, seeds, or eval. **Severity: Medium.** (Caught by §10.10.)
+- **§11.5 — Reproducibility decay.** Hardcoded vendor model ids (`llama-3.3-70b-versatile`, etc.) are deprecated on the vendors' timeline, not yours; the day a model is retired, results change with no code change and no alert. No pinned snapshots, seeds, or eval. **Severity: Medium.** (Caught by §10.10.) · **Status:** ✅ FIXED (Clarity_Stack_V3) — all 6 vendor ids were scattered across `providers.py` (one repeated 3×); now pinned in a single `MODELS` registry + role constants (`SYNTHESIS_MODEL`/`EXTRACTION_PRIMARY`/`DIRECT_ANSWER_MODEL`), each **env-overridable** (`MODEL_GROQ_LLAMA`, `MODEL_NVIDIA_LLAMA`, …) so changing a pin is a deliberate, logged config act. `get_model_manifest()` is **logged at import**, so a vendor retirement surfaces as a config/log diff, not silent drift (the "no alert" gap). Added best-effort `MODEL_SEED` (default 42, `MODEL_SEED=""` disables) sent to Groq/NVIDIA — included **conditionally** so a strict provider can't 400 the call (NOT bit-determinism — §11.6). Also fixed the synthesis `model_used` label, which falsely recorded `"hf-qwen2.5-7b-synthesis"` while synthesis actually runs on Groq Llama — it now single-sources the real pinned id, so each row's provenance is truthful (the precondition for reproducing a run). Verified: manifest/seed parsing (none/int/bad) + truthful label. Remaining for §10.10: golden sets + a CI regression gate on top of these pins.
 - **§11.6 — "`temperature=0` = deterministic" is false.** Hosted LLMs are not bit-reproducible; the "compiler-grade deterministic" framing (also §8.1) is overstated. **Severity: Low.** · **Status:** ✅ FIXED (2026-06-28) — the misleading `main.py` comment is corrected to "LLM-assisted synthesis … NOT bit-deterministic."
 - **§11.7 — `Math.random()` React keys.** `Web/Frontend/src/pages/CardsPage.tsx:104` falls back to `Math.random().toString()` for a card id when the backend id is missing → key collisions and unstable reconciliation. **Severity: Low.** (Confirmed via grep.) · **Status:** ✅ FIXED (2026-06-28) — fallback is now a stable `card-${idx}-${title}` composite (render-stable) instead of `Math.random()`. (Other `Math.random()` uses in the frontend are animation/visual jitter, not keys.)
 
@@ -462,3 +476,123 @@ This is a feature-rich, ambitious **prototype/academic** system. The product sur
 > **Sequencing note:** Phase 0 is non-negotiable and cheap. Phase 2's effort estimates assume §10.1/§10.2 land first — they make every later item 3–5× cheaper. Do not start §10.12/§13 (agent/MCP) until authZ (Phase 0 #2) is closed, or it widens the exposure.
 
 > **Note on method:** Findings were derived by reading source across all services and tracing execution/auth paths; they were not validated against a running deployment. Before remediation, each Critical/High should be reproduced in a controlled environment to confirm exploitability and scope. `take_step_forward.md` ✅/🟡 status markers were re-verified against current code (see §14).
+
+---
+
+# Addendum: Senior Architectural Review & V3 Production Roadmap
+
+*The following review assesses ClarityStack as an open-source, production-grade system rather than an MVP/Academic project. It identifies the operational maturity gaps separating a "working prototype" from a scalable, production-ready product.*
+
+## 🔴 Tier 1 (Biggest Missing Pieces)
+*These are the things that make a project feel "production-grade."*
+
+### 1. Automated Testing ⭐⭐⭐⭐⭐ (Biggest)
+* **Current:** Almost no mention of tests.
+* **Missing:** Unit tests, Integration tests, API tests, End-to-end tests, Coverage.
+* **Example:** `pytest` (Backend), `Vitest` (Frontend), `Playwright` (E2E), `Postman/Newman` (API).
+* **Impact:** VERY HIGH. A senior engineer immediately looks for tests.
+
+### 2. Observability ⭐⭐⭐⭐⭐
+* **Current:** You have logs. But logging ≠ observability.
+* **Missing:** Metrics, traces, dashboards, request IDs, correlation IDs.
+* **Example:** Passing a `request_id=abc` from Frontend → Backend → Satellite → Mongo → Logs so every service can trace a single request.
+* **Impact:** Right now, debugging across services is harder than it needs to be.
+
+### 3. Event-Driven Architecture ⭐⭐⭐⭐☆
+* **Current:** Everything talks over REST (Backend → Satellite → Editor).
+* **Missing:** Backend → **Event Bus** → Satellite → Notification → Analytics.
+* **Example:** Kafka, RabbitMQ, Redis Streams, NATS.
+* **Impact:** This is a major production improvement for decoupling services.
+
+### 4. Search ⭐⭐⭐⭐⭐
+* **Current:** You have a Knowledge Graph. But searching? Huge gap.
+* **Missing:** Embeddings → Vector DB → Hybrid Search → Reranking.
+* **Impact:** Without search, knowledge systems don't scale.
+
+### 5. AI Evaluation ⭐⭐⭐⭐⭐ (The single biggest gap overall)
+* **Current:** You explain the AI architecture, but you don't evaluate it. If someone asks, "How do you know your synthesis is good?", the current answer is weak.
+* **Missing:** Accuracy, Latency, Cost, Precision, Recall, Ground Truth, Human Evaluation.
+* **Impact:** Modern AI systems are judged by evaluation, not just architecture. You need an evaluation framework to prove the pipeline works.
+
+---
+
+## 🟠 Tier 2
+
+### 6. Caching
+* **Current:** Everything appears live.
+* **Missing:** Redis → Frequently used cards → Chat history → Project metadata.
+
+### 7. Background Queue
+* **Current:** HTTP → Generate Card → Wait.
+* **Missing:** HTTP → Queue → Worker → Notify.
+
+### 8. Secrets Management
+* **Current:** Environment variables only.
+* **Missing:** Vault, Secrets Manager, Docker Secrets.
+
+### 9. Rate Limiting (Expanded)
+* **Current:** Only Auth and basic LLM limits.
+* **Missing:** Broader limits on AI endpoints, Card generation, SRS, Graph, Search.
+
+### 10. Multi-tenancy
+* **Current:** You have RBAC and Project Guards.
+* **Missing:** True tenant isolation, Resource quotas, Organization/Billing structures.
+
+---
+
+## 🟡 Tier 3
+
+### 11. Configuration Management
+* **Missing:** Clean separation for `dev`, `test`, `staging`, `prod`.
+
+### 12. API Versioning
+* **Missing:** `/v1/`, `/v2/` URL structures to allow non-breaking evolution.
+
+### 13. Feature Flags
+* **Missing:** Enable/Disable toggles, phased rollouts, A/B experiments.
+
+### 14. Retry Policies
+* **Missing:** Circuit Breakers, Timeouts, Exponential Backoff instead of direct retries.
+
+### 15. Deep Health Checks
+* **Missing:** `DB`, `Mongo`, `LLMs`, `Filesystem`, `Redis`.
+* **Current:** The `/health` endpoint is basic (DB ping only).
+
+---
+
+## 🟢 Architecture Improvements (Maturity vs. Bugs)
+
+* **Knowledge Graph:** Move from "Store Everything" to Semantic deduplication, Entity resolution, Ontology, Confidence propagation.
+* **Temporal Cards:** Auto merge, Conflict detection, Merge suggestions.
+* **SRS:** Evaluation dataset, Confidence calibration, False positive analysis.
+* **Editor:** Upgrade from Last-Write-Wins to Operational Transform (OT) or CRDT.
+
+## 🛠 Operational / Non-Functional Requirements
+
+* **DevOps:** Docker Compose, GitHub Actions, CI/CD, Image scanning, Dependabot, Automatic releases.
+* **Monitoring:** Prometheus, Grafana, OpenTelemetry, Jaeger, Sentry.
+* **Security:** Content Security Policy (CSP), XSS headers, Security.txt, Secret scanning, Audit logging, Account lockout, Password reset, MFA.
+* **AI Ops:** Prompt versioning, Benchmarking, Cost analysis, Fallback policies, Model registry.
+* **Scalability:** Redis, Postgres, Queue, Load Balancer, Object Storage, CDN.
+
+---
+
+## 📋 Final Senior Review Scorecard
+
+| Area                 | Rating     | Biggest Gap                         |
+| -------------------- | ---------- | ----------------------------------- |
+| **Documentation**    | **9.9/10** | Very little to improve              |
+| **Architecture**     | **9.5/10** | Event-driven communication          |
+| **Backend**          | **9.4/10** | Automated testing                   |
+| **Database**         | **9.4/10** | Search & indexing                   |
+| **Security**         | **9.4/10** | MFA, audit logs                     |
+| **Frontend**         | **9.2/10** | E2E tests                           |
+| **AI Pipeline**      | **9.0/10** | Evaluation framework                |
+| **Production Readiness** | **8.0/10** | Operations rather than architecture |
+| **DevOps**           | **6.8/10** | CI/CD, containers, deployments      |
+| **Observability**    | **6.8/10** | Metrics, tracing, dashboards        |
+
+### The Encouraging Part
+Notice where almost all of the low scores are: DevOps, Observability, AI evaluation, and Operational maturity. 
+
+Those are **not** foundational architecture flaws. They are the kinds of capabilities teams typically add as a system moves from a solid MVP to a production service. There are no fundamental issues like "wrong database," "poor separation of concerns," or "unmaintainable architecture." The remaining work is largely about making the system easier to operate, measure, and evolve at scale. That is a much better position to be in than having to redesign the core architecture.

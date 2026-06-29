@@ -41,12 +41,16 @@ router.get("/:projectId", requireAuth, async (req, res) => {
     // If DB is slow or hanging (common with Atlas IP issues), we pivot to Live-Fetch
     let snapshot = null;
     try {
-      snapshot = await Promise.race([
-        KGSnapshot.findOne({ projectId }).sort({ snapshotAt: -1 }).lean(),
-        new Promise((_, reject) => setTimeout(() => reject(new Error("DB_TIMEOUT")), 2000))
-      ]);
+      // Driver-level deadline (§2.5): maxTimeMS makes Mongo cancel the query server-side
+      // when it overruns. The old Promise.race resolved early but left the losing query
+      // running, so orphaned queries piled up under the very DB slowness that triggered it.
+      snapshot = await KGSnapshot.findOne({ projectId })
+        .sort({ snapshotAt: -1 })
+        .maxTimeMS(2000)
+        .lean();
     } catch (err) {
-      console.warn(`⚠️ KG Fetch: ${err.message === "DB_TIMEOUT" ? "Database timed out" : "Database error"}. Pivoting to Live-Fetch...`);
+      const timedOut = err.code === 50 || err.codeName === "MaxTimeMSExpired";
+      console.warn(`⚠️ KG Fetch: ${timedOut ? "Database timed out" : "Database error"}. Pivoting to Live-Fetch...`);
     }
 
     if (!snapshot) {

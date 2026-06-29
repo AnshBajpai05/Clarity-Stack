@@ -430,16 +430,9 @@ export function isDemoMode(): boolean {
 
 /* ===================== AUTH HELPERS ===================== */
 
-/** Decode the JWT from localStorage and return the logged-in user's email, or null. */
+/** Return the logged-in user's email from localStorage (for display only). Security is enforced by httpOnly cookies. */
 export function getCurrentUserEmail(): string | null {
-  try {
-    const token = getSafeStorage("token");
-    if (!token) return null;
-    const payload = JSON.parse(atob(token.split(".")[1]));
-    return payload?.sub ?? null;
-  } catch {
-    return null;
-  }
+  return getSafeStorage("cs_email");
 }
 
 
@@ -585,22 +578,34 @@ export async function generateSynthesis(
 /* ===================== SATELLITE SERVICE ===================== */
 
 async function fetchSatellite<T>(endpoint: string, options?: RequestInit): Promise<T> {
-  const token = getSafeStorage("token");
+  // §1.7 Delegate to api() for Core auth endpoints; use direct fetch for Satellite.
+  // On 401, we attempt a silent refresh via api() for consistency.
+  const { getCookie } = await import("./http");
+  const csrfToken = getCookie("csrf_token");
+  
   const response = await fetch(`${SATELLITE_BASE_URL}${endpoint}`, {
     ...options,
+    credentials: "include", // auto-send httpOnly cookies
     headers: {
       'Content-Type': 'application/json',
-      Authorization: token ? `Bearer ${token}` : "",
+      ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {}),
       ...options?.headers,
     },
   });
 
   if (!response.ok) {
-    // Consistent 401 handling, matching http.ts (§7.1).
+    // §1.7 Silent Refresh: on 401, trigger a refresh via the core api() and retry.
     if (response.status === 401) {
-      localStorage.removeItem("token");
-      window.location.href = "/login";
-      throw new Error("Session expired. Please log in again.");
+      try {
+        const { api } = await import("./http");
+        // This triggers the silent refresh in http.ts
+        await api("/api/auth/refresh", { method: "POST" });
+        // Retry Satellite request after refresh
+        return fetchSatellite<T>(endpoint, options);
+      } catch {
+        window.location.href = "/login";
+        throw new Error("Session expired. Please log in again.");
+      }
     }
 
     let errorData;
@@ -742,12 +747,14 @@ export async function getDiscoveryFeed() {
 const EDITOR_BASE_URL = import.meta.env.VITE_EDITOR_BACKEND_URL || `http://${window.location.hostname}:8004`;
 
 export async function createEditorWorkspace(name: string, sections?: any[]) {
-  const token = localStorage.getItem('token');
+  const { getCookie } = await import("./http");
+  const csrfToken = getCookie("csrf_token");
   const res = await fetch(`${EDITOR_BASE_URL}/workspace`, {
     method: 'POST',
+    credentials: 'include',
     headers: {
       'Content-Type': 'application/json',
-      ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      ...(csrfToken ? { "X-CSRF-Token": csrfToken } : {})
     },
     body: JSON.stringify({ name, sections, is_public: true })
   });

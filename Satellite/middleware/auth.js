@@ -18,13 +18,19 @@ if (!JWT_SECRET) {
  * Attaches `req.user = { email, role }` on success.
  */
 function requireAuth(req, res, next) {
+  let token = null;
   const header = req.headers.authorization;
 
-  if (!header || !header.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Missing or invalid Authorization header" });
+  if (header && header.startsWith("Bearer ")) {
+    token = header.split(" ")[1];
+  } else if (req.cookies && req.cookies.access_token) {
+    // §5.4: Fallback to httpOnly cookie for browser clients
+    token = req.cookies.access_token;
   }
 
-  const token = header.split(" ")[1];
+  if (!token) {
+    return res.status(401).json({ error: "Missing or invalid auth token" });
+  }
 
   try {
     const payload = jwt.verify(token, JWT_SECRET);
@@ -42,10 +48,16 @@ function requireAuth(req, res, next) {
  * Optional auth — attaches user if token exists, but doesn't block.
  */
 function optionalAuth(req, res, next) {
+  let token = null;
   const header = req.headers.authorization;
 
   if (header && header.startsWith("Bearer ")) {
-    const token = header.split(" ")[1];
+    token = header.split(" ")[1];
+  } else if (req.cookies && req.cookies.access_token) {
+    token = req.cookies.access_token;
+  }
+
+  if (token) {
     try {
       const payload = jwt.verify(token, JWT_SECRET);
       req.user = {
@@ -63,15 +75,63 @@ function optionalAuth(req, res, next) {
 }
 
 /**
- * PM-only guard — must be called AFTER requireAuth.
- * Checks if the user is a PM for the given project via the core API.
+ * PM-only guard — must be called AFTER requireAuth, on a route carrying `:projectId`.
+ *
+ * §5.3: Authorization no longer trusts the JWT's self-asserted `role`. Instead it
+ * asks Core for the project's membership (`GET /projects/:id/members`, which returns
+ * the owner + every member with their real role) and verifies the *caller's own*
+ * email maps to `owner` or `pm`. Core is the single source of truth for role, same
+ * as `requireProjectAccess`. Fail-closed: any non-2xx (incl. Core unreachable) denies.
  */
-function requirePM(req, res, next) {
-  // For now, trust the role from JWT. Phase 2 will add core API verification.
-  if (!req.user) {
+async function requirePM(req, res, next) {
+  if (!req.user || !req.user.email) {
     return res.status(401).json({ error: "Not authenticated" });
   }
-  next();
+
+  const projectId = req.params.projectId;
+  if (!projectId) {
+    // Misconfiguration: requirePM used on a route without :projectId. Fail-closed.
+    console.error("[authZ] requirePM used on a route without :projectId");
+    return res.status(500).json({ error: "Authorization misconfigured" });
+  }
+
+  let token = null;
+  const header = req.headers.authorization;
+  if (header && header.startsWith("Bearer ")) {
+    token = header.split(" ")[1];
+  } else if (req.cookies && req.cookies.access_token) {
+    token = req.cookies.access_token;
+  }
+
+  if (!token) {
+    return res.status(401).json({ error: "Missing or invalid auth token" });
+  }
+
+  try {
+    const { data: members } = await axios.get(
+      `${CORE_API}/projects/${encodeURIComponent(projectId)}/members`,
+      { headers: { Authorization: `Bearer ${token}` }, timeout: 5000 }
+    );
+
+    const me = String(req.user.email).toLowerCase();
+    const myRole = Array.isArray(members)
+      ? members.find((m) => String(m.user_email).toLowerCase() === me)?.role
+      : null;
+
+    if (myRole === "owner" || myRole === "pm") {
+      req.user.projectRole = myRole; // verified role, for downstream reuse
+      return next();
+    }
+    return res.status(403).json({ error: "Forbidden: requires project manager role" });
+  } catch (err) {
+    const status = err.response && err.response.status;
+    if (status === 401) return res.status(401).json({ error: "Invalid or expired token" });
+    if (status === 403 || status === 404) {
+      return res.status(403).json({ error: "Forbidden: no access to this project" });
+    }
+    console.error(`[authZ] Core PM-role check failed: ${err.message}`);
+    return res.status(502).json({ error: "Unable to verify project role" });
+  }
 }
 
 /**
@@ -86,13 +146,22 @@ function requirePM(req, res, next) {
  * Fail-closed: any non-2xx from Core (incl. Core unreachable) denies the request.
  */
 async function requireProjectAccess(req, res, next, projectId) {
+  let token = null;
   const header = req.headers.authorization;
-  if (!header || !header.startsWith("Bearer ")) {
-    return res.status(401).json({ error: "Missing or invalid Authorization header" });
+  if (header && header.startsWith("Bearer ")) {
+    token = header.split(" ")[1];
+  } else if (req.cookies && req.cookies.access_token) {
+    token = req.cookies.access_token;
   }
+
+  if (!token) {
+    return res.status(401).json({ error: "Missing or invalid auth token" });
+  }
+
   try {
+    // §5.4: Always forward to Core as a Bearer header, even if it came from a cookie
     await axios.get(`${CORE_API}/projects/${encodeURIComponent(projectId)}`, {
-      headers: { Authorization: header },
+      headers: { Authorization: `Bearer ${token}` },
       timeout: 5000,
     });
     return next();
@@ -138,12 +207,21 @@ async function requireCardAccess(req, res, next, cardId) {
     }
 
     // No :projectId in the route — verify access to the card's own project.
+    let token = null;
     const header = req.headers.authorization;
-    if (!header || !header.startsWith("Bearer ")) {
-      return res.status(401).json({ error: "Missing or invalid Authorization header" });
+    if (header && header.startsWith("Bearer ")) {
+      token = header.split(" ")[1];
+    } else if (req.cookies && req.cookies.access_token) {
+      token = req.cookies.access_token;
     }
+
+    if (!token) {
+      return res.status(401).json({ error: "Missing or invalid auth token" });
+    }
+    
+    // §5.4: Always forward to Core as a Bearer header
     await axios.get(`${CORE_API}/projects/${encodeURIComponent(card.projectId)}`, {
-      headers: { Authorization: header },
+      headers: { Authorization: `Bearer ${token}` },
       timeout: 5000,
     });
     req.card = card;

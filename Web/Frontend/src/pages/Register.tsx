@@ -61,10 +61,17 @@ function Register() {
     if (!validate()) return;
 
     try {
-      await axios.post("http://127.0.0.1:8000/api/auth/register", {
-        email: formData.email,
-        password: formData.password,
+      const res = await fetch("http://127.0.0.1:8000/api/auth/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password,
+        }),
       });
+
+      if (!res.ok) throw new Error("User already exists");
 
       alert("Registered successfully");
       navigate("/login");
