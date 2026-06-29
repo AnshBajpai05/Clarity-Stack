@@ -7,13 +7,15 @@ from datetime import datetime
 from database import get_db
 from models import Project
 
-from providers import ask_groq, ask_gemini, ask_hf, ask_direct_answer
+from providers import EXTRACTION_ENSEMBLE, ask_direct_answer
 import asyncio
+from agreement import compute_agreement
 from uuid import uuid4
 from signal_classify import classify_signal
 from synthesis_service import (
     generate_and_store_synthesis,
     synthesize_content,
+    apply_measured_confidence,
     save_or_update_synthesis,
     build_synthesis_message,
     build_kg_for_synthesis,
@@ -1184,11 +1186,9 @@ async def ask_multi_model(
     prompt = f"{history_block}\n\n=== CURRENT USER REQUEST ===\n{payload.text}"
     # --- CONTEXT INJECTION END ---
 
-    providers = [
-        ("groq", ask_groq),
-        ("gemini", ask_gemini),        # mocked
-        ("huggingface", ask_hf),
-    ]
+    # §10.3: honest, single-source-of-truth ensemble. Labels are the REAL model ids
+    # (e.g. "groq:llama-3.1-8b-instant"), not the old fictional "gemini"/"huggingface".
+    providers = EXTRACTION_ENSEMBLE
 
     # §2.5: fan the (blocking) provider calls out concurrently instead of a serial
     # for-loop (~3× latency cut). `to_thread` keeps the event loop free; importantly,
@@ -1206,10 +1206,12 @@ async def ask_multi_model(
     results = await asyncio.gather(*[_extract_one(n, f) for n, f in providers])
 
     extracted_blocks = []
+    provider_blocks = {}   # §10.3: {honest_label: raw_IR} for measured agreement
     for r in results:
         if r is None:
             continue
         name, raw_block = r
+        provider_blocks[name] = raw_block
         # UI stores the clean SOURCE:: text; only synthesis sees the provider tag.
         db.add(Message(
             chat_id=chat_id,
@@ -1268,6 +1270,14 @@ async def ask_multi_model(
     #    NOTE: temperature=0 on a hosted LLM is NOT bit-reproducible (§8.1 / §11.6).
     try:
         content = await asyncio.to_thread(synthesize_content, extracted_blocks)
+
+        # §10.3 / §11.4: replace the LLM's self-reported CONFIDENCE with the agreement
+        # actually MEASURED across the ensemble's independent answers. Pure/CPU-only,
+        # so no to_thread needed. `agreement["score"]` (0..1 or None) also stamps the
+        # KG nodes below.
+        agreement = compute_agreement(provider_blocks)
+        content = apply_measured_confidence(content, agreement)
+
         synth = save_or_update_synthesis(
             db=db,
             chat_id=chat_id,
@@ -1289,8 +1299,10 @@ async def ask_multi_model(
         )
 
     # 5. Derived KG build — best-effort follow-on; never breaks the response.
+    #    §10.3: stamp each node with the measured agreement score (0..1 / None).
     try:
-        build_kg_for_synthesis(db, chat_id, synthesis_id, content)
+        build_kg_for_synthesis(db, chat_id, synthesis_id, content,
+                               node_confidence=agreement.get("score"))
     except Exception as e:
         db.rollback()
         print(f"[KG] build failed (non-fatal): {e}")

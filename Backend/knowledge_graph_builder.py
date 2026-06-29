@@ -22,7 +22,15 @@ RELATION_MAP = {
 }
 
 
-def build_graph_from_ir(db: Session, chat_id: str, synthesis_id: str, ir: Dict[str, List[str]]):
+def build_graph_from_ir(db: Session, chat_id: str, synthesis_id: str, ir: Dict[str, List[str]],
+                        node_confidence: float = None):
+    """Materialize synthesis IR into KnowledgeNodes/Edges.
+
+    §10.3: `node_confidence` is the MEASURED inter-model agreement score (0..1) for
+    this synthesis, or None when unknown (e.g. the /synthesis/generate path that has
+    no ensemble). It populates the previously-always-None `confidence` column with a
+    real, observed number instead of a self-reported guess.
+    """
     nodes_by_section = {}
 
     for section, bullets in ir.items():
@@ -34,7 +42,7 @@ def build_graph_from_ir(db: Session, chat_id: str, synthesis_id: str, ir: Dict[s
                 section=section,
                 content=text,
                 version=1,
-                confidence=None,
+                confidence=node_confidence,
                 created_at=now()
             )
             db.add(node)

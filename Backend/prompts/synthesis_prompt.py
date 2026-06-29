@@ -40,9 +40,12 @@ UNKNOWN:
 - <merged uncertainties>
 
 CONFIDENCE:
-- <merged confidence statements>
+- None
 
 Rules:
+- For CONFIDENCE, ALWAYS output exactly "- None". Do NOT state how confident you are.
+  Confidence is measured by the system from inter-model agreement (it is not
+  self-reported), and anything you write here is discarded.
 - Each section MUST contain bullet points starting with "- ".
 - If a section has no content, use "- None".
 - No filler text.

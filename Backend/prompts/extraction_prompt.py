@@ -41,7 +41,7 @@ UNKNOWN:
 - <one explicit uncertainty>
 
 CONFIDENCE:
-- <any statement with numbers, probability, comparison, strength>
+- None
 
 ====================================
 HARD RULES

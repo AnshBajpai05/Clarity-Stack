@@ -187,8 +187,9 @@ def ask_groq_llama(prompt: str) -> str:
         return _error_block(str(e))   # returns None — caller skips
 
 
-def ask_groq_mixtral(prompt: str) -> "str | None":
-
+def ask_groq_instant(prompt: str) -> "str | None":
+    # NB: this runs Groq llama-3.1-8b-instant. The old name `ask_groq_mixtral` was a
+    # lie (it never called a Mixtral model) — renamed for research integrity (§10.3).
     try:
 
         raw = _generic_chat(
@@ -281,40 +282,58 @@ def ask_nvidia_gemma(prompt: str) -> "str | None":
 
 
 # =========================================================
-# MULTI MODEL EXTRACTION
+# EXTRACTION ENSEMBLE — honest single source of truth (§10.3)
+# =========================================================
+# (label, fn). Labels are derived from the pinned MODELS registry so they can NEVER
+# drift from the model that actually runs — the previous "gemini"/"huggingface"
+# labels were research-integrity lies (neither provider was ever called). This is the
+# diverse 3-model set used by the live /ask path; main.py imports it instead of
+# hardcoding provider names, so the label stored on each Message is always truthful.
+EXTRACTION_ENSEMBLE = [
+    (f"groq:{MODELS['groq_llama']}",     ask_groq_llama),
+    (f"groq:{MODELS['groq_instant']}",   ask_groq_instant),
+    (f"nvidia:{MODELS['nvidia_llama']}", ask_nvidia_llama),
+]
+
+
+# =========================================================
+# MULTI MODEL EXTRACTION (legacy / full_pipeline harness)
 # =========================================================
 def run_multi_model_extraction(
     prompt: str
 ) -> Dict[str, str]:
-
-    outputs = {}
+    # §10.3: fan the (blocking) provider calls out concurrently instead of a serial
+    # loop. Each call is I/O-bound (HTTP via the gateway), so threads give a real
+    # ~Nx latency cut while the GIL is released during the network wait. The live
+    # /ask path uses asyncio.gather for the same reason; this keeps the harness path
+    # consistent. Honest labels, no fictional providers.
+    from concurrent.futures import ThreadPoolExecutor
 
     models = {
-        "groq_llama": ask_groq_llama,
-        "groq_mixtral": ask_groq_mixtral,
-        "groq_gemma": ask_groq_gemma,
-
-        "nvidia_llama": ask_nvidia_llama,
-        "nvidia_mixtral": ask_nvidia_mixtral,
-        "nvidia_gemma": ask_nvidia_gemma,
+        f"groq:{MODELS['groq_llama']}":     ask_groq_llama,
+        f"groq:{MODELS['groq_instant']}":   ask_groq_instant,
+        f"groq:{MODELS['groq_gemma']}":     ask_groq_gemma,
+        f"nvidia:{MODELS['nvidia_llama']}":   ask_nvidia_llama,
+        f"nvidia:{MODELS['nvidia_mixtral']}": ask_nvidia_mixtral,
+        f"nvidia:{MODELS['nvidia_gemma']}":   ask_nvidia_gemma,
     }
 
-    for model_name, fn in models.items():
-
-        print(f"\nRunning: {model_name}")
-
+    def _run(name_fn):
+        name, fn = name_fn
         try:
-            result = fn(prompt)
-            if result is None:
-                # _error_block returned None — provider failed, skip it
-                print(f"SKIPPED (provider failure): {model_name}")
-                continue
-            outputs[model_name] = result
-            print(f"SUCCESS: {model_name}")
-
+            return name, fn(prompt)
         except Exception as e:
-            logging.warning(f"[providers] {model_name} raised unexpectedly: {e}")
-            print(f"FAILED: {model_name}")
+            logging.warning(f"[providers] {name} raised unexpectedly: {e}")
+            return name, None
+
+    outputs = {}
+    with ThreadPoolExecutor(max_workers=len(models)) as pool:
+        for name, result in pool.map(_run, models.items()):
+            if result is None:
+                print(f"SKIPPED (provider failure): {name}")
+                continue
+            outputs[name] = result
+            print(f"SUCCESS: {name}")
 
     return outputs
 
@@ -379,8 +398,10 @@ def ask_hf_synthesis(extracted_blocks: List[str]) -> str:
     return ask_synthesis(extracted_blocks)
 
 def ask_gemini(prompt: str) -> str:
-    """Redirects to Groq Mixtral 8x7B (Replaces the old Gemini mock)."""
-    return ask_groq_mixtral(prompt)
+    """Legacy entry point. NB: redirects to Groq llama-3.1-8b-instant — it is NOT
+    Gemini and never was. Kept only for old import sites; new code should use
+    EXTRACTION_ENSEMBLE, which carries the honest model label (§10.3)."""
+    return ask_groq_instant(prompt)
 
 
 # =========================================================

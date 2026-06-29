@@ -6,6 +6,8 @@ from datetime import datetime, timezone
 
 from providers import ask_hf_synthesis, SYNTHESIS_MODEL as SYNTHESIS_MODEL_ID
 
+from agreement import confidence_bullets
+
 from ir_schema import SYNTHESIS_IR as SECTIONS
 def prune_to_synthesis_ir(text: str) -> str:
     allowed = set(SECTIONS)
@@ -315,14 +317,48 @@ def synthesize_content(assistant_replies: List[str]) -> str:
     return cleaned
 
 
-def build_kg_for_synthesis(db: Session, chat_id: str, synthesis_id: str, content: str) -> None:
+def apply_measured_confidence(content: str, agreement: dict) -> str:
+    """Overwrite the synthesis CONFIDENCE section with MEASURED inter-model agreement.
+
+    §10.3 / §11.4: the LLM's self-reported confidence is discarded here and replaced
+    with the agreement actually observed across the ensemble's independent answers
+    (see agreement.compute_agreement). The section is rebuilt in canonical SYNTHESIS_IR
+    order and re-validated (subset mode) so the persisted IR stays well-formed.
+
+    Fail-safe: if the rebuilt IR somehow fails validation (it shouldn't — we control
+    the format), we log and return the original `content` rather than dropping the
+    whole synthesis. Truthful-but-degraded beats data loss.
+    """
+    sections = parse_sections(content)
+    sections["CONFIDENCE"] = ["- " + b for b in confidence_bullets(agreement)]
+
+    output = []
+    for sec in SECTIONS:                     # canonical SYNTHESIS_IR order
+        bullets = sections.get(sec, [])
+        if bullets:
+            output.append(f"{sec}:")
+            output.extend(bullets)
+            output.append("")
+    rebuilt = "\n".join(output).strip()
+
+    ok_struct, errs = validate_ir_structure(rebuilt, require_all_sections=False)
+    if not ok_struct:
+        print("[synthesis] measured-confidence rewrite failed validation, keeping "
+              "original: " + "; ".join(errs))
+        return content
+    return rebuilt
+
+
+def build_kg_for_synthesis(db: Session, chat_id: str, synthesis_id: str, content: str,
+                           node_confidence: float = None) -> None:
     """Derived, rebuildable KG build for a *committed* synthesis row.
 
     §3.2: runs as a best-effort follow-on OUTSIDE the atomic conversation-graph
-    transaction (the KG builder commits internally).
+    transaction (the KG builder commits internally). §10.3: `node_confidence` carries
+    the measured inter-model agreement score onto each node.
     """
     ir = parse_ir_from_synthesis(content)
-    build_graph_from_ir(db, chat_id, synthesis_id, ir)
+    build_graph_from_ir(db, chat_id, synthesis_id, ir, node_confidence=node_confidence)
 
 
 def generate_and_store_synthesis(
