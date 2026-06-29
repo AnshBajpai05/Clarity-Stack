@@ -31,6 +31,7 @@ import time
 import hashlib
 import logging
 import threading
+import contextvars
 from collections import OrderedDict
 from typing import Callable, List, Optional
 
@@ -71,7 +72,33 @@ BACKOFF_BASE    = _float("LLM_BACKOFF_BASE", 0.5)    # seconds; attempt n waits 
 BACKOFF_MAX     = _float("LLM_BACKOFF_MAX", 8.0)     # cap per sleep
 BREAKER_THRESHOLD = _int("LLM_BREAKER_THRESHOLD", 5) # consecutive transient fails to open
 BREAKER_COOLDOWN  = _float("LLM_BREAKER_COOLDOWN", 30.0)  # seconds open
-BUDGET_TOKENS   = _int("LLM_BUDGET_TOKENS", 0)       # 0 == unlimited
+BUDGET_TOKENS   = _int("LLM_BUDGET_TOKENS", 0)       # 0 == unlimited (process-wide)
+TENANT_BUDGET_TOKENS = _int("LLM_TENANT_BUDGET_TOKENS", 0)  # 0 == unlimited (per tenant)
+
+
+# =========================================================
+# PER-REQUEST TENANT (§10.2 per-tenant budgets)
+# =========================================================
+# The budget is keyed on an opaque "tenant" string (a user email for browser-driven
+# calls, a service name for server-to-server). It is set per request and propagates
+# across `asyncio.to_thread` because that copies the contextvars Context — so the
+# in-process extraction/synthesis calls inherit the caller's tenant with no signature
+# changes. The network endpoint (/llm/chat) passes tenant explicitly instead.
+# v1 ledger is in-memory per worker (same posture as cache/breaker); the Redis seam
+# for TRULY cross-service/cross-worker budgets is §10.9.
+DEFAULT_TENANT = "global"
+_current_tenant: "contextvars.ContextVar[str]" = contextvars.ContextVar(
+    "llm_gateway_tenant", default=DEFAULT_TENANT
+)
+
+
+def set_request_tenant(tenant: Optional[str]) -> None:
+    """Tag the current execution context (request) with a budget tenant."""
+    _current_tenant.set(tenant or DEFAULT_TENANT)
+
+
+def current_tenant() -> str:
+    return _current_tenant.get()
 
 
 # =========================================================
@@ -142,9 +169,13 @@ class _Cache:
 _cache = _Cache(CACHE_MAXSIZE, CACHE_TTL)
 
 
-def _cache_key(provider: str, model: str, messages: list, temperature: float, seed) -> str:
+def _cache_key(provider: str, model: str, messages: list, temperature: float, seed,
+               max_tokens=None, response_format=None) -> str:
+    # response_format/max_tokens are part of the key: the SAME prompt asked for JSON
+    # vs free text (or with a different cap) is a different result and must not collide.
     blob = json.dumps(
-        {"p": provider, "m": model, "msgs": messages, "t": temperature, "s": seed},
+        {"p": provider, "m": model, "msgs": messages, "t": temperature, "s": seed,
+         "mt": max_tokens, "rf": response_format},
         sort_keys=True, ensure_ascii=False,
     )
     return hashlib.sha256(blob.encode("utf-8")).hexdigest()
@@ -198,13 +229,19 @@ class _Stats:
         self.prompt_tokens = 0
         self.completion_tokens = 0
         self.by_provider = {}   # provider -> {calls, prompt_tokens, completion_tokens, failures}
+        self.by_tenant = {}     # tenant   -> {calls, prompt_tokens, completion_tokens}
 
     def _prov(self, provider: str) -> dict:
         return self.by_provider.setdefault(
             provider, {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0, "failures": 0}
         )
 
-    def record_call(self, provider: str, usage: dict) -> None:
+    def _tenant(self, tenant: str) -> dict:
+        return self.by_tenant.setdefault(
+            tenant, {"calls": 0, "prompt_tokens": 0, "completion_tokens": 0}
+        )
+
+    def record_call(self, provider: str, usage: dict, tenant: str = DEFAULT_TENANT) -> None:
         pt = int((usage or {}).get("prompt_tokens", 0) or 0)
         ct = int((usage or {}).get("completion_tokens", 0) or 0)
         with self._lock:
@@ -215,6 +252,15 @@ class _Stats:
             p["calls"] += 1
             p["prompt_tokens"] += pt
             p["completion_tokens"] += ct
+            t = self._tenant(tenant)
+            t["calls"] += 1
+            t["prompt_tokens"] += pt
+            t["completion_tokens"] += ct
+
+    def tenant_tokens(self, tenant: str) -> int:
+        with self._lock:
+            t = self.by_tenant.get(tenant)
+            return (t["prompt_tokens"] + t["completion_tokens"]) if t else 0
 
     def record_cache_hit(self) -> None:
         with self._lock:
@@ -239,7 +285,9 @@ class _Stats:
                 "completion_tokens": self.completion_tokens,
                 "total_tokens": self.prompt_tokens + self.completion_tokens,
                 "budget_tokens": BUDGET_TOKENS,
+                "tenant_budget_tokens": TENANT_BUDGET_TOKENS,
                 "by_provider": {k: dict(v) for k, v in self.by_provider.items()},
+                "by_tenant": {k: dict(v) for k, v in self.by_tenant.items()},
             }
 
 
@@ -300,31 +348,45 @@ def _sleep_backoff(attempt: int) -> None:
 # =========================================================
 def chat(
     candidates: List[Candidate],
-    system_prompt: str,
-    user_prompt: str,
+    system_prompt: str = "",
+    user_prompt: str = "",
     temperature: float = 0.0,
     timeout: int = 60,
     seed: Optional[int] = None,
     tags: Optional[str] = None,
+    tenant: Optional[str] = None,
+    messages: Optional[list] = None,
+    max_tokens: Optional[int] = None,
+    response_format: Optional[dict] = None,
 ) -> str:
     """Run an OpenAI-compatible chat completion through the gateway.
 
     Tries `candidates` in order until one returns content. Returns the assistant text.
-    Raises GatewayError if every candidate fails (or the token budget is exhausted).
+    Raises GatewayError if every candidate fails (or a token budget is exhausted).
+
+    `tenant` keys the per-tenant budget/accounting (§10.2). When None it falls back to
+    the per-request ContextVar (set via set_request_tenant), then to DEFAULT_TENANT.
     """
     if not candidates:
         raise GatewayError("no candidates supplied")
 
-    messages = [
-        {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt},
-    ]
+    tenant = tenant or current_tenant()
+
+    # Callers may pass a full OpenAI-style `messages` list (Node/UML multi-turn) or
+    # the simple system+user pair (providers.py). Either way the gateway treats it
+    # uniformly from here, so cache/breaker/budget cover every call path.
+    if messages is None:
+        messages = [
+            {"role": "system", "content": system_prompt},
+            {"role": "user", "content": user_prompt},
+        ]
     cacheable = CACHE_ENABLED and temperature == 0.0
 
     # ---- cache lookup (keyed on the first candidate's provider/model) ----
     if cacheable:
         first = candidates[0]
-        ckey = _cache_key(first.provider, first.model, messages, temperature, seed)
+        ckey = _cache_key(first.provider, first.model, messages, temperature, seed,
+                          max_tokens, response_format)
         cached = _cache.get(ckey)
         if cached is not None:
             _stats.record_cache_hit()
@@ -334,10 +396,14 @@ def chat(
     else:
         ckey = None
 
-    # ---- budget gate ----
+    # ---- budget gates (process-wide, then per-tenant) ----
     if BUDGET_TOKENS > 0 and _stats.total_tokens() >= BUDGET_TOKENS:
         logging.error("[llm_gateway] token budget exhausted (%d) — refusing call", BUDGET_TOKENS)
         raise GatewayError("token budget exhausted")
+    if TENANT_BUDGET_TOKENS > 0 and _stats.tenant_tokens(tenant) >= TENANT_BUDGET_TOKENS:
+        logging.error("[llm_gateway] tenant budget exhausted for %r (%d) — refusing call",
+                      tenant, TENANT_BUDGET_TOKENS)
+        raise GatewayError(f"tenant budget exhausted for {tenant}")
 
     last_reason = "all candidates failed"
 
@@ -358,6 +424,10 @@ def chat(
         payload = {"model": cand.model, "messages": messages, "temperature": temperature}
         if seed is not None:
             payload["seed"] = seed
+        if max_tokens is not None:
+            payload["max_tokens"] = max_tokens
+        if response_format is not None:
+            payload["response_format"] = response_format
 
         for attempt in range(MAX_RETRIES + 1):
             started = time.monotonic()
@@ -366,7 +436,7 @@ def chat(
                 content = data["choices"][0]["message"]["content"]
                 usage = data.get("usage") or {}
                 _breaker.record_success(cand.provider)
-                _stats.record_call(cand.provider, usage)
+                _stats.record_call(cand.provider, usage, tenant)
                 if cacheable and ckey is not None:
                     _cache.set(ckey, content)
                 logging.info(
@@ -425,6 +495,7 @@ def config_summary() -> dict:
         "breaker_threshold": BREAKER_THRESHOLD,
         "breaker_cooldown": BREAKER_COOLDOWN,
         "budget_tokens": BUDGET_TOKENS,
+        "tenant_budget_tokens": TENANT_BUDGET_TOKENS,
     }
 
 

@@ -35,6 +35,12 @@ from pydantic import BaseModel, EmailStr
 
 app = FastAPI()
 
+# §10.2: central LLM gateway HTTP surface (POST /llm/chat) so Satellite + UML route
+# through the same cache/breaker/budget/stats. Kept in its own module to avoid
+# growing this god-file further (§6.1).
+from llm_gateway_api import router as llm_gateway_router
+app.include_router(llm_gateway_router)
+
 from fastapi.middleware.cors import CORSMiddleware
 
 # ─── §2.3: Alembic is the single source of truth for the schema ───────────────
@@ -1135,6 +1141,11 @@ async def ask_multi_model(
     _rl: None = Depends(RateLimiter(30, 60, "ask"))
 ):
     get_chat_or_403(db, chat_id, current_user["email"])
+
+    # §10.2: bill this request's model spend to the user. set on the request context
+    # so the extraction/synthesis gateway calls — even those run via asyncio.to_thread
+    # (which copies the contextvars Context) — inherit the tenant without signature changes.
+    gateway.set_request_tenant(current_user["email"])
 
     # 1. Classify signal
     signal = classify_signal(payload.text)

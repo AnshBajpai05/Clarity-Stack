@@ -1,12 +1,14 @@
 // services/modelRouter.js — Multi-provider LLM router with fallback chain
 // v4.1: NVIDIA 405B → Groq 70B → NVIDIA 70B → HF 70B → Offline
 const axios = require("axios");
+const { gatewayEnabled, gatewayChat } = require("./gatewayClient");
 
 class ModelRouter {
   constructor() {
     this.providers = [
       {
         name: "groq-llama-3.3-70b",
+        gw: "groq",
         url: "https://api.groq.com/openai/v1/chat/completions",
         model: "llama-3.3-70b-versatile",
         key: process.env.GROQ_API_KEY,
@@ -15,6 +17,7 @@ class ModelRouter {
       },
       {
         name: "nvidia-llama-3.1-70b",
+        gw: "nvidia",
         url: "https://integrate.api.nvidia.com/v1/chat/completions",
         model: "meta/llama-3.1-70b-instruct",
         key: process.env.NVIDIA_API_KEY,
@@ -23,6 +26,7 @@ class ModelRouter {
       },
       {
         name: "hf-llama-3.3-70b",
+        gw: "hf",
         url: "https://router.huggingface.co/v1/chat/completions",
         model: "meta-llama/Llama-3.3-70B-Instruct",
         key: process.env.HF_TOKEN,
@@ -32,8 +36,42 @@ class ModelRouter {
     ];
   }
 
+  /** Parse an LLM text response into an object (strips ```json fences; regex-rescues). */
+  _parseJson(text, label = "gateway") {
+    const cleaned = String(text).replace(/```json|```/g, "").trim();
+    try {
+      return JSON.parse(cleaned);
+    } catch (_) {
+      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
+      if (jsonMatch) return JSON.parse(jsonMatch[0]);
+      console.warn(`[ModelRouter] ⚠️  ${label} non-JSON output.`);
+      return { raw: cleaned };
+    }
+  }
+
   async call(systemPrompt, userPrompt, { temperature = 0.1, max_tokens = 2048 } = {}) {
     const now = Date.now();
+
+    // §10.2: prefer the central Clarity gateway — pass the whole provider list as an
+    // ordered fallback chain so the gateway's breaker/cache/budget govern the call.
+    // On any gateway failure, fall through to the direct per-provider loop below.
+    if (gatewayEnabled()) {
+      try {
+        const messages = [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ];
+        const candidates = this.providers.map((p) => ({ provider: p.gw, model: p.model }));
+        const content = await gatewayChat(messages, {
+          candidates, temperature, max_tokens,
+          response_format: { type: "json_object" }, tags: "satellite-router",
+        });
+        console.log("[ModelRouter] ✅ via central gateway.");
+        return this._parseJson(content, "gateway");
+      } catch (err) {
+        console.warn(`[ModelRouter] ⚠️  gateway failed (${err.message}); using direct providers...`);
+      }
+    }
 
     for (const provider of this.providers) {
       if (!provider.key) continue;

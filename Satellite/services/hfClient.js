@@ -1,5 +1,6 @@
 // services/hfClient.js — HuggingFace Inference API client (Llama 405B)
 const axios = require("axios");
+const { gatewayEnabled, gatewayChat } = require("./gatewayClient");
 
 const HF_TOKEN = process.env.HF_TOKEN;
 const HF_API_URL = "https://router.huggingface.co/v1/chat/completions";
@@ -8,6 +9,19 @@ const MODEL_FALLBACK = "meta-llama/Llama-3.3-70B-Instruct";
 
 // ─── Helper: call HF with automatic fallback ─────────────────────────────────
 async function callHF(messages, { temperature = 0.2, max_tokens = 1500, model = MODEL_PRIMARY } = {}) {
+  // §10.2: prefer the central Clarity gateway (shared cache/breaker/budget/stats).
+  // On any gateway failure, fall back to the direct HF path below so this service
+  // keeps working even if the Backend is down.
+  if (gatewayEnabled()) {
+    try {
+      return await gatewayChat(messages, {
+        provider: "hf", model, temperature, max_tokens, tags: "satellite",
+      });
+    } catch (err) {
+      console.warn(`⚠️  Gateway call failed (${err.message}); falling back to direct HF...`);
+    }
+  }
+
   const doCall = async (m) => {
     const res = await axios.post(
       HF_API_URL,

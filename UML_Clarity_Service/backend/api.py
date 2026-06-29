@@ -441,7 +441,39 @@ async def llm_proxy(req: LLMProxyRequest):
     """
     Proxy LLM requests to NVIDIA NIM from the server side.
     This avoids CORS blocks when calling external APIs from the browser.
+
+    §10.2: prefers the central Clarity gateway (shared cache/breaker/budget/stats)
+    when configured & reachable; otherwise falls back to the direct NVIDIA call below.
     """
+    gw_url = os.environ.get("CLARITY_GATEWAY_URL")
+    gw_token = os.environ.get("GATEWAY_SERVICE_TOKEN")
+    if gw_url and gw_token:
+        body = {
+            "messages": req.messages,
+            "provider": "nvidia",
+            "model": req.model,
+            "temperature": req.temperature,
+            "max_tokens": req.max_tokens,
+            "response_format": req.response_format,
+            "tags": "uml",
+        }
+        try:
+            async with httpx.AsyncClient(timeout=120.0) as client:
+                gw = await client.post(
+                    f"{gw_url.rstrip('/')}/llm/chat", json=body,
+                    headers={"X-Service-Token": gw_token},
+                )
+            if gw.status_code == 200:
+                content = gw.json().get("content", "")
+                return {"choices": [{"message": {"content": content}}]}
+            if gw.status_code in (401, 402):
+                raise HTTPException(status_code=gw.status_code,
+                                    detail=gw.json().get("detail", "gateway refused"))
+        except HTTPException:
+            raise
+        except Exception:
+            pass  # fall through to direct NVIDIA
+
     api_key = os.environ.get("NVIDIA_API_KEY")
     if not api_key:
         raise HTTPException(status_code=500, detail="NVIDIA_API_KEY not configured on server")

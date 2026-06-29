@@ -117,15 +117,66 @@ def _nvidia_keys() -> list[str]:
     return [k for k in (os.getenv(n) for n in names) if k]
 
 
+# ─── §10.2: route through the central Clarity LLM gateway when configured ───────
+# Prefer the shared gateway (one cache / breaker / budget / stats across services).
+# If it is not configured or is unreachable, fall back to the direct NVIDIA path
+# below so this service never hard-depends on the Backend being up.
+CLARITY_GATEWAY_URL = os.getenv("CLARITY_GATEWAY_URL")          # e.g. http://localhost:8000
+GATEWAY_SERVICE_TOKEN = os.getenv("GATEWAY_SERVICE_TOKEN")
+
+
+async def _llm_via_gateway(payload: dict) -> dict | None:
+    """Try the central gateway. Returns an OpenAI-shaped dict on success, None to
+    fall back. Re-raises HTTPException for real policy errors (budget/auth) so they
+    are NOT silently masked by the local fallback."""
+    if not (CLARITY_GATEWAY_URL and GATEWAY_SERVICE_TOKEN):
+        return None
+    body = {
+        "messages": payload.get("messages"),
+        "provider": "nvidia",
+        "model": payload.get("model"),
+        "temperature": payload.get("temperature", 0.2),
+        "max_tokens": payload.get("max_tokens"),
+        "response_format": payload.get("response_format"),
+        "tags": "uml",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            resp = await client.post(
+                f"{CLARITY_GATEWAY_URL.rstrip('/')}/llm/chat",
+                json=body,
+                headers={"X-Service-Token": GATEWAY_SERVICE_TOKEN},
+            )
+        if resp.status_code == 200:
+            content = resp.json().get("content", "")
+            # Re-wrap to the OpenAI shape the browser already parses (choices[0].message.content).
+            return {"choices": [{"message": {"content": content}}]}
+        if resp.status_code in (401, 402):
+            # Auth/budget are deliberate refusals — surface, don't burn local keys around them.
+            raise HTTPException(status_code=resp.status_code,
+                                detail=resp.json().get("detail", "gateway refused"))
+        logger.warning(f"[llm] gateway returned {resp.status_code}; falling back to direct NVIDIA")
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.warning(f"[llm] gateway unreachable ({e}); falling back to direct NVIDIA")
+    return None
+
+
 # ---------- LLM Proxy ----------
 @app.post("/api/llm")
 async def proxy_llm(payload: dict):
     """Proxy request to NVIDIA to avoid CORS and keep keys server-side (§1.6).
 
-    Load-balances across multiple NVIDIA keys: a random key is tried first to
-    spread quota, and on a 429 / transport error the request fails over to the
-    remaining keys before giving up.
+    §10.2: prefers the central Clarity gateway (shared cache/breaker/budget/stats);
+    on absence/outage it falls back to the direct, key-load-balanced NVIDIA path —
+    a random key is tried first to spread quota, and on a 429 / transport error the
+    request fails over to the remaining keys before giving up.
     """
+    gw = await _llm_via_gateway(payload)
+    if gw is not None:
+        return gw
+
     url = "https://integrate.api.nvidia.com/v1/chat/completions"
     keys = _nvidia_keys()
     if not keys:
