@@ -4,6 +4,12 @@
 > **Scope:** Full monorepo — `Backend/` (FastAPI core), `Satellite/` (Express + MongoDB), `Editor_Service/` (Node + Python, collab editor), `ThreatLens_Service/` (FastAPI phishing ML), `SRS_Service/` & `UML_Clarity_Service/` (FastAPI pipelines), `Web/Frontend/` (React/Vite/TS).
 > **Auditors' lens:** Architecture, Security, Reliability, Performance, Data Integrity, UX, Product Logic.
 > **Status legend:** OPEN / FIXED / ACCEPTED / DOCUMENTED / DEFERRED. All items below are **OPEN** unless noted.
+>
+> **Housekeeping (2026-07-01):** to keep this a live "what's still open" register, fully-resolved
+> items have been **collapsed to a one-line pointer** (`✅ — see issue_fixed.md`); their full
+> remediation write-ups live in [`issue_fixed.md`](./issue_fixed.md) (sections A–J). Items that are
+> still **OPEN / 🟡 PARTIAL / ⛔ DEFERRED** keep their full detail here. (§15 fixes point to the §15
+> remediation table; §16/§17 to `issue_fixed.md §E/§J`.)
 
 This document is the intended single source of truth for technical risk. Findings are evidence-backed and cross-referenced. Severity reflects production (public-launch) impact, not classroom/demo impact.
 
@@ -23,14 +29,7 @@ This document is the intended single source of truth for technical risk. Finding
 ## §1 Critical Issues
 
 ### §1.1 — Hardcoded JWT fallback secret shared across services
-- **Severity:** Critical · **Status:** ✅ FIXED (2026-06-28) — Satellite (`middleware/auth.js`, `routes/internal.js`) and Editor (`server.js`) now read `process.env.JWT_SECRET` and **throw at boot** if unset; the `"HalaMadrid12345"` literal is gone from all three. Secret rotated to a fresh 256-bit value, set identically in `Backend/.env`, `Satellite/.env`, `Editor_Service/.env` (all gitignored). Env name unified on `JWT_SECRET`.
-- **Evidence:**
-  - `Satellite/middleware/auth.js:4` → `const JWT_SECRET = process.env.JWT_SECRET || "HalaMadrid12345";`
-  - `Satellite/routes/internal.js:9` → same fallback.
-  - `Editor_Service/server.js:11` → `const SECRET_KEY = process.env.SECRET_KEY || "HalaMadrid12345";`
-- **Why it matters:** If `JWT_SECRET` is not set in a given service's environment (easy to miss across 7 services with 3 different env conventions), the service silently signs/verifies tokens with a public, source-controlled secret. Anyone who reads this repo can forge a valid token for **any** user or role — including `role: "internal"`, which authorizes the data-destruction endpoint (§1.2). This is a full authentication bypass, not a theoretical one.
-- **Reproduction:** Start Satellite without `JWT_SECRET`. Forge `jwt.sign({sub:"x",role:"internal"}, "HalaMadrid12345")`. Call any protected route — accepted.
-- **Recommended direction:** Fail-closed exactly like `Backend/auth.py:11-17` does (`raise` if missing). Remove every literal fallback. Centralize one secret name and inject via secret manager. Rotate the leaked value before any deployment.
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §1.2 — Unauthenticated/forgeable mass-deletion endpoint (Satellite internal cleanup)
 - **Severity:** Critical · **Status:** 🟡 PARTIAL (2026-06-28) — the **forgeability vector is closed**: `requireInternalAuth` no longer falls back to the public `"HalaMadrid12345"` secret (Step 1, fail-closed), so a `role:"internal"` token can now only be minted by a holder of the rotated `JWT_SECRET` — i.e. the Core service itself (`_call_satellite_cleanup`). **Still OPEN (deferred hardening):** the channel is still user-JWT-shaped rather than a dedicated service credential / mTLS, and deletes are hard (no soft-delete + retention). Lower priority now that forgery is impossible without the secret.
@@ -39,13 +38,7 @@ This document is the intended single source of truth for technical risk. Finding
 - **Recommended direction:** Mutual-auth between core and satellite (mTLS or a dedicated, rotated service secret distinct from user JWT), bind cleanup to a verified server-to-server channel, and soft-delete with retention before hard delete.
 
 ### §1.3 — Cross-tenant IDOR across the entire Satellite service
-- **Severity:** Critical · **Status:** ✅ FIXED (2026-06-28) — added object-level authZ middleware `requireProjectAccess` / `requireCardAccess` (`Satellite/middleware/auth.js`) that delegate to Core's own access control (`GET /projects/:id`, which honors membership + public-read). Wired as Express param triggers (`router.param("projectId"|"cardId", …)`) on **kg.js, delta.js, cards.js, export.js** — covering every current and future scoped route, including the previously-public `GET /cards/:projectId` + `/label/:label` and the `DELETE /cards/:cardId` route. The card trigger also blocks passing another tenant's `cardId` under a project you can access. `generate.js /uml` now requires auth (§5.6). Fail-closed (Core unreachable ⇒ deny). `discovery.js` (follow/feed) and `join.js` (join-request) are intentionally not gated — the caller there is not yet a member by design.
-- **Evidence:** Every Satellite route keys off the URL `:projectId` but **never verifies the caller is a member of that project**. `requireAuth` (`Satellite/middleware/auth.js:10`) only checks the token is *valid*. Examples:
-  - `Satellite/routes/kg.js:13` `GET /kg/:projectId`, `:86` snapshot, `:110` focus — any logged-in user reads/snapshots any project's knowledge graph.
-  - `Satellite/routes/cards.js:25` `GET /cards/:projectId` and `:40` `/label/:label` have **no `requireAuth` at all** — fully public.
-  - `Satellite/routes/cards.js:300` `DELETE /cards/:cardId` — any logged-in user deletes any card by id.
-- **Why it matters:** The synthesized project knowledge (decisions, risks, architecture) is the product's crown-jewel data. Cross-tenant read/delete is a confidentiality + integrity breach for every customer at once.
-- **Recommended direction:** Add a shared authorization layer that, for each `:projectId`, calls core (`get_project_or_403` semantics) or validates a project-scoped claim. Default-deny; remove the public card GETs or gate them behind explicit `visibility=public` verification.
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §1.4 — Server-Side Request Forgery in ThreatLens (`/predict`, `/predict/batch`)
 - **Severity:** Critical · **Status:** ⛔ DEFERRED (ThreatLens out of current scope — see banner)
@@ -55,107 +48,50 @@ This document is the intended single source of truth for technical risk. Finding
 - **Recommended direction:** Resolve DNS then block RFC1918 / loopback / link-local / metadata ranges *before* any connect; disable redirects to private targets; cap batch size; require auth + rate limit; run egress through an allow-listed proxy.
 
 ### §1.5 — Editor service: env-name mismatch silently disables auth, then exposes all workspaces
-- **Severity:** Critical · **Status:** ✅ FIXED (2026-06-28) — three parts, all closed: (1) **env-name mismatch** — Editor reads `JWT_SECRET` now (Step 1), so real tokens verify. (2) **`GET /workspace/:id`** — private workspaces return 403 to non-owners. (3) **Sockets** — the handshake is authenticated (`io.use` verifies the JWT and attaches `socket.user`), and `join` + every mutator (`section_change`, `section_title_change`, `add_section`, `delete_section`, `reorder_sections`) is gated by `canAccessRoom`: private rooms are owner-only; public/not-yet-created rooms stay open for collaboration. The frontend now sends the token on the socket handshake (`socket.js` auth callback). Anonymous public collaboration is intentionally preserved.
-- **Evidence:** `Editor_Service/server.js:11` reads `process.env.SECRET_KEY`, but the rest of the stack issues tokens signed with `JWT_SECRET` (`Backend/auth.py`). So even a correctly-configured deployment verifies Editor tokens with the **wrong** secret → every real token fails `jwt.verify` → `optionalAuth` sets `req.user = null` → all requests are anonymous. Compounding: `GET /workspace/:id` (`:205`) returns `sections` with **no `is_public`/owner check**, and Socket.IO `join`/`section_change` (`:331`, `:351`) perform **no auth at all**.
-- **Why it matters:** Any user can read and live-edit any workspace — including ones marked private — by guessing/enumerating the 8-char room id. Document confidentiality is absent.
-- **Recommended direction:** Standardize on one secret env name; enforce ownership/visibility on `GET /workspace/:id` and on socket `join`; authenticate the socket handshake (token in `io` auth) before joining rooms.
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §1.6 — Vendor LLM API keys shipped into the browser bundle (UML-Clarity)
-- **Severity:** Critical · **Status:** ✅ FIXED (2026-06-28) — both browser callers now route through the server-side proxy `${VITE_API_URL}/api/llm` (NVIDIA NIM, holding `NVIDIA_API_KEY` on the server): `Dashboard.jsx` `callAI` rewritten (Groq/Gemini direct fetches + `VITE_GROQ_API_KEY`/`VITE_GEMINI_API_KEY` deleted) and `pureFrontendEngine.js` `callGroq` now hits the proxy (`getKey()`/`VITE_GROQ_API_KEY` gone). The leftover `VITE_NVIDIA_API_KEY` (browser leak) was removed from `UML_Clarity_Service/.env`. The proxy now **load-balances across two server-side keys** (`NVIDIA_API_KEY` + `NVIDIA_API_KEY_2`) — a random key per request with fail-over on 429 — to spread quota across both. Grep confirms zero `VITE_*_API_KEY` / direct `api.groq.com` / `generativelanguage` references remain in `UML_Clarity_Service/src`. **Note 1:** the system intentionally **remains cloud-dependent** (NVIDIA) — local-model replacement is explicitly deferred (see `take_step_forward.md` §8/§10.11). **Note 2:** the original key was referenced via `VITE_NVIDIA_API_KEY` in older builds, so it should be rotated when convenient even though it now lives server-side only.
-- **Evidence:** `UML_Clarity_Service/src/components/Dashboard.jsx:227-228` reads `import.meta.env.VITE_GROQ_API_KEY` / `VITE_GEMINI_API_KEY` and calls Groq/Gemini **directly from the browser** (`:342` even errors "Add VITE_GROQ_API_KEY … to your .env"). Same pattern in `UML_Clarity_Service/src/joint-logic/pureFrontendEngine.js:24,186`. (Confirmed via grep; this corresponds to `take_step_forward.md` §2.3, which it still lists as 🟡 partial — NVIDIA was removed from `promptEngine.js` but Groq/Gemini remain.)
-- **Why it matters:** Vite inlines every `VITE_`-prefixed variable into the shipped JS. The live provider keys are therefore extractable from the bundle / network tab by any visitor → credential theft and uncapped billing abuse on the team's Groq/Gemini accounts.
-- **Reproduction:** Build the UML UI; open the bundle or devtools network tab on a model call → the `Authorization: Bearer <key>` is present client-side.
-- **Recommended direction:** Never expose provider keys to the client. Route all model calls through a server-side proxy (the UML backend already exposes `/api/llm`); delete the `VITE_*_API_KEY` usages and rotate the leaked keys. Effort ~2–4h.
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §1.7 — Authentication Operational Hardening (Refresh Rotation, Session Management, RBAC)
-- **Severity:** High · **Status:** ✅ FIXED (2026-06-28) — all seven sub-items implemented:
-  1. **Refresh Token Rotation** — `auth.py:create_refresh_token` now embeds a `jti` (UUID). On `/refresh`, the old token is revoked in the DB and a brand-new `(token, jti)` pair is issued. If a *revoked* `jti` is presented, all sessions for that user are immediately wiped (anomaly detection / token reuse guard).
-  2. **Server-side Session Storage** — new `RefreshToken` model (`Backend/models.py`) with `id/jti`, `user_id`, `issued_at`, `expires_at`, `revoked`, `device_info`. Alembic migration `0029088d6806` applied. Logout marks the session revoked in DB.
-  3. **Richer `/me`** — endpoint now returns `id, email, role, nickname, permissions[], avatar, createdAt`.
-  4. **RBAC Middleware** — `auth.py:require_permissions(*permissions)` is a reusable FastAPI Depends factory; role→permission map baked in; admin gets `[admin, project.read, project.write, project.delete, users.manage]`.
-  5. **`__Host-` Cookie Prefixes** — `auth.py:get_cookie_name()` prepends `__Host-` in production (`COOKIE_SECURE=True`); all cookie reads/writes/deletes use it consistently.
-  6. **Rate Limiting on Auth Endpoints** — `/refresh` now has `RateLimiter(20, 60)` in addition to existing `/login` (10/min) and `/register` (5/min).
-  7. **Silent Refresh UX** — `http.ts` implements a full silent-refresh state machine: on 401, in-flight requests are queued, `/refresh` is called once, all queued requests retry on success, `/login` redirect only fires if refresh itself fails. `fetchSatellite` in `api.ts` integrates the same pattern.
-- **Files touched:** `Backend/models.py`, `Backend/auth.py`, `Backend/main.py`, `Backend/migrations/versions/0029088d6806_add_refresh_tokens.py`, `Web/Frontend/src/lib/http.ts`, `Web/Frontend/src/lib/api.ts`.
-- 📄 **Full walkthrough:** [`auth_hardening_walkthrough.md`](./auth_hardening_walkthrough.md) — implementation details, verification steps, file-by-file summary. Also logged in [`issue_fixed.md §D`](./issue_fixed.md).
-
-
-
----
+- **Status:** ✅ Fixed — see [`issue_fixed.md §D`](./issue_fixed.md).
 
 ## §2 Reliability
 
 ### §2.1 — Synthesis runs up to 4 sequential LLM calls synchronously inside the request
-- **Severity:** High · **Status:** ✅ FIXED (Clarity_Stack_V3) — `ask_multi_model` is now `async`; the three provider extraction calls fan out concurrently via `asyncio.gather` + `asyncio.to_thread` (≈3× latency cut, verified 0.33s vs 0.9s serial), and the synthesis merge + direct-answer fallback also run via `to_thread` so the event loop is never blocked on a provider. (Durable queue/streaming is still the §10.9 follow-up; this is the §2.5 mitigation the audit called for.)
-- **Evidence:** `Backend/main.py:919` `ask_multi_model` calls three providers in a loop (`:987`) then `generate_and_store_synthesis` (`:1058` → `providers.ask_synthesis`, 120s timeout). Frontend aborts at 120s (`Web/Frontend/src/lib/http.ts:14`).
-- **Why it matters:** A single "ask" can occupy a worker for minutes. Under `uvicorn` with few workers this serializes users and exhausts capacity; the client may abort mid-flight (§3.2). No background task / queue.
-- **Recommended direction:** Move extraction+synthesis to a background job (task queue / `BackgroundTasks` + polling or WebSocket push); make providers concurrent (`asyncio.gather`) with per-provider timeouts.
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §2.2 — Collaborative editor (Python variant) keeps state only in memory
-- **Severity:** High · **Status:** ✅ FIXED (Clarity_Stack_V3) — the in-memory Python backend (`Editor_Service/main.py`, `rooms_data = {}`) and the other competing backends (`socket_server.py`, their `database.py`, `test_db.js`) are **deleted**. The single remaining backend is the file-based, Tier-0-hardened `Editor_Service/server.js` (the one `start_project.bat` / `npm start` actually launches), which persists every change to disk with atomic writes. Behavior no longer depends on which file is run.
-- **Evidence:** `Editor_Service/main.py:20` `rooms_data = {}`; `send_changes` (`:34`) overwrites the in-memory dict; nothing is persisted (the Supabase insert on `create_workspace` writes empty content once). There are **three** competing editor backends: `Editor_Service/main.py` (Socket.IO/Supabase), `Editor_Service/socket_server.py`, and `Editor_Service/server.js` (file-based, the one `start_project.bat` launches).
-- **Why it matters:** On the Python path, all collaborative content is lost on restart and `rooms_data` grows unbounded (memory leak). The triple implementation means behavior depends on which file is run; reviewers and operators cannot reason about it.
-- **Recommended direction:** Pick one backend, delete the others, and persist on every change (debounced) with a durable store.
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §2.3 — Dual schema management: `create_all` + Alembic
-- **Severity:** Medium · **Status:** ✅ FIXED (Clarity_Stack_V3) — `create_all` removed from `Backend/main.py`. Discovered the 5 migrations had drifted badly (empirically: they built only **7 of 13 tables**, missing `users/project_members/project_activity_logs/join_requests/quarantined_messages/synthesis` entirely + 16 columns — `create_all` had been silently masking this). Replaced the drifted chain with one **regenerated baseline** (`8026647f94d5`) autogenerated from the models, verified to match `create_all` output exactly (zero gaps). Startup now runs `_ensure_schema_at_head()`: **upgrade** for fresh DBs, **stamp** for pre-existing create_all DBs (adoption without re-running DDL), guarded by `RUN_MIGRATIONS_ON_STARTUP` (set `0` for multi-worker prod). Alembic is now the single source of truth.
-- **Evidence:** `Backend/main.py:27` `Base.metadata.create_all(bind=engine)` ran on every boot, while `Backend/migrations/versions/*` existed (5 migrations).
-- **Why it matters:** `create_all` only creates *missing* tables; it ignores column/type/default changes that migrations encode. Fresh DBs get the model shape, upgraded DBs get the migration shape → schema drift and "works on my machine" bugs (e.g. `server_default`/timezone migrations).
-- **Recommended direction:** Remove `create_all`; make Alembic the single source of truth; run `alembic upgrade head` on deploy.
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §2.4 — No global React error boundary
-- **Severity:** Medium · **Status:** ✅ FIXED (2026-06-28) — added `Web/Frontend/src/components/ErrorBoundary.tsx` (class boundary with `getDerivedStateFromError` + `componentDidCatch` that logs the real error) wrapping the whole app in `App.tsx`, with a "Try again" reset + "Go home" fallback. Directly addresses the "Boot Error masks real error" symptom — a secondary crash can no longer white-screen the SPA and hide the root cause.
-- **Evidence:** `Web/Frontend/src/App.tsx` wraps routes in providers but no `ErrorBoundary`. (Auto-memory note "Boot Error masks real error" is the symptom of exactly this class.)
-- **Why it matters:** Any uncaught render error white-screens the whole SPA with no recovery and an unhelpful stack, masking the real cause.
-- **Recommended direction:** Add a top-level error boundary with a reset path and a route-level fallback.
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §2.5 — `Promise.race` DB timeout leaks the losing query
-- **Severity:** Low · **Status:** ✅ FIXED (Clarity_Stack_V3) — `Satellite/routes/kg.js` now uses driver-level `.maxTimeMS(2000)` on the `KGSnapshot.findOne(...)` query instead of racing it against an uncancelled `setTimeout`. Mongo cancels the query server-side on overrun, so orphaned queries no longer pile up under the DB slowness that triggers the timeout. The catch detects the deadline via `err.code === 50 / codeName "MaxTimeMSExpired"` and still pivots to Live-Fetch.
-- **Evidence:** `Satellite/routes/kg.js:41` races `KGSnapshot.findOne(...)` against a 2s timer; the Mongo query is not cancelled when the timer wins.
-- **Why it matters:** Under DB slowness, orphaned queries accumulate, worsening the very contention that triggered the timeout.
-- **Recommended direction:** Use driver-level `maxTimeMS`, and treat the timeout as the query's own deadline rather than racing an uncancelled promise.
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §2.6 — `/health` checks nothing but pulls a DB session
-- **Severity:** Low · **Status:** ✅ FIXED (2026-06-28) — `/health` now runs `SELECT 1` against the injected session and returns **503** if it fails (so an orchestrator restarts a pod whose DB is unreachable), `{"status":"ok","db":"connected"}` otherwise.
-- **Evidence:** `Backend/main.py:30` injects `db` but returns `{"status":"ok"}` without touching it.
-- **Why it matters:** Health checks report healthy even when the DB is unreachable; orchestrators won't restart a broken pod.
-- **Recommended direction:** Execute `SELECT 1` (and dependency pings) or drop the unused dependency.
-
----
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ## §3 Data Integrity
 
 ### §3.1 — Frontend "demo mode" silently swallows user data
-- **Severity:** High · **Status:** ✅ FIXED (2026-06-28) — all write-path demo fakery removed from `Web/Frontend/src/lib/api.ts`: `createProject`, `createChat`, `createMessage`, `deleteChat` now always call the real API and throw on failure (never return synthetic success). Demo mode is now read-only and already visibly badged (the `isDemoMode()` banner on ProjectsPage/ChatsPage), satisfying §7.2. Reads still degrade gracefully to sample data behind that banner.
-- **Evidence:** `Web/Frontend/src/lib/api.ts:276` `getProjects` catch → `useDemoMode = true`. Once set, `createProject` (`:328`), `createChat` (`:406`), `createMessage` (`:462`) write only to in-memory mock arrays and return a fake success object. The flag is module-global for the session.
-- **Why it matters:** A single transient network blip flips the app into a fake-data mode for the rest of the session. The user creates projects/chats/messages, sees success, and loses everything on refresh — with no error. This is the most dangerous kind of data loss: silent and confidence-inspiring. (There is no default visible "demo mode" banner.)
-- **Recommended direction:** Remove demo-mode writes entirely, or make it explicit, opt-in, visibly badged, and read-only. Never return synthetic success for a write that did not persist.
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §3.2 — "Ask" pipeline is not atomic
-- **Severity:** Medium · **Status:** ✅ FIXED (Clarity_Stack_V3) — the AI response is now one atomic unit: provider messages + the `Synthesis` row + the synthesis `Message` are staged uncommitted and committed in a **single `db.commit()`**; any failure does `db.rollback()`, so a reply-group can never be left with provider rows but no synthesis (verified: forced-failure path leaves 0 orphan rows). The user message is intentionally committed first as its own valid unit (a later AI failure must not discard what the user typed). The derived KG build runs as a best-effort follow-on *after* the commit (rebuildable, so kept out of the atomic boundary).
-- **Evidence:** `Backend/main.py:919` commits the user message (`:946`), then provider messages (`:1016`), then synthesis (`:1088`) in separate transactions; the quarantine path (`:633`) also commits independently.
-- **Why it matters:** A provider/synthesis failure or client abort (§2.1) leaves orphaned user/assistant rows and reply-groups with no synthesis — corrupting the conversation graph that later feeds `build_chat_context` and the KG.
-- **Recommended direction:** Wrap the unit of work in one transaction (or saga with compensation); only surface success after the synthesis row commits.
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §3.3 — Editor file persistence is non-atomic and shares one debounce timer
-- **Severity:** Medium · **Status:** ✅ FIXED (Clarity_Stack_V3) — `writeJSON` writes to a temp file and `rename()`s into place (atomic on the same filesystem), so a crash mid-write can't truncate/corrupt `workspaces.json`. The debounce now has a **`MAX_SAVE_WAIT` cap**: the old version reset the timer on every keystroke, so a continuously-edited room never flushed (unbounded crash-loss window) — it now force-flushes at least every 10s under sustained edits (verified). Whole-file (vs per-workspace) persistence is kept **by design** at this scale; revisit per-workspace files only if it grows.
-- **Evidence:** `Editor_Service/server.js:43` `writeJSON` uses `fs.writeFileSync` (non-atomic, no temp+rename); `scheduleSave` (`:89`) keys every workspace's save under a single `saveTimers["_main"]`.
-- **Why it matters:** A crash during write can truncate `workspaces.json` (all workspaces in one file). A crash within the 1.5s debounce window loses recent edits. The committed `Editor_Service/data/*.json` files are also rewritten at runtime, so a clean checkout immediately has a dirty working tree.
-- **Recommended direction:** Atomic write (temp file + `rename`), per-record persistence, and stop committing runtime data (see §9.1).
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §3.4 — Divergent synthesis-message creation paths
-- **Severity:** Low · **Status:** ✅ FIXED (Clarity_Stack_V3) — both paths now build the synthesis `Message` via one `build_synthesis_message()` factory in `synthesis_service.py`, so the row shape is identical (`role="synthesis"`, `type="synthesis"`, `synthesis_id` wired, `accepted=True`, `signal_level="high"`). Also fixed a latent crash on the re-generation path: `save_or_update_synthesis` called `link_previous_decisions` with the wrong/missing `chat_id` arg.
-- **Evidence:** `Backend/main.py:1072` (in `ask_multi_model`) sets `role="synthesis"`, `synthesis_id=synth.id`, `accepted=True`. The separate `:1443` (`/synthesis/generate`) sets `role="assistant"`, `sender="synthesis"`, no `synthesis_id`, `accepted=False`.
-- **Why it matters:** Two code paths produce structurally different "synthesis" rows, so UI rendering, the `synthesis_id` wire, and `build_chat_context` treat them inconsistently.
-- **Recommended direction:** One factory function for synthesis messages used by both paths.
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §3.5 — Unbounded message list endpoint
-- **Severity:** Medium · **Status:** ✅ FIXED (2026-06-28) — `GET /chats/{id}/messages` now takes `limit` (default 500, max 1000) + `offset` query params and applies `.offset().limit()` on the existing `idx_messages_chatid_createdat` index, returning the latest page instead of the full unbounded history. Backward-compatible for any chat under 500 messages; longer histories can be paged.
-- **Evidence:** `Backend/main.py:645` `GET /chats/{chat_id}/messages` returns `.all()` with no pagination/limit.
-- **Why it matters:** Long-lived chats return ever-growing payloads → slow responses, large memory, slow render. (Also `ask` re-stores every provider's full output per message.)
-- **Recommended direction:** Cursor/limit pagination; default page size; index already exists (`idx_messages_chatid_createdat`).
-
----
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ## §4 Performance
 
@@ -166,44 +102,24 @@ This document is the intended single source of truth for technical risk. Finding
 - **Recommended direction:** Run blocking calls in a thread pool (`asyncio.to_thread`) or use async TLS; bound concurrency (a `batch_semaphore` exists but the blocking call escapes its benefit).
 
 ### §4.2 — SQLite as the primary multi-user store
-- **Severity:** Medium / High (production) · **Status:** ✅ RESOLVED (2026-06-30) — `Backend/database.py` **reads `DATABASE_URL` from env** (default SQLite for dev) with `check_same_thread` + WAL/FK/synchronous PRAGMAs **conditional on the SQLite dialect**, and the Postgres path is now **validated end-to-end** (see `issue_fixed.md §I`): full Alembic `downgrade base → upgrade head` cycle clean on `postgres:16-alpine`, `alembic check` reports **zero drift** vs the ORM models, and the app engine does an ORM write/read roundtrip on PG. (`create_all` no longer shadows Alembic — §2.3 closed in Clarity_Stack_V3.) Default remains SQLite for dev; production sets `DATABASE_URL` + `RUN_MIGRATIONS_ON_STARTUP=0`.
-- **Evidence:** `Backend/database.py:8` hardcodes `sqlite:///./claritystack.db`; WAL is enabled (`:24`) but `DATABASE_URL` env is **never read** despite the migration comment (`:48-54`).
-- **Why it matters:** SQLite permits one writer at a time. The write-heavy "ask" flow plus presence/membership writes will serialize and lock under real concurrency. The documented Postgres path is non-functional because the code ignores the env var.
-- **Recommended direction:** Read `DATABASE_URL` from env (default SQLite for dev), make pragmas conditional on the SQLite dialect, and validate the Postgres path before launch.
+- **Status:** ✅ Fixed — see [`issue_fixed.md §I`](./issue_fixed.md).
 
 ### §4.3 — Fuzzy signal classifier on every message
-- **Severity:** Low · **Status:** ✅ FIXED (Clarity_Stack_V3) — the duplicated hot-path heuristic is gone. `count_signal_words` (+ its `normalize`/`fuzzy_ratio`/`is_similar`/`TECH_KEYWORDS`/`STOPWORDS` and the local `import re`/`SequenceMatcher`) was already dead after the §6.2 shadow removal — it has now been **deleted** from `main.py`. The single live classifier is `signal_classify` (DistilBERT + heuristic fallback); no per-token `SequenceMatcher` runs on the `ask` path anymore.
-- **Evidence:** `Backend/main.py:1168` `count_signal_words` runs `SequenceMatcher` for each token × ~30 keywords on every `ask`.
-- **Why it matters:** Cheap individually, but it is duplicated logic (see §6.2) and runs on the hot path; worth consolidating.
-- **Recommended direction:** Precompute keyword sets / use token hashing; single implementation.
-
----
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ## §5 Security (additional to §1)
 
 ### §5.1 — `client-login` mints a signed token for any project with no secret
-- **Severity:** High · **Status:** ✅ FIXED (2026-06-28) — endpoint `POST /api/auth/client-login` **removed** from `Backend/main.py` (+ its `ClientLogin` model) and the "Client Access" toggle removed from `Web/Frontend/src/pages/Login.tsx` (now user/password only). The scheduler no longer depends on it: `cardScheduler.getServiceToken` mints a short-lived **service JWT locally** (`sub=service@claritystack.internal`, `role=service`, 10-min exp) signed with the shared `JWT_SECRET`; Core's `get_project_or_403` grants that reserved identity **read-only** project access. A proper owner-initiated client-share/invite flow is documented as future work.
-- **Evidence:** `Backend/main.py:79` `POST /api/auth/client-login` accepts a `project_id`, and if the project exists, returns a signed JWT (`role:"client"`). No password, no authorization.
-- **Why it matters:** Anyone who knows or enumerates a project id obtains a valid token. `Satellite/services/cardScheduler.js:14` `getServiceToken` even relies on this hole to mint "service" tokens — so the design depends on the vulnerability.
-- **Recommended direction:** Remove anonymous token minting; issue project/client tokens only to authenticated owners via an explicit "share" action; use a real service credential for the scheduler.
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §5.2 — Ownership reassignment via `update_project`
-- **Severity:** High · **Status:** ✅ FIXED (2026-06-28) — `owner` removed from the `update_project` editable set (now `{purpose, success_criteria, constraints}`). A PM can no longer self-assign ownership. A dedicated owner-only transfer endpoint remains future work.
-- **Evidence:** `Backend/main.py:1203` `update_project` allows the field set `{"purpose","success_criteria","constraints","owner"}` (`:1221`). A PM passes `to-this-route` and the loop `setattr(project, "owner", attacker_email)`.
-- **Why it matters:** A `pm` can set themselves as `owner`, gaining delete rights and full control — privilege escalation within the project.
-- **Recommended direction:** Drop `owner` from the editable set; ownership transfer should be an explicit, owner-only, audited endpoint.
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §5.3 — `requirePM` is a no-op; role is trusted from the JWT
-- **Severity:** Medium · **Status:** ✅ FIXED (Clarity_Stack_V3) — `requirePM` (`Satellite/middleware/auth.js`) is now an async guard that no longer trusts the JWT `role`. It reads `:projectId`, calls Core `GET /projects/:id/members` with the caller's Bearer token, and grants only if the **caller's own email** maps to `owner`/`pm` in Core's authoritative membership list (Core remains the single source of truth, same pattern as `requireProjectAccess`). Verified role is stashed on `req.user.projectRole`. Fail-closed: missing `:projectId` → 500, no token → 401, Core 401/403/404 → 401/403, Core unreachable → 502.
-- **Evidence:** `Satellite/middleware/auth.js:59` "For now, trust the role from JWT. Phase 2 will add core API verification." It only checks `req.user` is set.
-- **Why it matters:** Authorization decisions rely on a self-asserted role claim; combined with §1.1/§5.1, role gates are meaningless.
-- **Recommended direction:** Verify role/membership against core per request, or sign short-lived scoped claims server-side.
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §5.4 — Tokens in `localStorage`; no revocation/refresh
-- **Severity:** Medium · **Status:** ✅ FIXED (2026-06-28, hardened 2026-06-29) — migrated to hybrid auth: `httpOnly` access (15 min) + refresh (30 day) cookies with a JS-readable `csrf_token` and double-submit CSRF on cookie-authed mutations; service-to-service keeps the `Authorization: Bearer` path (cookie-first, header-fallback in `auth.py`). Stateful refresh-token rotation + DB session store (`RefreshToken`, migration `0029088d6806`) gives real revocation; a replayed (revoked) JTI wipes all of that user's sessions. Frontend reads **zero** tokens from `localStorage` (grep-verified). Full detail in [`issue_fixed.md §D`](./issue_fixed.md) and [`auth_hardening_walkthrough.md`](./auth_hardening_walkthrough.md). **2026-06-29 follow-up (`issue_fixed.md §D3`):** fixed a login `NameError`→500 (missing `request: Request` param) that the interrupted session left, and aligned the `/me` admin permission list with the `require_permissions` map.
-- **Evidence:** `Web/Frontend/src/lib/http.ts:19` reads `localStorage.getItem("token")`; `Backend/auth.py:20` 60-min expiry, no refresh, no server-side revocation list.
-- **Why it matters:** Any XSS exfiltrates a long-lived bearer token; logout cannot invalidate an issued token.
-- **Recommended direction:** Prefer httpOnly cookies with CSRF protection or short access + rotating refresh tokens; add a revocation/jti mechanism.
+- **Status:** ✅ Fixed — see [`issue_fixed.md §D`](./issue_fixed.md).
 
 ### §5.5 — Over-permissive CORS in three services
 - **Severity:** Medium · **Status:** ✅ FIXED (Clarity_Stack_V3) — bind hardening done: **Satellite** and **Editor** now `listen` on a configurable `BIND_HOST` that **defaults to `127.0.0.1`** (localhost-only); set `BIND_HOST=0.0.0.0` deliberately only when a reverse proxy/container fronts the service. Combined with the earlier (2026-06-28) explicit `ALLOWED_ORIGINS` allow-list (env-overridable via `CORS_ORIGINS`), both services no longer reflect arbitrary origins nor expose themselves on the LAN by default. The ThreatLens `allow_origins=["*"]` portion remains ⛔ DEFERRED (out of scope).
@@ -212,18 +128,10 @@ This document is the intended single source of truth for technical risk. Finding
 - **Recommended direction:** Explicit origin allow-list per environment; never combine `*` with credentials; bind to localhost unless a reverse proxy fronts it.
 
 ### §5.6 — No rate limiting on expensive/unauthenticated endpoints
-- **Severity:** Medium / High · **Status:** ✅ FIXED (2026-06-28, in-scope parts) — a real per-IP sliding-window rate limiter is now in place. **Core** (`Backend/rate_limit.py`, FastAPI dependency): `login` 10/min, `register` 5/min (brute-force), `ask` 30/min + `synthesis/generate` 20/min (paid-LLM/financial-DoS), returning 429 + `Retry-After`. **Satellite** (`middleware/rateLimit.js`): `generate/uml` 20/min and the four card-generation routes 10–15/min. **Caveat (documented):** the store is in-memory/per-process — under multiple workers the effective limit scales with worker count; move to Redis when scaling out (§10.9). ThreatLens `/predict/batch` portion remains DEFERRED (out of scope).
-- **Evidence:** No limiter anywhere. Unauthenticated, LLM-triggering routes: `Backend/main.py:1420` `/synthesis/generate`, `Satellite/routes/generate.js:8` `/generate/uml`, `ThreatLens_Service/app.py:683` `/predict/batch`.
-- **Why it matters:** Trivial cost-amplification / financial DoS (paid Groq/NVIDIA calls) and resource exhaustion.
-- **Recommended direction:** Per-IP and per-user rate limits + auth on all LLM/scrape endpoints; quota accounting.
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §5.7 — Backend synthesis read/write routes are unauthenticated
-- **Severity:** High · **Status:** ✅ FIXED (2026-06-28) — all four routes now require `get_current_user` + `get_chat_or_403`: `POST /chats/{id}/synthesis` and `POST .../synthesis/generate` are members-only (no `allow_public`, so anonymous callers can't trigger paid generation); the two GETs use `allow_public=True` to match sibling read routes. Consistent with the rest of the chat surface.
-- **Evidence:** `Backend/main.py:1355` `POST /chats/{chat_id}/synthesis`, `:1377` `GET .../synthesis`, `:1385` `GET .../synthesis/{reply_group_id}`, `:1420` `POST .../synthesis/generate` — none depend on `get_current_user`/`get_chat_or_403` (unlike their siblings).
-- **Why it matters:** IDOR: anyone can read or overwrite synthesis content for any chat id and trigger paid generation. Direct confidentiality/integrity/cost impact.
-- **Recommended direction:** Apply `get_chat_or_403` to all four, consistent with the rest of the chat routes.
-
----
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ## §6 Architecture
 
@@ -244,10 +152,7 @@ This document is the intended single source of truth for technical risk. Finding
 - **Status:** ✅ FIXED (Clarity_Stack_V3) — all three sub-items now closed (inline shadow removed, dead `backup.ts` deleted, editor backends consolidated).
 
 ### §6.3 — Environment/secret naming is inconsistent across services
-- **Severity:** Medium · **Status:** ✅ FIXED (Clarity_Stack_V3) — the secret name is unified on `JWT_SECRET` across Backend/Satellite/Editor (2026-06-28), and both Node services now ship a **validated, fail-fast env loader** (`Satellite/config/env.js`, `Editor_Service/config/env.js`). Each declares a required/optional schema, **aggregates every missing required var into one actionable boot error** (Satellite: `JWT_SECRET` + `MONGO_URI`; Editor: `JWT_SECRET`), and loads BEFORE routes/middleware so a misconfig fails loudly at boot instead of silently failing DB ops later. Optional vars (`PORT`/`BIND_HOST`/`CORE_API_URL`/`CORS_ORIGINS`/`SUPABASE_*`) carry safe local-dev defaults. Core Backend already fail-closes on `JWT_SECRET` (`Backend/auth.py`). Remaining tail (not loader-shaped): frontend `VITE_*` are **build-time** Vite vars (documented, not runtime-validatable) and a Backend aggregated loader is a nice-to-have on top of its existing fail-close.
-- **Evidence:** Core uses `JWT_SECRET`; Editor uses `SECRET_KEY` (§1.5); frontend uses `VITE_API_BASE_URL`/`VITE_SRS_API_URL`/`VITE_SATELLITE_URL`/`VITE_EDITOR_BACKEND_URL`/`VITE_SUPABASE_*` with localhost fallbacks; Satellite uses `MONGO_URI`/`CORE_API_URL`/`SMTP_*`.
-- **Why it matters:** A correct deployment is nearly impossible without tribal knowledge; mismatches fail silently (Editor) rather than loudly.
-- **Recommended direction:** One documented env schema with a validated loader per service that fails fast on missing required vars.
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §6.4 — Hardcoded service URLs prevent non-localhost deployment
 - **Severity:** Medium · **Status:** 🟡 PARTIAL (2026-06-28) — the two functional blockers are fixed: Core's `_call_satellite_cleanup` now reads `SATELLITE_API_URL` (was hardcoded `127.0.0.1:8003`), and the mailer join CTA reads `FRONTEND_URL` (was the broken `localhost:8080`, §7.3). Satellite's `CORE_API_URL` was already env-driven. **Still OPEN:** the dev CORS allow-lists in `main.py`/`SRS api.py` are still literal localhost lists (acceptable for dev), and the ThreatLens port-advert mismatch is DEFERRED (out of scope).
@@ -260,32 +165,18 @@ This document is the intended single source of truth for technical risk. Finding
 ## §7 UX
 
 ### §7.1 — No client-side route protection
-- **Severity:** Medium · **Status:** ✅ FIXED (2026-06-28) — added a `RequireAuth` outlet guard (`Web/Frontend/src/components/RequireAuth.tsx`); all protected routes in `App.tsx` are grouped under it, so a missing token redirects to `/login` immediately instead of flashing a protected shell. Public routes (`/`, `/login`, `/register`, `*`) stay open. 401 handling is now consistent across both clients: `fetchSatellite` clears the token + redirects to `/login` on 401, matching `http.ts`.
-- **Evidence:** `Web/Frontend/src/App.tsx:62-105` registers all routes (projects, settings, chats, KG, cards) with no auth guard. Protection is implicit via API 401 → `window.location.href="/login"` (`http.ts:41`).
-- **Why it matters:** Unauthenticated users load protected shells, see flashes of empty UI, then a hard redirect — janky and leaks app structure. Some pages (Satellite via `fetchSatellite`) don't even share the 401-redirect behavior (`api.ts:677`), so failures just toast/throw.
-- **Recommended direction:** A `RequireAuth` wrapper; consistent 401 handling across `http.ts` and `fetchSatellite`.
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §7.2 — Silent/invisible demo mode confuses users
-- **Severity:** Medium (UX facet of §3.1) · **Status:** ✅ FIXED (2026-06-28) — a visible "Demo Mode — backend unavailable, using sample data" banner is shown whenever `isDemoMode()` is true (ProjectsPage/ChatsPage), and writes no longer fake success (§3.1), so demo mode is now explicit and read-only.
-- **Evidence:** `api.ts:282` logs to console only; no default UI indication that data is fake.
-- **Why it matters:** Users cannot tell real from mock state.
-- **Recommended direction:** Visible, persistent banner whenever `isDemoMode()` is true; block writes.
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §7.3 — Broken email CTA
-- **Severity:** Low · **Status:** ✅ FIXED (2026-06-28) — the join-request email button now points at `${FRONTEND_URL}/projects` (env, default `http://localhost:8006`) instead of the dead `http://localhost:8080/projects`.
-- **Evidence:** `Satellite/services/mailer.js:87` links to `localhost:8080`.
-- **Why it matters:** Join-request emails are dead-ends.
-- **Recommended direction:** Use the configured public frontend URL (§6.4).
-
----
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ## §8 Product Logic
 
 ### §8.1 — "Deterministic / compiler-grade merge" is actually a non-deterministic LLM call
-- **Severity:** Low · **Status:** ✅ FIXED (Clarity_Stack_V3) — the drafted IR validators are now the **live gate**. `synthesize_content` (`Backend/synthesis_service.py`) — the single chokepoint for both LLM synthesis paths (`/ask` and `/chats/{id}/synthesis/generate`) — runs `validate_ir_structure(..., require_all_sections=False)` + `validate_conflict_semantics` on the cleaned output and raises `RuntimeError("synthesis_validation_failed: …")` on any violation. Fail-closed: both callers already catch → roll the AI unit back → return 503 instead of persisting/KG-ingesting malformed IR. Added a **subset mode** to `validate_ir_structure` (dropping an *empty* section is legal — the pipeline prunes them — but hallucinating one, emitting free-text, wrong order, or dup headers is not). Also fixed a pre-existing tuple-literal return annotation on both validators (`-> Tuple[bool, List[str]]`). Behavior verified: valid pruned output passes, free-text / wrong-order / bad-conflict / empty all rejected. (The earlier 2026-06-28 pass fixed the misleading "compiler-grade" wording → §11.6.) This is the enforcement half of §10.6; grounding synthesis *against source* is the remaining §10.6 work.
-- **Evidence:** `Backend/main.py:1056` comment "Deterministic synthesis (compiler-grade merge)" → `generate_and_store_synthesis` → `providers.ask_synthesis` (`providers.py:318`, Groq Llama, temperature 0 but still a model). Meanwhile `synthesis_service.validate_ir_structure` and `validate_conflict_semantics` (`:149`, `:187`) are defined but **never called** in the pipeline (`generate_and_store_synthesis:210` skips them).
-- **Why it matters:** The code/marketing claims a guarantee the implementation does not provide; the structural validators that *would* enforce it are dead code. The `RuntimeError`→"synthesis_validation_failed" branch (`main.py:1064`) is therefore effectively unreachable for validation reasons.
-- **Recommended direction:** Either wire the validators in (enforce IR structure before commit) or correct the language to "LLM-assisted synthesis."
+- **Status:** ✅ Fixed — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §8.2 — Silent permanent auto-enrollment on public projects
 - **Severity:** Low
@@ -351,17 +242,14 @@ This document is the intended single source of truth for technical risk. Finding
 - **Why it matters:** the system is not reproducibly buildable by a new contributor, reviewer, or deploy target. Blocks every deployment story and ties into §6.4 (localhost-only URLs). Dockerfile/compose (services + Postgres + Mongo + Redis) + Actions (lint → typecheck → test → build).
 
 ### §10.5 — Observability (structured logs, metrics, traces, cost)
-- **Priority:** P2 · **Effort:** 1–2 wk · **take §5.7** · **Status:** ✅ DONE (2026-06-30) — all four legs shipped (logs, metrics, traces, errors + a Grafana board). **Traces + errors (new, 2026-06-30):** `Backend/tracing.py` + `Satellite/tracing.js` wire **OpenTelemetry** (auto-instrument FastAPI/Express + outbound `requests`/`httpx`, so one request is a single distributed trace UI→Core→Gateway→provider and Core→Satellite via W3C `traceparent`; server spans stamped with `request_id` so a span and its log lines join on one id) and **Sentry** error tracking (captures the `request_error` the middleware already logs, tagged with `request_id`). Both are **optional and no-op unless enabled by env** (`OTEL_TRACES_ENABLED`/`OTEL_EXPORTER_OTLP_ENDPOINT`, `SENTRY_DSN`) — same dependency-free discipline as `metrics.py`; SDKs isolated in `Backend/requirements_observability.txt` / `Satellite/observability.packages.txt` so base install + CI stay lean. A **Grafana board** is provisioned in `observability/` (Tempo for traces, Prometheus scraping `/metrics`, dashboard JSON) and brought up by the opt-in `docker-compose.observability.yml` overlay. Tests `test_tracing.py` (5) + `tracing.test.js` (2) assert the gating + no-op contract. **Still open (minor):** id/trace propagation into Editor/SRS/UML — those are browser-driven, so it needs frontend OTel/header instrumentation (separate, low value). See [`issue_fixed.md §G`](./issue_fixed.md). **(Earlier, 2026-06-30) structured logging + cross-service correlation + metrics:** `Backend/logging_setup.py` emits **one JSON object per line** (ts/level/logger/msg/request_id/tenant) and stamps a per-request **`request_id`** (read from inbound `X-Request-ID` or minted) onto every line via a ContextVar that survives `asyncio.to_thread`. Satellite now mirrors this exactly — a new `Satellite/middleware/requestLogger.js` (AsyncLocalStorage + same JSON shape) reads/echoes `X-Request-ID`, logs a structured access line per request, and exposes a `slog` helper (used in the internal cleanup route). The Backend **forwards `X-Request-ID`** on its Satellite call, so **one request is now traceable Backend→Satellite by a single id** (verified: identical `request_id` in both services' JSON). `LOG_JSON=false` gives human-readable text in dev. **Metrics also shipped:** a dependency-free `Backend/metrics.py` exposes Prometheus text at **GET `/metrics`** — `clarity_http_requests_total{method,route,status}` (route = template, low-cardinality), a latency **histogram**, an exceptions counter, and LLM **token counters per provider** read from the gateway's own accounting (`llm_gateway._stats`, never re-counted); **cost** (`clarity_llm_cost_usd_total`) is emitted only when a price map is configured (env `LLM_PRICE_PER_1K_TOKENS`), never fabricated. **Still OPEN:** traces (OpenTelemetry spans), dashboards/alerts (Grafana), error tracking (Sentry), and propagating the id into the remaining services (Editor/SRS/UML).
-- **Evidence:** ~~only instrumentation is the stdout `log_requests` middleware~~ — superseded 2026-06-30: JSON structured logs + `X-Request-ID` correlation now span Backend + Satellite (see Status).
-- **Why it matters:** you cannot answer "what failed, where, how often, at what cost." Required to operate the system and to notice the runaway LLM spend that §5.6 enables. Cheap once §10.1 exists.
+- **Status:** ✅ Fixed — see [`issue_fixed.md §G`](./issue_fixed.md).
 
 ### §10.6 — Grounding + IR schema validation (hallucination control)
 - **Priority:** P2 · **Effort:** 1–2 wk · **take §5.5 (part 1)** · **Status:** 🟡 PARTIAL (2026-06-30) — **both halves now exist**. *Schema validation:* `validate_ir_structure` is the real fail-closed gate behind `synthesis_validation_failed` (§8.1, enforced). *Grounding:* a new `Backend/grounding.py` cites each synthesis IR bullet back to the provider messages that support it — reusing the KG token model (§10.3 parity) with an **asymmetric coverage** measure (fraction of the bullet's tokens present in a source) — and flags any bullet with no covering source as `grounded=false` (the hallucination signal). Exposed read-only at **GET `/chats/{chat_id}/synthesis/{reply_group_id}/grounding`** (recomputed from the stored synthesis + its provider messages; nothing persisted), returning per-bullet citations + a grounding ratio. **Still OPEN:** persisting citations alongside the synthesis (schema change) and surfacing them in the UI; grounding against the original user transcript, not just provider extractions.
 - **Why it matters:** nothing checked synthesis against source; the KG ingests whatever the LLM emits. The validators already drafted (§8.1 here / `synthesis_service.validate_ir_structure`) are now wired in as the real gate, and grounding adds the source-citation half. Upgrades §8.1 from "dead code" to "enforced" and adds a measurable hallucination signal.
 
 ### §10.7 — Postgres migration (retire SQLite)
-- **Priority:** P2 (follows §4.2) · **Effort:** 3–5 d · **take §2.4**
-- **Status note:** ✅ RESOLVED (2026-06-30, see `issue_fixed.md §I`). Integrity was hardened first (WAL/FK/single-engine; dual-`create_engine` bug fixed), then the Postgres path itself was **validated end-to-end** on `postgres:16-alpine` via `docker-compose.postgres.yml`: clean `downgrade base → upgrade head` cycle, `alembic check` **zero drift** vs ORM models, and an app-engine ORM roundtrip on PG. No SQLite-isms in raw SQL. SQLite stays the dev default; production opts into Postgres with `DATABASE_URL` + `RUN_MIGRATIONS_ON_STARTUP=0`. Unblocks §10.8 (pgvector RAG).
+- **Status:** ✅ Fixed — see [`issue_fixed.md §I`](./issue_fixed.md).
 
 ### §10.8 — Hybrid RAG / persistent memory
 - **Priority:** P3 · **Effort:** 2–4 wk · **take §5.2**
@@ -611,88 +499,52 @@ The original low scores were all **operational** — DevOps, Observability, AI e
 > Routes covered: `/projects`, `/projects/search`, `/discovery`, `/projects/:id/chats`, `/projects/:id/chats/:chatId`, `/projects/:id/{kg,delta,cards}`, `/srs/*`, `/editor/*`, `/uml/dashboard`, `/cards`, `/settings`.
 
 ### §15.1 — Read-path "demo mode" still ships mock fixtures (violates the "no mocks" goal)
-- **Severity:** High · **Status:** OPEN
-- **Evidence:** `lib/api.ts:127-272` still defines `mockProjects`/`mockChats`/`mockMessages`. `getProjects()` (`:276`) catches *any* error and returns `[...mockProjects]` + sets `useDemoMode=true`; `getChats()` (`:384`) and `getMessages()` (`:410`) then serve mock arrays for the rest of the session. §3.1/§7.2 removed *write* fakery and added a banner, but the **read path still substitutes fabricated projects/chats/messages** behind the banner.
-- **Why it matters:** A single transient failure on the projects fetch silently swaps the whole app onto demo data. The user asked explicitly for "no mocks." The fixtures should be deleted (or gated behind an explicit `?demo=1` build flag), and reads should surface the real error via `ErrorState` (which every page already renders).
-- **Direction:** Delete the three mock consts + `useDemoMode` swap; let `getProjects/getChats/getMessages` throw. Drop the demo banners on ProjectsPage/ChatsPage once the flag is gone.
+- **Status:** ✅ FIXED — see the §15 remediation table below.
 
 ### §15.2 — Mock fixtures are themselves corrupt (would crash/duplicate if ever shown)
-- **Severity:** Low (cosmetic until §15.1 triggers) · **Status:** OPEN
-- **Evidence:** `lib/api.ts:160-192` — `mockChats['demo-project-1']` contains the **same `id:'demo-chat-1'` twice** (duplicate React keys). `:195-213` — `mockChats['demo-project-2']` holds a chat whose `project_id` is `'demo-project-1'`. `mockMessages` (`:216-272`) keys on `demo-chat-2`/`demo-chat-3` which **don't exist** in `mockChats`. Dead, inconsistent data.
+- **Status:** ✅ FIXED — see the §15 remediation table below.
 
 ### §15.3 — SettingsPage is mostly dead / misleading controls
-- **Severity:** Medium (UX/trust) · **Status:** OPEN
-- **Evidence (`pages/SettingsPage.tsx`):**
-  1. **"Backend API URL" field** (`:33,:114`) writes `localStorage.cs_api_url`, but the core client (`lib/http.ts:5`) reads **only** `VITE_API_BASE_URL` env — it never reads `cs_api_url`. The field is a no-op for the core API; the only consumer of `cs_api_url` is the **SRS** base (`lib/api.ts:10`), so editing "Backend API URL" silently re-points the SRS service instead. Mislabeled + misleading.
-  2. **"Auto-sync" switch** (`:205`) → `cs_auto_sync`, never read anywhere (all polling intervals are hardcoded). Dead.
-  3. **Notifications + Sound + Analytics switches** (`:327,:337,:359`) are **not persisted** — `handleSave` (`:98`) only writes `profile`/`api`/`appearance`; the notifications/privacy toggles reset on reload and drive no behavior.
-  4. **Database panel** (`:235`) hardcodes "Using in-memory demo storage" regardless of the (real) SQLite/Postgres backend — stale copy.
-  5. **Profile copy** "stored in your secure account metadata" (`:173`) — nickname is `localStorage`-only (Supabase client is `null` in normal config; §15.11). Not synced to `/me`, device-local only.
-  6. **Logout fetch** hardcodes `http://127.0.0.1:8000` (`:401`) — same host-mismatch class as the fixed login bug (cookie set on `localhost` won't be sent to `127.0.0.1`, so server-side logout is a no-op; client only clears localStorage).
+- **Status:** ✅ FIXED — see the §15 remediation table below.
 
 ### §15.4 — KnowledgeInspector "Decision Cockpit" has hardcoded + dead UI (MessagesPage)
-- **Severity:** Medium · **Status:** OPEN
-- **Evidence (`pages/MessagesPage.tsx`):**
-  - `:916` renders a literal **`↳ Depends on Synthesis #3`** cross-link cue — hardcoded, shown on every synthesis regardless of data.
-  - `:1025-1029` — NodeCard **"Validate"** and **"+ Task"** buttons have **no `onClick`** (pure decoration).
-  - `:853-866` — temporal toggle **current/history/drift**: `setTemporalMode` flips state but `temporalMode` is never read in any data path → 3 buttons that do nothing.
-  - `:821-832` — the 3 metric gauges (Support/Opposition/Uncertainty) are `confidence × arbitrary constant (20/25/15)` clamped to 100 — presented as precise "%" but the weights are made-up.
+- **Status:** ✅ FIXED — see the §15 remediation table below.
 
 ### §15.5 — ProjectSearch "Retry" button is a no-op
-- **Severity:** Low · **Status:** OPEN
-- **Evidence:** `pages/ProjectSearch.tsx:91` — `<ErrorState ... onRetry={() => handleSearch} />` returns the function reference instead of calling it (and `handleSearch` needs a form event). Clicking Retry does nothing. Fix: `onRetry={() => handleSearch(new Event('submit') as any)}` or refactor `handleSearch` to not require the event.
+- **Status:** ✅ FIXED — see the §15 remediation table below.
 
 ### §15.6 — PMs are wrongly excluded from the inline Join-Requests panel
-- **Severity:** Medium · **Status:** OPEN
-- **Evidence:** `pages/ChatsPage.tsx:202-204` computes `isOwnerOrPm` as **`project.owner === currentUserEmail`** (owner only — ignores the `pm` role it correctly derives into `memberRole`/`currentUserRole`). It is passed to `JoinRequestsPanel` (`:519`), whose `if (!isOwnerOrPm) return null` (`JoinRequestsPanel.tsx:59`) then hides the panel from PMs — despite the name and despite PMs being able to approve requests via the Settings → Requests tab. Use `currentUserRole === 'owner' || currentUserRole === 'pm'`.
+- **Status:** ✅ FIXED — see the §15 remediation table below.
 
 ### §15.7 — Project "Owner" is editable in the UI but the backend ignores it (silent no-op)
-- **Severity:** Medium (UX/trust) · **Status:** ✅ FIXED (2026-06-29)
-- **Evidence:** EditProjectBannerModal (`pages/ChatsPage.tsx`) exposed an editable **Owner** field and sent it via `updateProject`, but §5.2 dropped `owner` from the backend's `update_project` allow-list (`{purpose, success_criteria, constraints}`, `Backend/main.py:1418`), so the save toasted "updated" while owner was unchanged on reload.
-- **Correction:** the **chat** owner field is NOT a no-op — `update_chat` (`Backend/main.py:1470`) `setattr`s every set field including `owner`, so EditChatBannerModal's owner edit persists correctly and was left in place.
-- **Fix:** removed the dead Owner field from EditProjectBannerModal (`ChatsPage.tsx`) only.
+- **Status:** ✅ FIXED — see the §15 remediation table below.
 
 ### §15.8 — UML dashboard hardcodes the embedded service URL
-- **Severity:** Medium · **Status:** OPEN (port half fixed in `start_project.bat` this session)
-- **Evidence:** `pages/uml/Dashboard.tsx:7` — `const UML_SERVICE_URL = "http://localhost:8007"` (also `:74,:128,:188`), no env/`window.location.hostname` fallback (inconsistent with Editor `:45` and the Messages WS `:104-106`). **Directly tied to the `start_project.bat` fix:** before tab 8 was pinned to `--port 8007`, the UML UI ran on Vite's default 5173, so this iframe always showed "UML-Clarity is not running / Offline." Now aligned. Still won't work off-localhost. Also `postMessage(..., '*')` (`:50`) uses a wildcard target origin.
+- **Status:** ✅ FIXED — see the §15 remediation table below.
 
 ### §15.9 — Personalized greeting never populates at login
-- **Severity:** Low · **Status:** OPEN
-- **Evidence:** `cs_nickname` is **only** written in `pages/SettingsPage.tsx:102` (manual profile save). Login (`pages/Login.tsx`) stores only `cs_email`, never the nickname from `/me`. So `ProjectsPage.tsx:105` ("Hello, X" vs "Projects") and `editor/Dashboard.jsx:34` ("Hello, User") fall back until the user visits Settings and saves. Fetch + store nickname on login (or read `/me` on app boot).
+- **Status:** ✅ FIXED — see the §15 remediation table below.
 
 ### §15.10 — Remaining `127.0.0.1` host-mismatch references
-- **Severity:** Low · **Status:** OPEN (Login/Register fixed this session)
-- **Evidence:** Beyond the fixed auth pages, `127.0.0.1:8000` is still hardcoded in `SettingsPage.tsx:33,190,401` and surfaced as user-facing copy in the demo banners (`ProjectsPage.tsx:88`) and `ProjectsPage`/`SettingsPage` "Connect to …" text. Normalize all to the same env-driven base the rest of the app uses.
+- **Status:** ✅ FIXED — see the §15 remediation table below.
 
 ### §15.11 — Orphaned / dead components and patterns
-- **Severity:** Low (tech debt; one security note) · **Status:** OPEN
-- **Evidence:**
-  - **Parallel Supabase auth, orphaned:** `pages/editor/App.jsx` + `pages/editor/Login.jsx` (Supabase email/password auth) are **not wired into the main router** (`App.tsx` mounts editor `Dashboard/Workspace/Snapshot` directly). They're a dead standalone bundle — a second auth system that, if ever re-routed, bypasses the cookie/JWT auth. `supabaseClient.ts` is `null` unless `VITE_SUPABASE_*` set, but `SettingsPage.tsx:66-90` still imports it.
-  - **`components/cards/CardFilterBar.tsx`** — no importers (orphaned).
-  - **`components/cards/KnowledgeCard.tsx`** (+ its `CardEditModal`) — CardsPage imports only the *types* (`KnowledgeCardData`, `CardType`), not the component; appears unused as a rendered component (verify before deleting).
-  - **`ChatCard.tsx:67-94`** — `handleDelete`/`handlePin` + `MoreVertical/Star/Archive/Trash2` imports are defined but never rendered (the actual dropdown lives in `ChatsPage.tsx:586`). Dead.
-  - **`TemporalCardsPage.tsx:135` `handleRefresh` / imported `refreshCard`** — no button renders it. Dead.
-  - **Full-page reloads instead of SPA nav:** `ProjectsPage.tsx:112` (`window.location.href='/projects/search'`), CardsPage "Generate Now"/"Re-initialize" (`:186,:311`), and `http.ts`/`api.ts` 401 redirects via `window.location.href` — drop SPA state and re-bootstrap the bundle.
+- **Status:** ✅ FIXED — see the §15 remediation table below.
 
 ### §15.12 — Over-eager polling on MessagesPage
-- **Severity:** Low/Medium (perf) · **Status:** OPEN
-- **Evidence:** `pages/MessagesPage.tsx` runs **two** 4s intervals: messages (`:306`) and chat-meta (`:224`). The meta loop calls `getChat` **and** `getProject` **and** `getProjectMembers` every 4s (`:173,:185,:189`) — 3 calls/4s purely to re-derive a role that rarely changes, on top of the message poll. Derive role once (or on focus), and back off/stop polling when the tab is hidden.
+- **Status:** ✅ FIXED — see the §15 remediation table below.
 
 ### §15.13 — CardsPage (`/cards`): non-persistent pin + decorative fakes
-- **Severity:** Low · **Status:** OPEN
-- **Evidence:** `pages/CardsPage.tsx:147` — `togglePin` mutates local state only; there is no pin API, so pins vanish on reload. `:287` — three hardcoded **"AI"** avatar circles (fake collaborators). `:186` — "Generate Now" (copy: "trigger the synthesis engine") just calls `window.location.reload()`; real generation lives on TemporalCardsPage. `:210` — "Neural Synthesis Active" is a static decorative badge.
+- **Status:** ✅ FIXED — see the §15 remediation table below.
 
 ### §15.14 — Delta "Generate AI Card" ignores the selected delta
-- **Severity:** Low · **Status:** OPEN
-- **Evidence:** `pages/DeltaTimelinePage.tsx:51-63` — `handleGenerateCard(deltaId)` takes a `deltaId` but calls `generateTemporalCard(projectId)` (project-level), so the per-delta "Generate AI Card" button doesn't actually synthesize from that delta window.
+- **Status:** ✅ FIXED — see the §15 remediation table below.
 
 ### §15.15 — KnowledgeGraph empty-state points at a missing action
-- **Severity:** Low · **Status:** OPEN
-- **Evidence:** `pages/KnowledgeGraphPage.tsx:600` empty-state says "No data — trigger a snapshot first," but the page has **no Snapshot button** (only "Reload"); it reads Backend `/api/reasoning/chat/:id` (`:131`) and never uses the Satellite KG endpoints (`getKnowledgeGraph`/`snapshotKnowledgeGraph` in `api.ts` are unused by this page). Update the copy or add the snapshot control.
+- **Status:** ✅ FIXED — see the §15 remediation table below.
 
 ### §15.16 — Minor correctness nits
-- **Severity:** Low · **Status:** OPEN
-- **Evidence:** `MessageBubble.tsx:93` appends `"Z"` unconditionally (`new Date(message.created_at + "Z")`) — double-`Z` risk if the API ever returns a Z-suffixed timestamp (other components guard with `endsWith("Z")`). `ProjectSettingsPanel.tsx:111,192` — the Requests-tab unread badge (`pendingCount`) only populates **after** the Requests tab is opened (lazy fetch), so it never pre-warns. `Sidebar.tsx:43` — `startsWith(item.to)` marks "Projects" active on every `/projects/*` route (acceptable, but can double-highlight).
+- **Status:** ✅ FIXED — see the §15 remediation table below.
 
 ### §15 — What's actually solid (no findings)
 Real data, correct wiring, good error/empty/loading states: **ProjectCard**, **CreateProjectModal**, **ProjectSettingsPanel** (members/requests/activity/danger all hit real APIs), **DiscoveryPage** (graceful Satellite degradation), **KnowledgeGraphPage** (live force-graph off real reasoning), **DeltaTimelinePage**, **TemporalCardsPage**, **SRS Dashboard** (real upload → SRS svc via env base), **Editor Dashboard** (real Editor svc, cookie+CSRF), **MessageInput/MessageBubble** (accept/summary toggles real). The defects above are concentrated in (a) the demo-mode read fallback, (b) SettingsPage, (c) decorative/placeholder UI in the synthesis & cards surfaces, and (d) a handful of dead handlers/buttons.
@@ -727,44 +579,28 @@ Real data, correct wiring, good error/empty/loading states: **ProjectCard**, **C
 > **Mode:** Not wiring — the *engine* of each feature traced through Core (FastAPI) → Satellite (Express/Mongo): algorithms, data integrity, race conditions, and whether each feature actually does what it claims. Deeper than §15 (UI). All **OPEN**.
 
 ### §16.1 — Ensemble is "diverse" in name only → measured-confidence is inflated
-- **Severity:** High (research integrity / product claim) · **Status:** ADDRESSED (2026-06-29 — 8B Llama swapped for non-Llama `openai/gpt-oss-20b`; agreement signal no longer homogeneity-inflated. See issue_fixed §E7.)
-- **Evidence:** `EXTRACTION_ENSEMBLE` (`providers.py:294`) = `groq:llama-3.3-70b` + `groq:llama-3.1-8b-instant` + `nvidia:llama-3.1-70b` — **2 providers, all Llama family**. `agreement.py` measures agreement *lexically* (Jaccard cluster), then `apply_measured_confidence` stamps it as the synthesis CONFIDENCE.
-- **Why it matters:** Near-homogeneous models phrase claims similarly, so they **lexically agree more often regardless of truth** → the measured-agreement "honest confidence" (§11.4) reads systematically *high*. Add a genuinely different architecture (NVIDIA Mixtral/Gemma — already in `MODELS`) to the live ensemble.
+- **Status:** ✅ Resolved — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §16.2 — KG relationships are a blind cartesian product, not extracted reasoning
-- **Severity:** High (core feature is semantically hollow) · **Status:** ADDRESSED (§17.4, 2026-06-29)
-- **Evidence:** `knowledge_graph_builder.build_graph_from_ir` (`:54-67`) links **every** node in a section to **every** DECISION node (5 facts × 3 decisions ⇒ 15 `SUPPORTS` edges). `link_previous_decisions` (`:73-95`) cross-links every old↔new decision as `REFINES`.
-- **Why it matters:** The graph asserts "Fact X supports Decision Y" for **all** pairs — relationships are fabricated, not extracted. `get_decision_explanation` (`reasoning_queries.py:45`) sidesteps the edge helpers with flat lists re-grouped client-side by `synthesis_id`, so the edges are stored, wrong, and mostly unused (DB bloat + latent trap). Also `parse_ir_from_synthesis` returns SUMMARY/CONFIDENCE, so **confidence-metadata bullets become KnowledgeNodes**. Direction: emit explicit edges from synthesis, or link by similarity; exclude SUMMARY/CONFIDENCE.
+- **Status:** ✅ Resolved — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §16.3 — Delta Engine tracks UUID churn, not knowledge change
-- **Severity:** High (feature doesn't deliver its premise) · **Status:** ADDRESSED (§17.3, 2026-06-29 — engine fixed; live Satellite demo pending Mongo/Atlas reachability)
-- **Evidence:** `deltaEngine.computeDiff` (`:175`) diffs snapshots by **`nodeId` (UUID)**. Core mints fresh UUIDs per node every synthesis (`build_graph_from_ir`→`gen_id()`), nodes are **append-only** (old never deleted), regeneration re-ids identical content.
-- **Why it matters:** Added/Removed reflect **identity, not content**: re-extracted identical facts read as churn; superseded knowledge is never "removed" so the **Removed column is ~always empty**; "+N additions" ≈ "asks happened," not evolution. Plus `fetchKGFromCore` does an **N+1 serial HTTP fan-out** (one `/api/reasoning` per chat) and every compute writes a new Mongo snapshot (unbounded). Direction: diff on normalized **content hash** keyed by (section, content); supersede instead of append.
+- **Status:** ✅ Resolved — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §16.4 — Temporal Cards: "temporal" is disabled, "Commit to KG" is a dead-end
-- **Severity:** High · **Status:** ✅ MOSTLY RESOLVED (2026-06-30, see `issue_fixed.md §J` + `temporal_cards_16_4_analysis.md`). "Commit to KG" + dup-version spawning fixed; expiry confirmed intentional; coarse chaining deferred.
-- **Evidence (`cardChainer.js`):** `expireOldCards` (`:350`) is a hard `return 0` no-op — nothing ever expires/goes `stale` despite `expiresAt` + the UI's expiry framing; `getExpiredCards` always `[]`. `applyKGDiff` (`:156`) writes card KG nodes into a **Satellite `KGSnapshot`** (`chatId:"auto"`), but the KG page reads **Core** `/api/reasoning` — so **"Commit to KG" never shows in the visualized graph** (and feeds §16.3 churn). `generateCardFromChat` "always works" fallback (`:275`) re-summarizes the last 5 messages when nothing's new ⇒ repeat clicks spawn near-dup versions. Chaining keys on **coarse category**, conflating unrelated risks/decisions into one lineage.
-- **Resolution:**
-  - **"Commit to KG" dead-end → FIXED (option A, Core ingestion).** New authz'd `POST /chats/{chat_id}/kg/ingest` (`Backend/main.py`) inserts `KnowledgeNode`/`KnowledgeEdge` into Core Postgres, attached to the card's source chat — so card knowledge renders in `KnowledgeGraphPage` (which reads Core) and survives `takeSnapshot` re-sync. Idempotent per `(chat, section, content)`. Satellite `applyKGDiff` → `pushKGToCore` (token threaded through pipeline + `update-kg` route). Tested: `test_kg_ingest.py`.
-  - **Dup-version spawning → FIXED.** `generateCardFromChat` no longer regenerates when a card exists and nothing is new (returns existing + `upToDate:true`); last-5 seed only on true first run. (Also fixed a pre-existing `ChatCard.tsx` "undefined" toast.)
-  - **`expireOldCards` no-op → NOT A BUG (intentional).** `"Expiry removed per user request"`; `TemporalCard` has no `expiresAt` field and there is no card-expiry UI — the audit's premises were false. Left as-is (re-enabling would reverse a user decision). Optional vestigial "stale" messaging cleanup noted.
-  - **Coarse-category chaining → PARTLY FIXED.** Cross-chat conflation fixed: version lineage is now scoped to `{project, chat, category}` (honors the writer's `chainIndex`) via the pure `chainParentFilter` — so a card in one chat no longer versions over an unrelated card in another. Tested (`Satellite/test/cardChainer.test.js`). **Still deferred:** splitting two *unrelated* threads within the **same** chat (needs data-tuned semantic similarity).
+- **Status:** ✅ Resolved — see [`issue_fixed.md §J`](./issue_fixed.md).
 
 ### §16.5 — Synthesis IR gate can 503 a valid answer on an English-phrasing technicality
-- **Severity:** Medium (reliability cliff) · **Status:** ADDRESSED (§17.2, 2026-06-29)
-- **Evidence:** `synthesize_content` (`synthesis_service.py:310-315`) raises ⇒ `/ask` rolls back ⇒ 503 if `validate_conflict_semantics` (`:230`) finds a CONFLICT bullet lacking a hardcoded English connective (` vs `, ` but `, ` however`…). A correctly-identified conflict phrased without those tokens (or non-English) **nukes the whole synthesis**, no retry. Direction: soft-drop the offending bullet, don't 503 the answer.
+- **Status:** ✅ Resolved — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §16.6 — Join-request approval is non-idempotent → duplicate members
-- **Severity:** Medium (data integrity) · **Status:** ✅ FIXED (2026-06-29 — status enum validated, pending-guard + existing-member check; no dup members. issue_fixed §E7.)
-- **Evidence:** `update_join_request` (`main.py:533`) adds a `ProjectMember` on `accepted` with **no existing-member check, no `status=="pending"` guard** (unlike `invite_user:559`). Two PMs approving / double-click before optimistic refresh / re-PATCH / approving an already-auto-enrolled public user ⇒ **duplicate member rows**. `status` is an unvalidated raw query string. Direction: guard status, upsert member, validate enum.
+- **Status:** ✅ Resolved — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §16.7 — `ask_direct_answer` stores its error string as the answer
-- **Severity:** Low/Medium · **Status:** ✅ FIXED (2026-06-29 — `ask_direct_answer` raises; `/ask` fallback → 503, no error-string persisted. issue_fixed §E7.)
-- **Evidence:** `providers.ask_direct_answer` (`:412`) `except` returns `"I encountered an error… {e}"` as the answer; `/ask` fallback (`main.py:1271`) persists it as `accepted=True` ⇒ provider errors become permanent conversation/KG content (extraction returns `None` to skip; this path doesn't).
+- **Status:** ✅ Resolved — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §16.8 — Signal classifier can silently swallow a real question (no override)
-- **Severity:** Medium (UX) · **Status:** ✅ FIXED (2026-06-29 — `ask_anyway` override bypasses the noise gate; "Ask Anyway" banner. issue_fixed §E7.)
-- **Evidence:** `/ask` (`main.py:1195`) drops any message `classify_signal` (`signal_classify.py:78`, DistilBERT) labels `noise` — canned reply, `noise_filtered`, **no answer, no force-send**. A false negative silently eats a legit question. Direction: "Ask anyway" override (`force=true` skips the gate).
+- **Status:** ✅ Resolved — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §16 — What's genuinely strong
 `/ask` orchestration (concurrent extraction, atomic provider+synthesis commit §3.2, measured confidence §11.4), `agreement.py` metric design (honest, deterministic, self-documenting lexical floor), the IR structural validators, WebSocket presence auth (cookie→JWT→`get_chat_or_403`, fail-closed), and rate-limited/RBAC-gated endpoints are careful engineering. The defects above are about **semantic fidelity** (KG edges, delta, card→KG) and **reliability/idempotency cliffs**, not broken plumbing.
@@ -774,36 +610,16 @@ Real data, correct wiring, good error/empty/loading states: **ProjectCard**, **C
 ## §17 New Features (creative direction)
 
 ### §17.1 — Disagreement Spotlight ✅ BUILT (2026-06-29)
-- **What:** Surfaces the claims the ensemble did NOT unanimously extract ("contested") as a first-class signal — turning hidden model disagreement into the product's signature brainstorming view. Directly monetizes the wasted signal called out in §16.1: the agreement engine already knew *where* models diverged; now the user sees it.
-- **Engine (zero extra model calls):** `agreement.analyze_claims()` / `contested_claims()` re-cluster the per-provider IR (same Jaccard@0.5 as measured confidence) and keep the bullet text + contributing models per cluster. A claim with `support < n_models` is contested; `support == 1` (only one model said it) is flagged hardest.
-- **API:** `GET /chats/{chat_id}/synthesis/{reply_group_id}/disagreement` — recomputes on demand from the provider extraction blocks already persisted at `/ask` time (no migration, no new column). Auth: `get_chat_or_403(allow_public=True)`, consistent with sibling synthesis reads (§5.7).
-- **UI:** `DisagreementSpotlight` panel in the Decision Cockpit (`MessagesPage.tsx`) — "Where the AIs split" with `contested/total` badge, per-claim section chip, `support/N models`, ⚠ lone-claim marker, and the honest model labels; a green "Full consensus" state when all models agreed.
-- **Verified:** unit-exercised (correctly isolates lone claims from consensus), `tsc` clean, route live on the running server.
+- **Status:** ✅ Built — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §17.2 — Ask-Anyway override + Devil's Advocate ✅ BUILT (2026-06-29)
-- **What:** Two things. (a) The §16.5 conflict-semantics gate no longer 503s a valid answer — the caller can re-run with the gate relaxed. (b) "Devil's Advocate" red-teams a committed decision (risks / shaky assumptions / failure modes / counter-argument), so a choice is stress-tested before it's relied on.
-- **Engine (Ask-Anyway):** new `ConflictGateError` (distinct from a plain `RuntimeError`) in `synthesis_service.py`; `synthesize_content(strict_conflict=)` splits the gate so **structural** validation stays fail-closed in every mode while **conflict-semantics** becomes recoverable. `/ask` on the gate rolls back the AI unit *and deletes the just-committed user turn*, returning `200 {status:"conflict_gate", can_retry_ask_anyway:true}` — so the "Ask Anyway" retry (`ask_anyway:true`) leaves **no duplicate user message**. Same flag threaded through `/synthesis/generate`.
-- **Engine (Devil's Advocate):** `providers.ask_devils_advocate` *raises* on failure (never stores an error string as a critique — fixes the §16.7 pattern); `devils_advocate.py` builds a red-team prompt from the synthesis DECISION + context and deterministically parses `RISK/ASSUMPTION/FAILURE_MODE/COUNTERPOINT` bullets. No DECISION ⇒ no model call.
-- **API:** `GET /chats/{chat_id}/synthesis/{rg}/devils-advocate` — members-only (no `allow_public`) + rate-limited (paid LLM call), computed from stored synthesis (no migration). `AskPayload.ask_anyway` added.
-- **UI (`MessagesPage.tsx`):** amber "Answer held back → **Ask Anyway / Dismiss**" banner above the composer; a "Red-team this decision" panel in the Decision Cockpit rendering categorised challenge cards.
-- **Verified:** 6 engine tests (gate strict raises / ask_anyway bypass / structural fail-closed even with ask_anyway / critique parser / no-decision skip / prompt build); `tsc` 0; route live (401 unauth, in openapi). **Live drive:** real `/ask` *tripped the gate*, `ask_anyway` retry returned `ok`; Devil's Advocate returned **9 real challenges** (`groq:llama-3.3-70b-versatile`).
-- **Note:** §16.8 noise-gate override was NOT bundled here (scope re-aimed at the §16.5 conflict gate, the actual answer-killer). A `force=true` for `classify_signal=="noise"` remains a small follow-up.
+- **Status:** ✅ Built — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §17.3 — Real Evolution Timeline (content-hash delta) ✅ BUILT (2026-06-29)
-- **What:** The Delta Engine measured *that an ask happened* (UUID churn), not *how the thinking evolved* (§16.3). It now diffs on normalized **content**, so re-asking an unchanged question adds ~0 and "+N" means N genuinely new ideas.
-- **Engine (`Satellite/services/deltaEngine.js`):** `computeDiff` rewritten to key nodes on `nodeContentKey = SECTION::normContent(content)` and edges on `edgeContentKey` (endpoints resolved to *their* content keys, not churned UUIDs), with `dedupeByKey` so duplicate restatements within a window count once. Append-only no longer inflates Added; semantically identical edges stop re-appearing.
-- **API/UI:** unchanged shape (`totalAdded/totalRemoved/addedNodes/...`) — `DeltaTimelinePage` and the routes are untouched; the honest "No structural changes detected" state now actually fires on an identical re-ask.
-- **Verified:** 7 Node unit tests (identical-restatement→not added, append-only→not removed, new content→added, dedupe, edge churn collapse, section scoping). **Live:** blocked only by the Satellite's MongoDB Atlas cluster being unreachable (`buffering timed out`) — infra, not code; the old code fails there identically.
+- **Status:** ✅ Built — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §17.4 — Semantic KG edges + "Why this decision?" trace ✅ BUILT (2026-06-29)
-- **What:** Edges are no longer a blind cartesian product (§16.2). Each non-decision node is attributed only to the decision(s) it is actually related to, and a grounded trace explains each decision from those real edges.
-- **Engine (`knowledge_graph_builder.py`):** `relate_node_to_decisions` (lexical Jaccard, same dependency-free method as `agreement.py`) replaces the `for src: for dst:` cross-product — 1 decision ⇒ attribute (unambiguous); N decisions ⇒ attach to the highest-overlap decision(s) (ties included); **zero overlap ⇒ no edge** (honest silence over a fabricated relationship).
-- **Trace (`reasoning_queries.get_decision_trace`):** walks the now-semantic `KnowledgeEdges` into each DECISION, grouped by relation with a human phrase ("rests on" / "is challenged by" / …) and the **shared terms** that justified each link (auditable, not asserted).
-- **API/UI:** `GET /chats/{chat_id}/decision-trace` (pure DB read); `getDecisionTrace` + `DecisionTracePanel` ("Why this decision?") in the Decision Cockpit, filtered to the current synthesis.
-- **Verified:** 5 attribution unit tests + a **DB integration test** (2-decision IR ⇒ **3 real edges, not the 6 cross-product**, no cross-decision fabrication, trace grounded with shared terms); `tsc` 0; route live (401, in openapi). **Live drive:** a real 2-decision `/ask` produced a trace where the Postgres decision "rests on" Postgres facts (shared `[concurrent, postgres, writers]`) and the frontend decision linked its own evidence — no cross-wiring.
+- **Status:** ✅ Built — see [`issue_fixed.md`](./issue_fixed.md).
 
 ### §17.5 — Decision Readiness + Resolve-Path ✅ BUILT (2026-06-29) · capstone flagship
-- **What:** The question the product exists to answer — *is this decision ready to act on yet, and if not, what is the cheapest path to get there?* A per-decision verdict (**Exploratory / Forming / Ready**) plus a prioritized **resolve-path**: the specific open questions, conflicts, and unvalidated assumptions to clear, each tagged with the readiness it would unlock.
-- **Engine (`decision_readiness.py`, zero extra model calls):** fuses signals already computed honestly — measured inter-model agreement (§10.3, carried on the decision node's `confidence`) + the now-SEMANTIC KG edges (§17.4: SUPPORTS / CONTRADICTS / BLOCKS / DEPENDS_ON). Readiness is a balance around a **neutral prior** with *bounded* terms (agreement ±0.25, evidence ≤+0.20, per-item friction), so one noisy agreement number (the §16.1 Llama-heavy floor) can't flatten every decision — friction + evidence still differentiate. Constants are documented/tunable, never a black-box gauge; the resolve-path orders biggest-lever-first (open question → conflict → assumption).
-- **API/UI:** `GET /chats/{chat_id}/decision-readiness` (pure read). `DecisionReadinessPanel` sits at the TOP of the Decision Cockpit — verdict badge + readiness bar + evidence chips + the "Resolve N to raise readiness" checklist with per-step `+%` unlock.
-- **Verified:** unit (band thresholds + biggest-lever-first ordering) + **DB integration** (clean decision ⇒ 0.89 **Ready**, contested decision ⇒ lower band with an ordered BLOCKS→CONTRADICTS resolve-path); `tsc` 0; route live (401, in openapi). **Live drive:** on the real (noisy, multi-ask) chat it honestly reports the decisions as **Exploratory (0–9%)** — low measured agreement + several open questions — and hands back a concrete 3–4 item resolve-path per decision instead of a falsely confident score.
+- **Status:** ✅ Built — see [`issue_fixed.md`](./issue_fixed.md).
