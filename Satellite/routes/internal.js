@@ -1,6 +1,7 @@
 const express = require("express");
 const router = express.Router();
 const jwt = require("jsonwebtoken");
+const { slog } = require("../middleware/requestLogger");
 
 const TemporalCard = require("../models/TemporalCard");
 const GraphDelta = require("../models/GraphDelta");
@@ -63,11 +64,12 @@ router.post("/cleanup", requireInternalAuth, async (req, res) => {
       return res.status(400).json({ error: "Invalid scope (must be 'project' or 'chat')" });
     }
 
-    console.log(`[Internal] Cleanup for ${scope} ${id}: deleted ${JSON.stringify(result)}`);
+    // request_id is stamped automatically (same id the Backend logged for this request).
+    slog.info("internal_cleanup", { scope, id, deleted: result });
     return res.json({ status: "success", scope, id, deleted: result });
 
   } catch (error) {
-    console.error(`[Internal] Error during cleanup: ${error.message}`);
+    slog.error("internal_cleanup_failed", { scope, id, error: error.message });
     return res.status(500).json({ error: "Failed to run cleanup" });
   }
 });
