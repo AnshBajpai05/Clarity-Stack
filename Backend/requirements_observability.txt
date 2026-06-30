@@ -1,0 +1,9 @@
+# Optional observability extras (§5.7) — install only when running with traces/errors.
+#   pip install -r requirements_observability.txt
+# tracing.py is a no-op without these, so the base requirements stay lean and CI fast.
+opentelemetry-sdk==1.29.0
+opentelemetry-exporter-otlp-proto-grpc==1.29.0
+opentelemetry-instrumentation-fastapi==0.50b0
+opentelemetry-instrumentation-requests==0.50b0
+opentelemetry-instrumentation-httpx==0.50b0
+sentry-sdk==2.20.0

@@ -141,12 +141,15 @@ The flow on `POST /chats/{chat_id}/ask`:
 
 ### 1.4 What is *missing* entirely
 
-No tests (only ad-hoc `test_*.py` scripts, no `pytest.ini`/`conftest.py`/jest config) ·
-No CI/CD (no `.github/`) · No containerization (no Dockerfile/compose; launch is a Windows
-`start_project.bat` opening 8 terminal tabs) · No metrics/tracing/error-tracking · No queue
-or background-job system (only `node-cron` in one service) · No retrieval/RAG (10-message
-window only) · No evaluation harness · No experiment tracking · No rate-limiting/backoff/
-circuit-breakers · No secret manager.
+Committed CI-gated test suite now spans backend `pytest` + satellite `node --test` + frontend
+`vitest` (+ a Playwright E2E smoke scaffold) · CI runs four jobs (backend/satellite/frontend/
+compose-validate) via `.github/workflows/ci.yml` · Containerization shipped (per-service
+Dockerfiles + whole-stack `docker-compose.yml`; light image builds green, torch-heavy ones
+network-deferred) · Structured JSON logging + `X-Request-ID` correlation across Backend+Satellite
++ Prometheus `/metrics` (counters/histogram/LLM tokens; no tracing/error-tracking yet) · No queue or background-job system (only
+`node-cron` in one service) · No retrieval/RAG (10-message window only) · Eval harness + golden
+CI gate + labeled-transcript live-ensemble accuracy shipped (no experiment tracking yet) · No
+rate-limiting/backoff/circuit-breakers · No secret manager.
 
 ---
 
@@ -341,7 +344,18 @@ the agreement-confidence from §5.3.
 **Impact:** trustworthy KG; defensible research claims; fewer downstream "garbage in" errors.
 **Effort: 1–2 weeks** for grounding+validation; +1 week for the correction loop.
 
-### 5.6 Evaluation harness + reproducibility (research-grade) [⭐⭐⭐] · ⏳ PENDING
+### 5.6 Evaluation harness + reproducibility (research-grade) [⭐⭐⭐] · 🟡 PARTIAL (2026-06-30)
+
+**Status:** harness + golden gate + **live-ensemble accuracy** all **shipped** — `Backend/eval/`
+scores the real `prune→parse` extraction pipeline (precision/recall/F1, 10-case golden set) as a
+CI quality gate (micro-F1 ≥0.95), plus a labeled **`transcript → IR` accuracy set** (`transcripts.py`)
+that grades the live ensemble end-to-end through the real production path, an online latency/cost
+profiler, and `MODEL_SEED` reporting on every online run. **Experiment tracking shipped** too —
+`eval/tracking.py` persists each run (ts + git commit + model set/seed + scores) and
+`harness --track --compare` prints the F1/P/R delta vs the previous run (per-section, with a
+REGRESSED flag). Reproducibility decay closed (§11.5: pinned `MODELS` registry + seeds).
+**Still open:** human-eval and golden sets for the legacy 6-model harness. See
+`existing_issues.md §10.10` / `issue_fixed.md §F3`.
 
 **Problem:** there is no way to answer "is the extraction good?" or "did this prompt change
 help?" Only `benchmark_signal_classifier.py` exists, for the classifier alone. Model names are
@@ -358,20 +372,54 @@ hardcoded and drift; there are no seeds, no frozen datasets, no metrics.
 **Impact:** turns subjective "it looks good" into evidence; protects against silent prompt/model
 regressions; this is the difference between a demo and a paper. **Effort: 2–4 weeks.**
 
-### 5.7 Observability (logs, metrics, traces, cost) [⭐⭐⭐] · ⏳ PENDING
+### 5.7 Observability (logs, metrics, traces, cost) [⭐⭐⭐] · 🟢 DONE (2026-06-30)
 
-**Problem:** the only instrumentation is a `log_requests` middleware printing to stdout across
-8 separately-launched terminals. You cannot answer "what failed, where, how often, how much did
-it cost."
+**Status:** all four legs shipped. **Logging + correlation:** Backend (`logging_setup.py`) and
+Satellite (`middleware/requestLogger.js`) both emit one **JSON line per event** with a shared
+shape and a per-request **`request_id`** (read from `X-Request-ID` or minted); the Backend
+**forwards the id** to Satellite, so a single request is traceable across both services by one
+id (verified end-to-end). `LOG_JSON=false` → text in dev. **Metrics:** a dependency-free
+`metrics.py` serves Prometheus at **GET `/metrics`** — request counter (by method/route/status),
+latency histogram, exceptions, and per-provider LLM token counters read from the gateway's
+accounting; cost is emitted only when a price map is set (never fabricated). **Traces + errors
+(new):** `Backend/tracing.py` + `Satellite/tracing.js` wire **OpenTelemetry** (auto-instrument
+FastAPI/Express + outbound HTTP, so one request becomes a single distributed trace UI→Core→
+Gateway→provider and Core→Satellite via W3C `traceparent`; server spans are stamped with the
+`request_id` so a span and its log lines join on one id) and **Sentry** error tracking (captures
+the `request_error` exception the middleware already logs, tagged with `request_id`). Both are
+**optional and no-op unless switched on** by env (`OTEL_TRACES_ENABLED`/`OTEL_EXPORTER_OTLP_ENDPOINT`,
+`SENTRY_DSN`) — same dependency-free discipline as `metrics.py`; the SDKs live in
+`requirements_observability.txt` / `observability.packages.txt`, so base install + CI stay lean.
+A **Grafana board** is provisioned in `observability/` (Tempo for traces, Prometheus scraping
+`/metrics`, dashboard JSON), brought up by the opt-in `docker-compose.observability.yml` overlay
+(`docker compose -f docker-compose.yml -f docker-compose.observability.yml up`). Tests:
+`test_tracing.py` (5) + `tracing.test.js` (2) assert the gating + no-op contract.
+**Still open (minor):** trace/`request_id` propagation into Editor/SRS/UML — those are
+browser-driven, so it needs frontend OTel/header instrumentation (separate, low value).
 
-**Move:** structured JSON logging with correlation ids that propagate across services;
-Prometheus metrics (latency, error rate, queue depth, tokens/$ per request); OpenTelemetry
-traces spanning UI→Core→Gateway→provider; error tracking (Sentry). A Grafana board.
+**Problem (original):** the only instrumentation was a `log_requests` middleware printing to
+stdout across 8 separately-launched terminals. You couldn't answer "what failed, where, how
+often, how much did it cost."
+
+**Move (remaining):** Prometheus metrics (latency, error rate, queue depth, tokens/$ per
+request); OpenTelemetry traces spanning UI→Core→Gateway→provider; error tracking (Sentry). A
+Grafana board.
 
 **Impact:** you can operate the system, debug incidents, and report cost/latency credibly.
 **Effort: 1–2 weeks** (much cheaper once the platform layer + gateway exist).
 
-### 5.8 Containerization + reproducible environments + CI/CD [⭐⭐⭐⭐] · ⏳ PENDING
+### 5.8 Containerization + reproducible environments + CI/CD [⭐⭐⭐⭐] · 🟡 PARTIAL (2026-06-30)
+
+**Status:** **both halves now exist** — `.github/workflows/ci.yml` runs **four** jobs (backend
+`pytest`, satellite `node --test`, a frontend job hard-gating `tsc`+`vitest`+`vite build`, and
+a `compose-validate` job) on push/PR; the two UTF-16 `requirements_*.txt` are **re-saved UTF-8/LF**.
+A **Dockerfile + `.dockerignore` per service** plus a whole-stack **`docker-compose.yml`** (7
+services + Postgres + Mongo + Redis, healthchecks, `.env.docker.example`) replace the `.bat`;
+compose validates clean and the lightweight Satellite image **builds green** (torch-heavy
+backend/srs images are sound but their ~500 MB wheels are network-bound — build deferred to a
+stable connection). **Still open:** finish the heavy image builds, image scanning/Dependabot, a
+Python lint stage (ruff/mypy), and wiring Playwright E2E into CI. See `existing_issues.md §10.4` /
+`issue_fixed.md §F2`.
 
 **Problem:** the system only starts via a Windows-specific `.bat` that opens 8 tabs, each
 assuming a pre-built venv and a local MongoDB/Supabase. There is no Dockerfile, no compose, no
@@ -417,11 +465,12 @@ deterministic-first (a planned DAG) before going fully autonomous.
    substantive message as "noise" silently drops it from all downstream knowledge with a canned reply.
 5. ⏳ PENDING — **Self-reported confidence.** The `CONFIDENCE` IR field is whatever the LLM says. It is
    surfaced in the UI ("HIGH confidence") as if measured. That is a research-integrity hazard.
-6. ⏳ PENDING — **Reproducibility decay.** Hardcoded model ids (`llama-3.3-70b-versatile`, etc.) on Groq/NVIDIA
-   are deprecated on the vendors' timelines, not yours. The day Groq retires a model, results
-   change with no code change and no alert. There are no pinned snapshots, no seeds, no eval to catch it.
-7. ⏳ PENDING — **`temperature=0.0` ≠ deterministic.** The code treats temp-0 extraction as "compiler-grade
-   deterministic," but hosted LLMs are not bit-reproducible. Claims of determinism are overstated.
+6. ✅ FIXED (§11.5) — **Reproducibility decay.** Hardcoded model ids (`llama-3.3-70b-versatile`, etc.) on Groq/NVIDIA
+   are deprecated on the vendors' timelines, not yours. Now pinned in one `MODELS` registry +
+   env-overridable role constants, logged at import (retirement = config/log diff, not silent
+   drift), with best-effort `MODEL_SEED`. CI eval gate (§5.6) now catches downstream regressions.
+7. ✅ FIXED (§11.6) — **`temperature=0.0` ≠ deterministic.** The "compiler-grade deterministic" framing
+   is corrected to "LLM-assisted synthesis … NOT bit-deterministic."
 8. ⏳ PENDING — **`Math.random()` ids in the UI.** *(Still live: `CardsPage.tsx:104`.)* `CardsPage` falls back to `Math.random().toString()` for
    card ids when the backend id is missing — collisions and unstable React keys are possible.
 9. ⏳ PENDING — **localStorage tokens.** *(Still live: `Login.tsx:69`.)* `Login.tsx:68` stores the JWT in `localStorage` → exfiltratable by any

@@ -1,0 +1,12 @@
+# Tell Grafana to load any dashboard JSON dropped in /var/lib/grafana/dashboards (§5.7).
+apiVersion: 1
+
+providers:
+  - name: ClarityStack
+    orgId: 1
+    folder: ClarityStack
+    type: file
+    disableDeletion: false
+    editable: true
+    options:
+      path: /var/lib/grafana/dashboards

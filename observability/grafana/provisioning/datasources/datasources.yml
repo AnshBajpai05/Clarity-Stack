@@ -1,0 +1,23 @@
+# Grafana datasources, auto-provisioned on boot (§5.7). Prometheus for metrics,
+# Tempo for traces; Tempo is wired to query Prometheus so a trace can jump to its
+# service metrics (and vice-versa).
+apiVersion: 1
+
+datasources:
+  - name: Prometheus
+    type: prometheus
+    access: proxy
+    url: http://prometheus:9090
+    isDefault: true
+    uid: prometheus
+
+  - name: Tempo
+    type: tempo
+    access: proxy
+    url: http://tempo:3200
+    uid: tempo
+    jsonData:
+      tracesToMetrics:
+        datasourceUid: prometheus
+      serviceMap:
+        datasourceUid: prometheus

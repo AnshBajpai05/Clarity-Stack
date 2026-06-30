@@ -951,6 +951,9 @@ def _call_satellite_cleanup(scope: str, target_id: str):
         # Mint internal token
         token = create_access_token({"email": "backend-service", "role": "internal"})
         headers = {"Authorization": f"Bearer {token}", "Content-Type": "application/json"}
+        # §10.5: forward the correlation id so Satellite stitches its logs to this
+        # request's trace (it reads X-Request-ID; mints one only if we omit it).
+        headers[REQUEST_ID_HEADER] = request_id_var.get()
         payload = {"scope": scope, "id": target_id}
         # Call satellite (URL configurable for non-localhost deployment, §6.4)
         import os
@@ -1038,12 +1041,29 @@ configure_logging()
 REQUEST_ID_HEADER = "X-Request-ID"
 
 
+import metrics as _metrics
+
+# §5.7: OpenTelemetry traces + Sentry errors. No-op unless enabled by env
+# (OTEL_TRACES_ENABLED / OTEL_EXPORTER_OTLP_ENDPOINT, SENTRY_DSN); instruments the
+# app + outbound HTTP so a request becomes one distributed trace across services.
+from tracing import init_observability, set_sentry_request_context
+init_observability(app)
+
+
+def _route_label(request: Request) -> str:
+    """The matched route TEMPLATE (e.g. /chats/{chat_id}/messages), not the concrete
+    path — so metric labels stay low-cardinality instead of one series per id."""
+    route = request.scope.get("route")
+    return getattr(route, "path", None) or "unmatched"
+
+
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     # Chain the id across services: reuse an inbound X-Request-ID if present, else mint
     # one. Reset the ContextVar in finally so ids never leak between requests.
     rid = request.headers.get(REQUEST_ID_HEADER) or new_request_id()
     token = set_request_id(rid)
+    set_sentry_request_context(rid)  # tag Sentry events with the same id (no-op if off)
     start_time = time.time()
     try:
         try:
@@ -1052,18 +1072,31 @@ async def log_requests(request: Request, call_next):
             logging.exception("request_error", extra={
                 "method": request.method, "path": request.url.path,
             })
+            _metrics.http.record_exception(request.method, _route_label(request))
             raise
-        process_time = (time.time() - start_time) * 1000
+        elapsed_s = time.time() - start_time
+        route = _route_label(request)
         logging.info("request", extra={
             "method": request.method,
             "path": request.url.path,
+            "route": route,
             "status": response.status_code,
-            "duration_ms": round(process_time, 2),
+            "duration_ms": round(elapsed_s * 1000, 2),
         })
+        _metrics.http.observe_request(request.method, route, response.status_code, elapsed_s)
         response.headers[REQUEST_ID_HEADER] = rid
         return response
     finally:
         request_id_var.reset(token)
+
+
+@app.get("/metrics")
+def metrics_endpoint():
+    """Prometheus scrape target (§10.5). Unauthenticated by convention — put it behind
+    network policy / an internal-only port in production. Returns counts + latency
+    histogram + the gateway's token/cost accounting."""
+    from fastapi import Response
+    return Response(_metrics.render(), media_type="text/plain; version=0.0.4; charset=utf-8")
 
 
 from pydantic import BaseModel, Field
@@ -1636,6 +1669,35 @@ def get_chat_synthesis(
         raise HTTPException(status_code=404, detail="Synthesis not found")
 
     return synthesis
+
+
+@app.get("/chats/{chat_id}/synthesis/{reply_group_id}/grounding")
+def get_synthesis_grounding(
+    chat_id: str,
+    reply_group_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """§10.6 grounding: cite each synthesis IR bullet back to the provider messages that
+    support it, and report a grounding ratio. A bullet with no covering source is flagged
+    grounded=false — a read-only hallucination signal (recomputed, nothing persisted)."""
+    get_chat_or_403(db, chat_id, current_user["email"], allow_public=True)
+    synthesis = get_synthesis(db, chat_id, reply_group_id)
+    if not synthesis:
+        raise HTTPException(status_code=404, detail="Synthesis not found")
+
+    import grounding as _grounding
+    from ir_parser import parse_ir_from_synthesis
+
+    ir = parse_ir_from_synthesis(synthesis.content or "")
+    # Sources = the provider extractions in this group (same set synthesis merged).
+    sources = [
+        _grounding.Source(id=m.id, text=(m.text or ""), label=(m.sender or ""))
+        for m in get_assistant_replies(db, reply_group_id)
+    ]
+    result = _grounding.ground_ir(ir, sources)
+    result["reply_group_id"] = reply_group_id
+    return result
 
 
 class ReplyGroupInput(BaseModel):

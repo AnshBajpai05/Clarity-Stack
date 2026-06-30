@@ -1,6 +1,10 @@
 // server.js — Main Express Application
 require("dotenv").config({ override: true });
 
+// §5.7: OpenTelemetry traces + Sentry — MUST load before express/http so OTel can
+// patch them at require-time. No-op unless OTEL_*/SENTRY_DSN env is set.
+require("./tracing");
+
 // §6.3: validate required env up-front (aggregated, fail-fast) BEFORE requiring
 // routes/middleware, so a misconfig surfaces as one clear boot error.
 const { loadEnv } = require("./config/env");
@@ -12,6 +16,7 @@ const cookieParser = require("cookie-parser");
 const { connectDB, getConnectionStatus } = require("./config/db");
 const { initMailer } = require("./services/mailer");
 const { startCardScheduler } = require("./services/cardScheduler");
+const { requestLogger } = require("./middleware/requestLogger");
 
 // Routes
 const kgRoutes = require("./routes/kg");
@@ -36,10 +41,9 @@ app.use(cors({ origin: ALLOWED_ORIGINS, credentials: true }));
 app.use(cookieParser());  // §5.4: parse cookies for httpOnly access_token
 app.use(express.json({ limit: "10mb" }));
 
-app.use((req, res, next) => {
-  console.log(`[Satellite] ${req.method} ${req.url}`);
-  next();
-});
+// §10.5: structured per-request logging + X-Request-ID correlation (chains from the
+// Backend). Runs before routes so any slog.* call inside a handler inherits the id.
+app.use(requestLogger());
 
 // Connect DB & Init Services
 connectDB();

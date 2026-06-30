@@ -1,0 +1,25 @@
+# Grafana Tempo — single-binary trace store (§5.7). Receives spans over OTLP from the
+# Backend (Python) and Satellite (Node), keeps them on local disk. Demo-grade config:
+# no object storage, no compaction tuning — enough to view a cross-service trace.
+server:
+  http_listen_port: 3200
+
+distributor:
+  receivers:
+    otlp:
+      protocols:
+        grpc:
+          endpoint: 0.0.0.0:4317
+        http:
+          endpoint: 0.0.0.0:4318
+
+ingester:
+  max_block_duration: 5m
+
+storage:
+  trace:
+    backend: local
+    local:
+      path: /var/tempo/traces
+    wal:
+      path: /var/tempo/wal

@@ -1,0 +1,10 @@
+# Optional observability extras for Satellite (§5.7) — install only to run with traces/errors.
+# tracing.js is a no-op without these, so the base `npm install` stays lean.
+#
+#   npm install --save-optional \
+#     @opentelemetry/sdk-node \
+#     @opentelemetry/auto-instrumentations-node \
+#     @opentelemetry/exporter-trace-otlp-grpc \
+#     @opentelemetry/resources \
+#     @opentelemetry/semantic-conventions \
+#     @sentry/node

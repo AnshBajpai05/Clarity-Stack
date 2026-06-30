@@ -1,0 +1,77 @@
+# §5.7 observability overlay — opt-in, layered ON TOP of docker-compose.yml so the
+# default `docker compose up` stays lean. Brings up Tempo (traces), Prometheus
+# (scrapes the Backend's /metrics) and Grafana (provisioned datasources + dashboard),
+# and flips the OTEL_* switches on backend + satellite so they export spans to Tempo.
+#
+#   docker compose -f docker-compose.yml -f docker-compose.observability.yml up --build
+#   Grafana:    http://localhost:3000   (admin / admin)
+#   Prometheus: http://localhost:9090
+#
+# NOTE: the app images must include the observability extras for spans to flow
+# (Backend/requirements_observability.txt, Satellite/observability.packages.txt).
+# Without them the OTEL_* env is harmless — tracing.py / tracing.js stay no-op.
+
+services:
+  tempo:
+    image: grafana/tempo:2.6.1
+    container_name: clarity_tempo
+    command: ["-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./observability/tempo.yaml:/etc/tempo.yaml:ro
+      - clarity_tempodata:/var/tempo
+    ports:
+      - "3200:3200"   # Tempo API (Grafana queries this)
+      - "4317:4317"   # OTLP gRPC (apps export here)
+
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: clarity_prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+    volumes:
+      - ./observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - clarity_promdata:/prometheus
+    ports:
+      - "9090:9090"
+
+  grafana:
+    image: grafana/grafana:11.3.1
+    container_name: clarity_grafana
+    environment:
+      GF_SECURITY_ADMIN_USER: admin
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Viewer
+    volumes:
+      - ./observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ./observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+      - clarity_grafanadata:/var/lib/grafana
+    depends_on:
+      - prometheus
+      - tempo
+    ports:
+      - "3000:3000"
+
+  # Flip tracing on for the app services and point them at Tempo's OTLP endpoint.
+  backend:
+    environment:
+      OTEL_TRACES_ENABLED: "1"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_SERVICE_NAME: clarity-backend
+    depends_on:
+      tempo:
+        condition: service_started
+
+  satellite:
+    environment:
+      OTEL_TRACES_ENABLED: "1"
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://tempo:4317
+      OTEL_SERVICE_NAME: clarity-satellite
+    depends_on:
+      tempo:
+        condition: service_started
+
+volumes:
+  clarity_tempodata:
+  clarity_promdata:
+  clarity_grafanadata:
