@@ -4,7 +4,7 @@ import {
   Brain,
   Network,
   BarChart3,
-  Upload,
+  MessageSquare,
   Sparkles,
   Search,
 } from "lucide-react";
@@ -41,12 +41,13 @@ export default function LandingPage() {
 
         <h2 className="text-5xl md:text-6xl font-display font-extrabold leading-[1.08] max-w-4xl tracking-tight">
           Turn messy AI chats into{" "}
-          <span className="gradient-text">structured knowledge</span>
+          <span className="gradient-text">knowledge you can audit</span>
         </h2>
 
         <p className="mt-6 text-lg text-muted-foreground max-w-2xl leading-relaxed">
-          ClarityStack synthesizes multiple AI models, builds knowledge graphs,
-          and tracks decision reasoning — all in one place.
+          ClarityStack runs your question through a genuinely diverse model ensemble,
+          surfaces where they <span className="text-foreground font-medium">measurably</span> agree,
+          grounds every claim in its source, and chains it all into a living knowledge graph.
         </p>
 
         <div className="mt-10 flex gap-4">
@@ -66,20 +67,20 @@ export default function LandingPage() {
             {
               icon: Brain,
               iconColor: "text-neon-cyan",
-              title: "Multi-Model AI",
-              desc: "Combine outputs from Groq, HuggingFace, and Gemini to generate a unified truth.",
+              title: "Honest Multi-Model Engine",
+              desc: "Your prompt fans out to a genuinely different ensemble (Groq + NVIDIA). Confidence is the measured agreement between them — never a model's self-report.",
             },
             {
               icon: Network,
               iconColor: "text-neon-violet",
-              title: "Knowledge Graph",
-              desc: "Automatically convert conversations into structured nodes and relationships.",
+              title: "Semantic Knowledge Graph",
+              desc: "Conversations become typed nodes and reasoning edges — supports, contradicts, depends-on — that you can explore and trace.",
             },
             {
               icon: BarChart3,
               iconColor: "text-neon-peach",
               title: "Decision Intelligence",
-              desc: "Track decisions, conflicts, and reasoning across evolving discussions.",
+              desc: "Track decisions, conflicts, and the evidence behind them, with version-chained Temporal Cards as your source of truth.",
             },
           ].map((feature, i) => (
             <div
@@ -113,9 +114,9 @@ export default function LandingPage() {
 
         <div className="grid md:grid-cols-3 gap-10">
           {[
-            { icon: Upload, color: "text-neon-cyan", title: "Import", desc: "Paste conversations from ChatGPT, Slack, or documents." },
-            { icon: Sparkles, color: "text-neon-violet", title: "Synthesize", desc: "AI models analyze and merge information into structured knowledge." },
-            { icon: Search, color: "text-neon-peach", title: "Explore", desc: "Navigate your knowledge graph and trace decisions." },
+            { icon: MessageSquare, color: "text-neon-cyan", title: "Ask", desc: "Pose a question in any project chat; the engine assembles the relevant context." },
+            { icon: Sparkles, color: "text-neon-violet", title: "Synthesize", desc: "A diverse ensemble answers in parallel; ClarityStack measures their agreement and grounds each claim in its sources." },
+            { icon: Search, color: "text-neon-peach", title: "Explore", desc: "Navigate the knowledge graph, replay how decisions evolved, and see what's ready to act on." },
           ].map((step, i) => (
             <div key={step.title} className={`animate-fade-in-up stagger-${i + 1}`}>
               <div className={cn(
