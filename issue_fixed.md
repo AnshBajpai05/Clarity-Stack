@@ -458,8 +458,29 @@ Knocked out the cheap remaining §16 correctness/quality tails in one pass (grou
   false: `TemporalCard` has **no `expiresAt` field** (the `generateCardFromDelta` write is a phantom mongoose
   drops) and the frontend has **no card-expiry UI**. Re-enabling expiry would reverse a documented user decision —
   left as-is. Vestigial "stale" messaging noted for optional later cleanup.
-- **Coarse-category chaining** (lineage keyed on `category`, conflating unrelated risks/decisions) is real but a
-  design change with model-quality implications — **deferred** to its own pass, recorded in `existing_issues.md §16.4`.
+- **Coarse-category chaining** (lineage keyed on `category`, conflating unrelated risks/decisions) — the
+  cross-chat half is now fixed (J4); the intra-chat topic split remains deferred (needs data-tuned similarity).
+
+### J4. §16.4 — per-chat card lineage (Issue 4, cross-chat half) [⭐⭐⭐]
+- **Was:** `runCardPipeline` picked the version parent by `{projectId, category, status}` — ignoring chat — so
+  an active "risk"/"decision" card in one chat became the parent for an unrelated one in a *different* chat,
+  collapsing distinct threads into a single version chain. The writer already computed `chainIndex =
+  ${chatId}_${category}` that the lookup ignored.
+- **Fix:** chain parent is now scoped to `{projectId, sourceChatIds: chatId, category, status:"active"}` via a
+  pure exported `chainParentFilter(projectId, chatId, category)` — honoring the writer's `chainIndex`.
+  Deterministic, no threshold tuning. (Chosen over similarity-based chaining, which needs data-tuned
+  thresholds and risks over/under-fragmenting — left as a later pass.)
+- **Still deferred:** two *unrelated* risks in the **same** chat still merge — that needs semantic/topic
+  similarity (the tuning-heavy part).
+- **Tests:** `Satellite/test/cardChainer.test.js` (4, pure-fn). Satellite suite **20 green**.
+
+### J5. UI follow-ups that surface the new KG path (commits `b91b0c5c`, `f8c00cb2`)
+- **"View in Graph"** per card → deep-links to the KG page (`?chat=`), which auto-expands that chat so the user
+  sees where committed card knowledge landed (in the Core graph the page already reads).
+- **"KG Pending" / "In KG" badges** per card; "Commit to KG" button now shows only when a real unflushed diff
+  exists (and stops click-propagation so it no longer toggles card expand).
+- **"Commit all to KG (N)"** toolbar button bulk-flushes every pending card in one action.
+- **Removed the dead `getExpiredCards` import** — the only live reference to the always-empty "expired" surface.
 
 ---
 

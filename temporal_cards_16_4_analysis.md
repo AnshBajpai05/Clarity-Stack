@@ -68,7 +68,14 @@ Read every involved file before any code. Findings below correct the audit where
 - Route `cards.js:114-128` returns `{ cards, count }`; frontend `generateCardFromChat` (`api.ts:591`)
   surfaces that. Returning existing cards is shape-compatible.
 
-## ISSUE 4 — chaining keys on coarse `category`  →  **REAL but architectural/subjective. Defer.**
+## ISSUE 4 — chaining keys on coarse `category`  →  **CROSS-CHAT HALF FIXED (per-chat lineage); intra-chat split deferred.**
+**Update (2026-06-30):** version-parent lookup now scoped to `{projectId, sourceChatIds:chatId, category,
+status:"active"}` via exported pure `chainParentFilter` — honors the writer's `chainIndex = ${chatId}_${category}`,
+so cards in different chats no longer share a lineage. Deterministic, no tuning. Tested in
+`Satellite/test/cardChainer.test.js` (4). Still deferred: two unrelated threads in the SAME chat (needs
+data-tuned semantic similarity — see option B in the §16.4 lineage decision). Original analysis below.
+
+
 - `runCardPipeline:94` looks up `lastCard` by `{projectId, category, status:"active"}`. So every fragment of
   category e.g. `"risk"` chains into ONE lineage project-wide, regardless of topic — unrelated risks get
   versioned over each other.

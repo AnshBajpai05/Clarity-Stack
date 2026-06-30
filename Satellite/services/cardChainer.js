@@ -17,6 +17,20 @@ const modelRouter = new ModelRouter();
 const KG_AUTO_FLUSH = parseFloat(process.env.KG_AUTO_FLUSH_THRESHOLD || "0.88");
 const KG_SUGGEST = parseFloat(process.env.KG_SUGGEST_THRESHOLD || "0.60");
 
+// §16.4 (Issue 4): a card's version lineage is scoped to its SOURCE CHAT + category — matching the
+// chainIndex the writer assigns (`${chatId}_${category}`). The old lookup keyed on category alone,
+// so an active "risk"/"decision" card in one chat became the version parent for an unrelated
+// "risk"/"decision" in a different chat — collapsing distinct threads into one chain. Scoping by
+// chat fixes that cross-chat conflation deterministically (no threshold tuning).
+function chainParentFilter(projectId, chatId, category) {
+  return {
+    projectId,
+    sourceChatIds: chatId,
+    category,
+    status: "active",
+  };
+}
+
 // ═══════════════════════════════════════════════════════════════════════════════
 // MAIN PIPELINE — v4
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -90,12 +104,11 @@ async function runCardPipeline(message, existingCard = null, options = {}) {
 
       const enrichedMessage = { ...message, projectId: resolvedProjectId };
 
-      // Always fetch lastCard fresh — picks up cards created by previous fragments
-      const lastCard = await TemporalCard.findOne({
-        projectId: resolvedProjectId,
-        category: fragment.category,
-        status: "active",
-      }).sort({ version: -1 }).lean();
+      // Always fetch lastCard fresh — picks up cards created by previous fragments.
+      // Lineage is scoped to this chat + category (§16.4 Issue 4), not category alone.
+      const lastCard = await TemporalCard.findOne(
+        chainParentFilter(resolvedProjectId, chatId, fragment.category)
+      ).sort({ version: -1 }).lean();
 
       const synthesis = await synthesizer.synthesize(
         fragment, lastCard, triggerType, configChanges
@@ -601,4 +614,5 @@ module.exports = {
   generateREADME,
   generateMermaidUML,
   generatePPTSlides,
+  chainParentFilter,
 };
