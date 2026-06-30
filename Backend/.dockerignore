@@ -1,0 +1,14 @@
+venv
+__pycache__
+*.pyc
+.env
+.env.*
+*.db
+*.sqlite
+*.sqlite3
+claritystack.db*
+.git
+.pytest_cache
+tests/__pycache__
+Dockerfile
+.dockerignore

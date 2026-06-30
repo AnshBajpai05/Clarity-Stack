@@ -1,0 +1,11 @@
+venv
+__pycache__
+*.pyc
+.env
+.env.*
+.git
+data/checkpoints
+*.pdf
+pdf_raw_text.txt
+Dockerfile
+.dockerignore

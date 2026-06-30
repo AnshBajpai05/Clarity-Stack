@@ -1,0 +1,164 @@
+# §10.4 — whole-stack compose. Extends the §10.7 Postgres seed
+# (docker-compose.postgres.yml) into the full ClarityStack stack so a new
+# contributor can `docker compose up` instead of running start_project.bat's 8
+# Windows terminal tabs.
+#
+# Quick start:
+#   cp .env.docker.example .env        # fill in JWT_SECRET + vendor keys
+#   docker compose up --build
+#   UI:  http://localhost:8006   API: http://localhost:8000
+#
+# Scope: the 7 wired services + Postgres/Mongo/Redis. ThreatLens is intentionally
+# excluded (not yet integrated — DEFERRED, see existing_issues.md banner).
+#
+# Browser-facing URLs (VITE_*) are build args and point at host-mapped ports
+# because the browser runs on the host. Server-to-server URLs use compose service
+# names on the internal network.
+
+services:
+  # ---- infrastructure ----
+  postgres:
+    image: postgres:16-alpine
+    container_name: clarity_postgres
+    environment:
+      POSTGRES_USER: clarity
+      POSTGRES_PASSWORD: clarity
+      POSTGRES_DB: claritystack
+    ports:
+      - "5433:5432"
+    volumes:
+      - clarity_pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U clarity -d claritystack"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  mongo:
+    image: mongo:7
+    container_name: clarity_mongo
+    ports:
+      - "27017:27017"
+    volumes:
+      - clarity_mongodata:/data/db
+    healthcheck:
+      test: ["CMD", "mongosh", "--quiet", "--eval", "db.adminCommand('ping')"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    container_name: clarity_redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - clarity_redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ---- application services ----
+  backend:
+    build: ./Backend
+    container_name: clarity_backend
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: postgresql+psycopg2://clarity:clarity@postgres:5432/claritystack
+      JWT_SECRET: ${JWT_SECRET}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      NVIDIA_API_KEY_2: ${NVIDIA_API_KEY_2:-}
+      SATELLITE_API_URL: http://satellite:8003
+      FRONTEND_URL: http://localhost:8006
+      REDIS_URL: redis://redis:6379/0
+      RUN_MIGRATIONS_ON_STARTUP: "1"
+      COOKIE_SECURE: "false"
+    ports:
+      - "8000:8000"
+
+  satellite:
+    build: ./Satellite
+    container_name: clarity_satellite
+    depends_on:
+      mongo:
+        condition: service_healthy
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+      MONGO_URI: mongodb://mongo:27017/clarity
+      CORE_API_URL: http://backend:8000
+      BIND_HOST: 0.0.0.0
+      PORT: "8003"
+      CORS_ORIGINS: http://localhost:8006,http://localhost:8007
+    ports:
+      - "8003:8003"
+
+  editor:
+    build: ./Editor_Service
+    container_name: clarity_editor
+    environment:
+      JWT_SECRET: ${JWT_SECRET}
+      BIND_HOST: 0.0.0.0
+      PORT: "8004"
+      CORS_ORIGINS: http://localhost:8006,http://localhost:8007
+    volumes:
+      - clarity_editordata:/app/data
+    ports:
+      - "8004:8004"
+
+  srs:
+    build: ./SRS_Service
+    container_name: clarity_srs
+    environment:
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY:-}
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+    ports:
+      - "8001:8001"
+
+  uml-backend:
+    build: ./UML_Clarity_Service/backend
+    container_name: clarity_uml_backend
+    environment:
+      NVIDIA_API_KEY: ${NVIDIA_API_KEY:-}
+      NVIDIA_API_KEY_2: ${NVIDIA_API_KEY_2:-}
+    ports:
+      - "8005:8005"
+
+  frontend:
+    build:
+      context: ./Web/Frontend
+      args:
+        VITE_API_BASE_URL: http://localhost:8000
+        VITE_BACKEND_URL: http://localhost:8000
+        VITE_SATELLITE_URL: http://localhost:8003
+        VITE_EDITOR_BACKEND_URL: http://localhost:8004
+        VITE_SRS_API_URL: http://localhost:8001
+        VITE_UML_URL: http://localhost:8007
+    container_name: clarity_frontend
+    depends_on:
+      - backend
+    ports:
+      - "8006:8006"
+
+  uml-ui:
+    build:
+      context: ./UML_Clarity_Service
+      args:
+        VITE_API_URL: http://localhost:8005
+    container_name: clarity_uml_ui
+    depends_on:
+      - uml-backend
+    ports:
+      - "8007:8007"
+
+volumes:
+  clarity_pgdata:
+  clarity_mongodata:
+  clarity_redisdata:
+  clarity_editordata:

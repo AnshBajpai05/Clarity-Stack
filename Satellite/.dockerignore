@@ -1,0 +1,9 @@
+node_modules
+npm-debug.log
+.env
+.env.*
+*.log
+data/tranco/top-1m.csv
+.git
+Dockerfile
+.dockerignore

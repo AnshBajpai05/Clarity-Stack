@@ -1,0 +1,9 @@
+node_modules
+dist
+.env
+.env.*
+.git
+*.log
+vite.config.ts.timestamp-*.mjs
+Dockerfile
+.dockerignore
