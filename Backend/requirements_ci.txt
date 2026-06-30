@@ -1,0 +1,14 @@
+# Minimal deps to import the FastAPI app and run the pytest suite in CI.
+# Deliberately excludes torch / transformers / google-* / numpy: the unit tests use
+# in-memory SQLite and never hit a model, and those imports are lazy in app code.
+# Keep version-pinned to Backend/requirements_backend.txt to stay reproducible.
+fastapi==0.128.0
+pydantic==2.12.5
+SQLAlchemy==2.0.45
+python-jose==3.5.0
+bcrypt==5.0.0
+python-dotenv==1.2.1
+email-validator==2.3.0
+requests==2.32.5
+httpx==0.28.1
+pytest==9.1.1
