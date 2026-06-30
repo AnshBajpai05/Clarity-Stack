@@ -1,0 +1,4 @@
+# Eval run records are artifacts (§10.10 experiment tracking), not source. Keep the
+# directory in the repo but ignore the per-run JSON files.
+*
+!.gitignore

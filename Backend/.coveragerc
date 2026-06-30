@@ -1,0 +1,25 @@
+# Coverage scope for the CI gate (§10.4). We measure the regression-critical ENGINE
+# modules — the §16/§17 synthesis/IR/KG logic, agreement, eval scorer, observability
+# (metrics/logging) — not the large FastAPI surface in main.py (integration-tested,
+# not unit-covered; gating it would force a meaningless floor). Current ≈78%; the gate
+# sits at 70% (see ci.yml) so a real regression in these modules trips it.
+[run]
+source =
+    synthesis_service
+    ir_parser
+    knowledge_graph_builder
+    agreement
+    grounding
+    metrics
+    logging_setup
+    eval
+omit =
+    venv/*
+    tests/*
+    */__pycache__/*
+
+[report]
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:
+    raise NotImplementedError

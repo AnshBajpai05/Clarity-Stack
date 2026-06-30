@@ -91,3 +91,38 @@ def test_micro_average_pools_bullets_not_sections():
     assert avg["tp"] == 4 and avg["fp"] == 1 and avg["fn"] == 2
     assert avg["precision"] == pytest.approx(4 / 5)
     assert avg["recall"] == pytest.approx(4 / 6)
+
+
+# ---- §10.10 labeled-transcript set: deterministic guards (no network) ----
+# The accuracy run itself needs API keys and lives behind harness `--online`. These
+# tests protect everything around it that CAN be checked offline: the labels, the
+# inlined provider-tag transform, and the section-restriction grading rule.
+
+from eval.harness import _tag_with_provider, extract_online  # noqa: E402
+from eval.transcripts import TRANSCRIPTS, SCORED_SECTIONS  # noqa: E402
+
+
+def test_tag_with_provider_mirrors_main_exactly():
+    # If main.tag_with_provider drifts, the eval would silently grade a different
+    # pipeline than production. Pin them together (import main lazily, no app calls).
+    import main
+    block = "- SOURCE:: postgres handles writers\n- SOURCE:: another bullet"
+    assert _tag_with_provider("groq", block) == main.tag_with_provider("groq", block)
+
+
+@pytest.mark.parametrize("case", TRANSCRIPTS, ids=lambda c: c.id)
+def test_transcript_labels_use_only_scored_sections(case):
+    # Labels must stay inside the sections we actually grade (no SUMMARY/CONFIDENCE),
+    # and every labeled bullet must be a non-empty string.
+    assert set(case.expected) <= set(SCORED_SECTIONS), case.id
+    for bullets in case.expected.values():
+        assert all(isinstance(b, str) and b.strip() for b in bullets)
+
+
+def test_online_extract_returns_empty_when_ensemble_silent(monkeypatch):
+    # When every provider returns nothing, the path must yield {} WITHOUT calling
+    # synthesis — proving the empty-IR contract holds before any model/DB is touched.
+    import providers
+    monkeypatch.setattr(providers, "EXTRACTION_ENSEMBLE",
+                        [("stub:a", lambda _p: ""), ("stub:b", lambda _p: None)])
+    assert extract_online("anything") == {}
