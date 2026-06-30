@@ -263,3 +263,279 @@ don't fall for gradients; they fall for **speed, density, and receipts.**
 *The bones are good and the backend is genuinely special. The frontend just needs one
 opinionated hand to stop it looking auto-generated and start making the honesty visible.
 That's the whole game.*
+
+---
+---
+
+# Part II — Implementation Playbook
+
+> Exact, buildable instructions per page, derived against the **ui-ux-pro-max** rule
+> taxonomy (rule IDs in `code` map to that database) and the components/deps **already
+> installed** in this repo. Every primitive named below exists today — no new dependency
+> required. Backticked rule IDs (e.g. `color-semantic`, `motion-meaning`) are the
+> acceptance criteria; treat each page's checklist as Definition of Done.
+
+## 0. What you already have (use it, don't reinvent)
+
+- **shadcn/ui** (51 components in [src/components/ui/](src/components/ui/)) incl. `command`
+  (cmdk), `dialog`, `drawer` (vaul), `sheet`, `popover`, `hover-card`, `tabs`, `table`,
+  `skeleton`, `progress`, `badge`, `scroll-area`, `tooltip`, `alert-dialog`, `chart`.
+- **Deps:** `cmdk` (⌘K palette), `framer-motion`, `recharts` + `chart.tsx` (data viz),
+  `react-force-graph-2d` (KG), `sonner` (toasts), `zustand`, `@tanstack/react-query`.
+- **Tokens** (use these names verbatim — see [src/index.css](src/index.css) / [tailwind.config.ts](tailwind.config.ts)).
+
+### Token cheat-sheet
+| Use | Class |
+|---|---|
+| Accents | `text-neon-cyan` `-violet` `-peach` `-mint` (+ `/10` bg, `/30` border) |
+| Roles (chat) | `text-role-user` `-assistant` `-system` `-moderator` |
+| Surfaces | `bg-background` `bg-card` `bg-muted` · `glass-panel` `glass-panel-hover` |
+| Text | `text-foreground` `text-muted-foreground` |
+| Lines | `border-border` |
+| Status | `text-primary` `text-destructive` · `hsl(var(--success))` `hsl(var(--warning))` |
+| Shadow | `shadow-glow` `shadow-glow-sm` `shadow-elevated` `shadow-floating` |
+| Motion | `duration-fast/normal/slow` · `ease-spring/smooth/snap` · `animate-fade-in-up` |
+| Type | `font-sans` (Inter) · `font-display` (Plus Jakarta) · `font-mono` (JetBrains) |
+
+### Off-theme → token replacement map (do this globally first — `color-semantic`)
+```
+slate-200/300        → text-foreground / text-muted-foreground
+cyan-400             → text-neon-cyan
+emerald-400/500      → text-neon-mint  (or hsl(var(--success)))
+green-400/500        → hsl(var(--success))
+amber-400/500        → text-neon-peach (or hsl(var(--warning)))
+purple-500/600       → primary / neon-violet
+neon-purple/neon-pink→ neon-violet / neon-peach   ← these DO NOT EXIST = broken
+bg-white/5           → bg-muted/40
+border-white/10      → border-border/40
+text-red-500         → text-destructive
+emoji icons (⎈∆🃏🗑) → lucide (Anchor, Sigma, Layers, Trash2 …)  `no-emoji-icons`
+```
+
+---
+
+## A. Global foundations (build once → every page inherits)
+
+### A1. Motion system — `motion-meaning` `duration-timing` `exit-faster-than-enter` `reduced-motion`
+- Enter ≤ **300ms**, exit ≈ **0.16s** (60–70% of enter). List/grid stagger **0.04s/item**
+  (`stagger-sequence`). Press scale **0.97** (`scale-feedback`). Animate **transform/opacity
+  only** (`transform-performance`).
+- Framer presets — put in `src/lib/motion.ts`:
+  ```ts
+  export const enter = { initial:{opacity:0,y:8}, animate:{opacity:1,y:0},
+    transition:{duration:.22, ease:[.2,.7,.2,1]} };
+  export const list = (i:number)=>({ ...enter, transition:{...enter.transition, delay:i*0.04} });
+  ```
+- Global `prefers-reduced-motion` — add to [src/index.css](src/index.css):
+  ```css
+  @media (prefers-reduced-motion: reduce){ *,*::before,*::after{
+    animation-duration:.01ms!important; transition-duration:.01ms!important; } }
+  ```
+  and gate Framer with `const reduce = useReducedMotion()`.
+- **Retire decoration** (`excessive-motion`): the 3 pulsing dots in [Sidebar.tsx](src/components/layout/Sidebar.tsx),
+  the "Neural Synthesis Active" pulse in [CardsPage.tsx](src/pages/CardsPage.tsx), and demote the
+  `glow-orb`s in [MainLayout.tsx](src/components/layout/MainLayout.tsx) to a single static, very subtle one.
+
+### A2. Command palette (⌘K) — `keyboard-shortcuts` `search-accessible` `deep-linking`
+- New `src/components/command/CommandPalette.tsx` over [ui/command.tsx](src/components/ui/command.tsx);
+  mount once in [App.tsx](src/App.tsx). Global `keydown` for `⌘/Ctrl+K`.
+- Groups: **Projects · Chats · Cards · Graph nodes · Navigate · Actions** (New project, New chat,
+  Toggle theme, Compute delta). Each item routes via `navigate()` (every result deep-links).
+- Show ⌘K hint in the sidebar header so it's discoverable.
+
+### A3. Keyboard & focus — `focus-states` `keyboard-nav`
+- Never remove focus rings; standardize `focus-visible:ring-2 ring-primary/60 ring-offset-2
+  ring-offset-background`. Lists support `j/k` + `Enter`; `g p` → Projects, `g d` → Discovery.
+
+### A4. `<ConsensusMeter>` — THE signature component (`color-not-only` `number-tabular` `motion-meaning`)
+- File `src/components/intelligence/ConsensusMeter.tsx`. **Replaces every confidence dot**
+  ([CardsPage.tsx:299](src/pages/CardsPage.tsx#L299), [KnowledgeGraphPage.tsx:738](src/pages/KnowledgeGraphPage.tsx#L738),
+  [KnowledgeCard.tsx](src/components/cards/KnowledgeCard.tsx)).
+  ```ts
+  interface ConsensusMeterProps {
+    agreement: number;                       // 0..1, the MEASURED value (§10.3)
+    models?: { label: string; value: number }[]; // per-model positions
+    variant?: 'inline' | 'full';
+  }
+  ```
+- **Inline:** a 100%-wide track (`h-1.5 rounded-full bg-muted`) with a fill whose color is
+  thresholded — `<0.5` `bg-destructive`, `0.5–0.75` `bg-neon-peach`, `>0.75` `bg-neon-mint` —
+  plus a big `font-mono` tabular `82%` and a one-line label *"3 models agree"* (never color
+  alone). `role="meter" aria-valuenow`.
+- **Full:** small-multiples / oscilloscope feel — render each model's value as a converging
+  point with `recharts` (use [ui/chart.tsx](src/components/ui/chart.tsx)); the spread *is* the
+  story. Bar fills with a spring on mount; snaps instantly under reduced-motion.
+
+### A5. `<DisagreementSpotlight>` — `visual-hierarchy`
+- File `src/components/intelligence/DisagreementSpotlight.tsx`, data from `getDisagreement`
+  ([lib/api.ts:424](src/lib/api.ts#L424)). Dim consensus claims to `opacity-50`; lift contested
+  ones with `ring-1 ring-neon-peach/60 scale-[1.02]` + a `Badge` "N models split". Literally
+  spotlights divergence.
+
+### A6. `<CitationPopover>` (receipts) — `tooltip-keyboard` `escape-routes`
+- File `src/components/intelligence/CitationPopover.tsx` over [ui/hover-card.tsx](src/components/ui/hover-card.tsx)
+  (+ `popover` for tap/keyboard). Wrap each synthesized bullet; inline marker is a `font-mono
+  text-neon-cyan` superscript `[1]`. Panel lists source messages + the shared terms that
+  justified the link (from `getDecisionTrace`). Focusable, `Esc` closes.
+
+### A7. Empty / Loading / Error system — `empty-states` `progressive-loading` `error-recovery`
+- **Loading:** on data-heavy pages replace `LoadingSpinner` with [ui/skeleton.tsx](src/components/ui/skeleton.tsx)
+  shaped like the final layout (`content-jumping`). Drop the sci-fi copy ("Scanning Hubs…",
+  "Synthesizing Deck…").
+- **Empty:** every empty state = icon + one-line voice + **one** primary CTA (`primary-action`),
+  e.g. *"No conflicts yet — the models agree. Ask something harder."*
+- **Error:** keep `ErrorState` retry; ensure message states cause + fix (`error-clarity`).
+
+### A8. Density & `<StatPulse>` — `data-density` `number-tabular`
+- File `src/components/shared/StatPulse.tsx`: label + big `font-mono` figure + optional tiny
+  `recharts` sparkline. Used by Projects + Discovery to show momentum.
+
+---
+
+## B. Per-page build instructions
+
+> Each block: **Goal · Layout · Components · Motion · Signature · Fixes · ✅ DoD**.
+
+### `/` Landing — [Landing.tsx](src/pages/Landing.tsx) *(copy already fixed)*
+- **Layout:** hero (one `<ConsensusMeter variant="full">` live demo, looping) → 3 honest
+  feature cards → "How it works" → footer. One static subtle orb max.
+- **Components:** `Button` (one primary CTA — `primary-action`), `ConsensusMeter`, `card`.
+- **Motion:** hero fades up once; meter animates its converge on view (`IntersectionObserver`).
+- **Signature:** the hero *is* the product proof — show models converging on an answer.
+- **✅ DoD:** `style-match` `primary-action` `reduced-motion` · no provider that isn't Groq/NVIDIA.
+
+### `/login` · `/register` — [Login.tsx](src/pages/Login.tsx) · [Register.tsx](src/pages/Register.tsx)
+- **Layout:** centered card, branded mark, one-line promise (not "Welcome back").
+- **Components:** swap raw `<input>` → [ui/input.tsx](src/components/ui/input.tsx) + `label`
+  (`input-labels`); `Button` with in-button spinner + `disabled` on submit (`loading-buttons`,
+  `submit-feedback`); password show/hide (`password-toggle`); `autocomplete`/`type=email`
+  (`autofill-support`, `input-type-keyboard`).
+- **Fixes:** keep the nice 404→register CTA; validate on blur (`inline-validation`); focus first
+  invalid field (`focus-management`).
+- **✅ DoD:** `form-labels` `error-clarity` `loading-buttons` `password-toggle`.
+
+### `/projects` Projects (home base) — [ProjectsPage.tsx](src/pages/ProjectsPage.tsx)
+- **Layout:** sticky toolbar (search input + sort + density toggle), then a **dense list/grid**
+  (not centered cards). Keep FAB as secondary.
+- **Components:** `command` (⌘K jump), `input` (filter), `table` or compact card grid,
+  `StatPulse` per project (cards this week / open conflicts), `skeleton` loading.
+- **Interaction:** `j/k` move, `Enter` open, `/` focus search; last-active default sort.
+- **Fixes:** drop gradient `Sparkles` header to a calm title; persist sort/scroll (`state-preservation`).
+- **✅ DoD:** `search-accessible` `keyboard-nav` `virtualize-lists` (if 50+) `state-preservation`.
+
+### `/projects/search` Join — [ProjectSearch.tsx](src/pages/ProjectSearch.tsx)
+- **Decision:** **merge into Discovery** as name-search; remove the paste-a-UUID flow (dead-end).
+- **Fixes (now):** delete `from-neon-purple to-neon-pink` + `purple-500/600` (broken/transparent);
+  use `Input`; if kept, allow search-by-name with results list + Request-to-Join.
+- **✅ DoD:** no undefined color classes · `empty-nav-state` · `primary-action`.
+
+### `/discovery` Discovery — [DiscoveryPage.tsx](src/pages/DiscoveryPage.tsx)
+- **Layout:** keep 2-col (feed / explore). Feed items become activity rows with a `StatPulse`
+  sparkline of graph growth and typed counts ("3 decisions · 1 conflict").
+- **Components:** `hover-card` on a project name → quick stats; optimistic `Follow`
+  (`success-feedback`); `Badge` for "public".
+- **Fixes:** type the `any[]`; replace `glass-card` with `glass-panel`; un-truncate "Join Req".
+- **✅ DoD:** `color-semantic` `success-feedback` `whitespace-balance`.
+
+### `/projects/:id/chats` Chats — [ChatsPage.tsx](src/pages/ChatsPage.tsx)
+- **Fixes (bugs first):** delete the raw `@keyframes` pasted in a className
+  ([L411–416](src/pages/ChatsPage.tsx#L411-L416)); replace **all** emoji/unicode icons (`⎈ ∆ 🃏 ⋮ ⭐ 📂 ♻ ✏ 🗑`)
+  with lucide; replace `window.prompt` (rename) with a `Dialog`, `window.confirm`/`prompt`
+  (delete) with `alert-dialog` (already used in SRS — copy that pattern); `text-red-500` → `text-destructive`.
+- **Components:** `dropdown-menu` (overflow), `dialog` (rename), `alert-dialog` (delete + `undo-support` toast).
+- **✅ DoD:** `no-emoji-icons` `confirmation-dialogs` `undo-support` · zero native `prompt/confirm`.
+
+### `/projects/:id/chats/:chatId` Messages (daily driver) — [MessagesPage.tsx](src/pages/MessagesPage.tsx)
+- **Refactor:** split the 1,413-line file into `MessageThread`, `AnswerCard`, `IntelligenceRail`,
+  `PresenceBar`, `Composer`.
+- **Stage the engine:** when an answer lands, show `<ConsensusMeter>` inline on the answer;
+  put **Devil's Advocate / Decision Trace / Readiness** in a labeled right `IntelligenceRail`
+  (Tabs), not unlabeled icon buttons; wrap synthesized bullets in `<CitationPopover>`; mount
+  `<DisagreementSpotlight>` on the answer group.
+- **Components:** `tabs`, `hover-card`, `tooltip` (label every icon — `aria-labels`), `skeleton`
+  for the "thinking" state, `sheet` on mobile for the rail.
+- **Motion:** new messages `enter` from below; typing indicator subtle; answer reveal crossfades.
+- **✅ DoD:** `aria-labels` `progressive-loading` `state-transition` `color-semantic` (51 off-theme hits → tokens).
+
+### `/projects/:id/kg` Knowledge Graph (promote to hero) — [KnowledgeGraphPage.tsx](src/pages/KnowledgeGraphPage.tsx)
+- **Layout:** full-bleed canvas; controls float (glass) top-right; node detail in a `sheet`/right
+  rail, not a cramped 288px column. Add a search-to-focus input (`/`).
+- **Data viz:** legend supplements color with shape/label (`color-not-only`, `pattern-texture`);
+  node detail uses `<ConsensusMeter>` for confidence (kill `text-cyan-400`); add a time-scrub
+  `slider` to replay graph evolution (`time-scale-clarity`); click ripples reasoning edges.
+- **Perf:** keep ForceGraph cooldown; `debounce-throttle` zoom; aggregate at high node counts (`large-dataset`).
+- **✅ DoD:** `responsive-chart` `touch-target-chart` (≥44px hit) `screen-reader-summary` (text fallback) `empty-data-state`.
+
+### `/projects/:id/delta` Delta — [DeltaTimelinePage.tsx](src/pages/DeltaTimelinePage.tsx)
+- **Keep** the timeline (it's good). Add a top `StatPulse` (net knowledge growth) and link each
+  delta into the graph at that timestamp (shared-element feel).
+- **Fixes:** hardcoded `rgba()` shadow → `shadow-glow-sm`; tokenize colors.
+- **✅ DoD:** `color-semantic` `time-scale-clarity` `motion-consistency`.
+
+### `/projects/:id/cards` Temporal Cards (reference page) — [TemporalCardsPage.tsx](src/pages/TemporalCardsPage.tsx)
+- **This is the template** — keep KG Pending/In KG badges, version history, "Commit to KG",
+  "View in Graph". Just tokenize (`amber-500/green-500/slate-300/bg-white/5` → tokens) and let
+  the version chain animate as a true lineage (`shared-element-transition`).
+- **✅ DoD:** `color-semantic` `state-transition` `truncation-strategy` (full title via tooltip).
+
+### `/cards` Global Cards — [CardsPage.tsx](src/pages/CardsPage.tsx)
+- **Replace** the one-card vertical carousel with a **dense, filterable grid** (`card` + `tabs`
+  by type + `input` filter) — scanning many is the job. Delete "Neural Synthesis Active" theater
+  and "Re-initialize/Render Exception/Fragments" copy. Confidence → `<ConsensusMeter>`.
+- **Components:** `tabs`, `badge`, `drawer` for detail (already wired: `CardDetailDrawer`),
+  `skeleton`.
+- **✅ DoD:** `data-density` `empty-states` `excessive-motion` (no decorative pulse) `color-semantic`.
+
+### `/srs/*` SRS — [srs/Dashboard.tsx](src/pages/srs/Dashboard.tsx) · [srs/IssuesPage.tsx](src/pages/srs/IssuesPage.tsx)
+- **Unify:** bring under the shared shell + tokens (it has its own back button / `glass-card` /
+  `emerald-*` / `slate-*`). It already uses `alert-dialog` correctly — **lead the consistency
+  pass from here.**
+- **✅ DoD:** `navigation-consistency` `color-semantic` `consistency`.
+
+### `/editor/*` Editor — [editor/Workspace.jsx](src/pages/editor/Workspace.jsx)
+- **Decide role:** peer feature → adopt shell+tokens; power tool → an intentional, still-on-token
+  "pro" skin. Either way, harmonize colors and icon set.
+- **✅ DoD:** `consistency` `state-clarity` `icon-style-consistent`.
+
+### `/uml/dashboard` UML — [uml/Dashboard.tsx](src/pages/uml/Dashboard.tsx)
+- It's an `<iframe>` of the separate :8007 app. Keep the Online/Offline pill (good — `offline-support`),
+  but theme the embedded app with the same tokens so crossing the boundary isn't jarring.
+- **✅ DoD:** `offline-support` `dark-mode-pairing` (embedded app matches).
+
+### `/settings` Settings — [SettingsPage.tsx](src/pages/SettingsPage.tsx)
+- Group fields (`field-grouping`); make the accent picker a **live preview** of `ConsensusMeter`
+  + a card; `switch` for toggles; `success-feedback` on save.
+- **✅ DoD:** `field-grouping` `success-feedback` `color-semantic`.
+
+### `*` NotFound — [NotFound.tsx](src/pages/NotFound.tsx)
+- One ⌘K hint + a "Back to Projects" primary action; small personality line. Low priority.
+
+---
+
+## C. New reusable components (single source of truth)
+
+| Component | File | Purpose |
+|---|---|---|
+| `ConsensusMeter` | `src/components/intelligence/ConsensusMeter.tsx` | Measured agreement — replaces every confidence dot |
+| `DisagreementSpotlight` | `src/components/intelligence/DisagreementSpotlight.tsx` | Highlights contested claims |
+| `CitationPopover` | `src/components/intelligence/CitationPopover.tsx` | Hover/focus "receipts" for any bullet |
+| `CommandPalette` | `src/components/command/CommandPalette.tsx` | ⌘K global jump/actions |
+| `StatPulse` | `src/components/shared/StatPulse.tsx` | Stat + sparkline momentum |
+| `motion` presets | `src/lib/motion.ts` | Shared enter/exit/stagger curves |
+
+## D. Definition of Done (web-translated from ui-ux-pro-max checklist)
+
+- **Visual:** no emoji icons; one lucide family; semantic tokens only (no raw hex / off-theme
+  Tailwind); press states don't shift layout. (`no-emoji-icons` `color-semantic` `state-clarity`)
+- **Interaction:** every interactive el has hover+focus-visible+pressed; targets ≥44px; one
+  primary CTA/screen; native `prompt/confirm` eliminated. (`focus-states` `touch-target-size` `primary-action`)
+- **Motion:** 150–300ms, transform/opacity only, exit faster than enter, `prefers-reduced-motion`
+  honored. (`duration-timing` `transform-performance` `reduced-motion`)
+- **Dark mode/contrast:** body text ≥4.5:1, secondary ≥3:1, borders visible. (`color-accessible-pairs`)
+- **Data:** charts have legend+tooltip+empty+loading+text fallback; tabular figures for numbers.
+  (`legend-visible` `empty-data-state` `number-tabular` `screen-reader-summary`)
+- **Perf:** skeletons >300ms, lazy-load below fold, virtualize 50+ lists, reserve space (CLS<0.1).
+  (`progressive-loading` `virtualize-lists` `content-jumping`)
+
+*Build order stays the Part I priority list: Landing ✓ → ConsensusMeter → consistency/bug pass
+(lead from SRS + Temporal Cards) → ⌘K + keyboard → de-template shell → KG hero.*
