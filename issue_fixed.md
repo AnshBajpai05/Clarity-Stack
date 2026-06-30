@@ -288,11 +288,10 @@ Knocked out the cheap remaining §16 correctness/quality tails in one pass (grou
   micro-average pooling) so the gate isn't theater.
 - **Result:** 77 backend + 7 satellite green; verified the whole suite + `python -m eval.harness`
   run in the clean CI venv with no new deps.
-- ⚠ **Honest ceiling:** this ships the offline **quality** gate + a latency/cost profiler.
-  The remaining §10.10 work is **labeled `transcript → IR` pairs** so the *live ensemble's
-  extraction accuracy* (not just latency/cost) is scored — the golden set deliberately labels
-  raw output, not transcripts. Also still open: seeds/experiment tracking, golden sets for the
-  legacy 6-model harness, and the §11.5 stale legacy pins.
+- ⚠ **Honest ceiling (mostly closed in §H1, 2026-06-30):** this pass shipped the offline
+  **quality** gate + a latency/cost profiler. The **labeled `transcript → IR` pairs**, the
+  **seed reporting**, and **experiment tracking** named here as remaining are now done — see
+  **§H1**. Still open: golden sets for the legacy 6-model harness, and the §11.5 stale legacy pins.
 
 ---
 
@@ -331,4 +330,66 @@ Knocked out the cheap remaining §16 correctness/quality tails in one pass (grou
   cleanliness can't regress. Bug-rule gate (E9,F63,F7,F82) unchanged. `ruff.toml` comment updated.
 - Frontend ESLint (188 errors, mostly `no-explicit-any`) stays non-blocking — a separate, larger
   cleanup, not bundled here.
+
+---
+
+## H. Eval accuracy + grounding + metrics landed + CI made green (2026-06-30, branch `Clarity_Stack_V3`)
+
+> Closes the F3 "honest ceiling" (labeled transcript→IR accuracy + experiment tracking + seeds),
+> adds §10.6 grounding, **actually commits** the Prometheus `/metrics` module that §G1 referenced,
+> and fixes a red CI (runs #4/#5) whose root cause was *the committed workflow running ahead of its
+> committed dependencies*. Commits: `36e6c074` (modules+deps), `112e45b9` (docker), `5a72af6f` (docs),
+> `ed8efa36` (frontend test infra).
+
+### H1. §10.10 — labeled transcript→IR accuracy + experiment tracking + seeds [⭐⭐⭐⭐] (closes F3 ceiling)
+- **`Backend/eval/transcripts.py`** — labeled (`transcript → expected IR`) golden set, the pairs F3 said
+  were missing. Scored ONLINE through the **real** path (`ensemble fn → tag_with_provider → synthesize_content
+  → parse_ir_from_synthesis`), restricted to substantive sections (SUMMARY/CONFIDENCE excluded as
+  model-/measurement-generated metadata). So the *live ensemble's extraction accuracy* is now scored, not just latency/cost.
+- **`harness.py`** — `extract_online`/`run_online_accuracy` + an accuracy table; `--track`/`--compare`;
+  `MODEL_SEED` reported on every online run (§11.6 reproducibility note: temp 0 + seed is best-effort, hosted LLMs aren't bit-exact).
+- **`Backend/eval/tracking.py`** — persists each run (ts + git commit + active model set/seed + scores) to
+  `eval/runs/` (gitignored), and `--compare` prints the **F1/P/R delta vs the previous run** (per-section, with a `REGRESSED` flag).
+- **Tests:** `test_eval_tracking.py` (5) + transcript-infra guards in the eval suite.
+
+### H2. §10.6 — grounding: cite synthesis bullets to source [⭐⭐⭐⭐] (existing_issues §10.6 → 🟡 PARTIAL)
+- **`Backend/grounding.py`** — cites each IR bullet back to the provider messages that support it, reusing the
+  KG token model (§10.3 parity) with an **asymmetric coverage** measure (fraction of the bullet's tokens present
+  in a source — not Jaccard, which would dilute a short bullet inside a long source). Uncited bullet → `grounded=false` (hallucination signal).
+- **`GET /chats/{chat_id}/synthesis/{reply_group_id}/grounding`** — read-only, recomputed from the stored
+  synthesis + its provider messages (nothing persisted); returns per-bullet citations + a grounding ratio.
+- **Tests:** `test_grounding.py` (8: 7 pure + 1 live endpoint). Pairs with the already-enforced
+  `validate_ir_structure` to give §10.6 both halves (schema validation + source grounding).
+
+### H3. §10.5 — Prometheus `/metrics` actually committed [⭐⭐⭐] (completes the §G1 reference)
+- **`Backend/metrics.py`** (dependency-free) + **`GET /metrics`** — request counter (`method/route/status`, route =
+  template so no label explosion), latency histogram, exceptions, and **per-provider LLM token counters read from
+  the gateway's own accounting** (`llm_gateway._stats`, never re-counted); **cost only when priced** (`LLM_PRICE_PER_1K_TOKENS`).
+- §G1 described this as existing; it was untracked until `36e6c074` — landing it also fixed the backend CI import (see §H6). **Tests:** `test_metrics.py` (7).
+
+### H4. §10.4 — coverage gate + frontend test infra committed [⭐⭐⭐] (existing_issues §10.4)
+- **Coverage:** `requirements_ci.txt += ruff, pytest-cov`; `.coveragerc` scopes coverage to the engine modules
+  (synthesis/IR/KG/agreement/grounding/metrics/logging/eval), gate `--cov-fail-under=70` (currently ≈79%); `ruff.toml` documents lint scope.
+- **Frontend job:** committed the **vitest test infra the workflow already hard-gated** — `typecheck`/`test`/`e2e`
+  scripts + vitest/testing-library/jsdom/playwright devDeps, `vitest.config.ts`, `src/test/setup.ts`, 3 unit-test
+  files (**20 tests**), `playwright.config.ts` + an `e2e/` smoke (e2e is local-only, not in the CI gate). package.json change is purely additive.
+- **Result:** backend 103 green @ 79% coverage; frontend `npm ci` + typecheck + vitest(20) + build all green.
+
+### H5. §10.4 / §5.8 — all 7 Docker images build green + uml-ui lockfile fix [⭐⭐⭐] (existing_issues §10.4)
+- `docker compose build` → **all 7 service images build** (backend ~12 GB / srs ~9 GB torch, + editor/satellite/uml-backend/frontend/uml-ui).
+- **Real defect found by building:** `UML_Clarity_Service/package-lock.json` was out of sync with package.json
+  (`Missing: @emnapi/*`) so strict `npm ci` failed the uml-ui image — `docker compose config` validation alone never caught it.
+  Lockfile regenerated **inside `node:20-slim`** (matching the container's npm) → in sync.
+- `requirements_backend.txt` + `requirements_uml_backend.txt` re-saved **UTF-16 → UTF-8** so pip in the slim images reads them.
+
+### H6. CI runs #4/#5 red → green — workflow committed ahead of its deps [⭐⭐⭐] (meta-fix, existing_issues §10.4)
+- **Root cause:** the committed `ci.yml` (and `main.py`) referenced things that were never committed — `import metrics`/`grounding`
+  (untracked modules → `import main` failed at collection), `ruff`/`pytest-cov` (not in `requirements_ci.txt` → "command not found"),
+  `.coveragerc`, `docker-compose.yml` (compose-validate job), and the frontend `typecheck`/`test` scripts ("Missing script").
+- **Fix:** landed each missing piece (`36e6c074`, `112e45b9`, `ed8efa36`). Run **#6** (`5a72af6`) confirmed
+  **backend + satellite + compose-validate green**; the frontend fix (`ed8efa36`) was verified by running the exact
+  CI steps against a **clean checkout** of the pushed commit (npm ci + typecheck + vitest 20 + build) → green.
+- **Lesson (also noted in existing_issues §10.4):** a CI step must not be committed before the deps/files it invokes.
+
+---
 
