@@ -109,6 +109,29 @@ router.post("/:projectId/generate", requireAuth, rateLimit(15, 60000, "cards-gen
   }
 });
 
+// ─── POST /api/satellite/cards/:projectId/generate/delta/:deltaId ───────────
+// §15.14: generate a card from the SPECIFIC delta the user clicked (not just the latest).
+router.post("/:projectId/generate/delta/:deltaId", requireAuth, rateLimit(15, 60000, "cards-generate-delta"), async (req, res) => {
+  try {
+    const { projectId, deltaId } = req.params;
+
+    const delta = await GraphDelta.findOne({ _id: deltaId, projectId }).lean();
+    if (!delta) {
+      return res.status(404).json({ error: "Delta not found for this project." });
+    }
+
+    const existing = await TemporalCard.findOne({ deltaId: delta._id });
+    if (existing) {
+      return res.status(409).json({ error: "A card already exists for this delta." });
+    }
+
+    const card = await generateCardFromDelta(projectId, delta);
+    res.json(card);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ─── POST /api/satellite/cards/:projectId/generate/chat/:chatId ─────────────
 // v4: Generate cards from a specific chat (one message → N cards).
 router.post("/:projectId/generate/chat/:chatId", requireAuth, rateLimit(15, 60000, "cards-generate-chat"), async (req, res) => {

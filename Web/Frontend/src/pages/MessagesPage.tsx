@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback, useRef, useLayoutEffect } from "react";
 import { useParams, Link } from "react-router-dom";
-import { ArrowLeft, MessageSquare, X, ArrowDown } from "lucide-react";
+import { ArrowLeft, MessageSquare, X, ArrowDown, Split, Swords, AlertTriangle, Search, Target } from "lucide-react";
 
 import { MainLayout } from "@/components/layout/MainLayout";
 import { MessageBubble } from "@/components/messages/MessageBubble";
@@ -28,24 +28,15 @@ import {
   getChats,          // ✅ REQUIRED FOR FALLBACK
   getProject,
   getProjectMembers,
+  getDevilsAdvocate,
+  getDecisionTrace,
+  getDecisionReadiness,
 } from "@/lib/api";
+import type { DevilsAdvocateResult, DecisionTraceItem, DecisionReadiness } from "@/lib/api";
 import { api } from "@/lib/http";
 import { stringToColor, getInitials } from "@/lib/colors";
 
 import { useToast } from "@/hooks/use-toast";
-
-function utcToIst(dateStr?: string) {
-  if (!dateStr) return "Not set";
-
-  const utc = dateStr.endsWith("Z") ? dateStr : `${dateStr}Z`;
-
-  return new Intl.DateTimeFormat("en-IN", {
-    dateStyle: "medium",
-    timeStyle: "short",
-    timeZone: "Asia/Kolkata"
-  }).format(new Date(utc));
-}
-
 
 function formatIST(dateStr?: string | null) {
   if (!dateStr) return "Not updated yet";
@@ -86,6 +77,9 @@ export default function MessagesPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSending, setIsSending] = useState(false);
+  // §16.5 Ask-Anyway: when the conflict gate holds back an answer, stash the turn so
+  // the user can re-run it with the gate relaxed (no duplicate user message).
+  const [conflictRetry, setConflictRetry] = useState<{ sender: string; text: string; detail?: string } | null>(null);
 
   const listRef = useRef<HTMLDivElement>(null);
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -177,22 +171,6 @@ export default function MessagesPage() {
             : data
         );
         
-        // Derive role
-        const currentUserEmail = localStorage.getItem('cs_email') || '';
-        try {
-          const pId = data.project_id || projectId;
-          if (pId) {
-            const proj = await getProject(pId);
-            if (proj.owner === currentUserEmail) {
-              if (!isCancelled) setMemberRole('owner');
-            } else {
-              const members = await getProjectMembers(pId);
-              const me = members.find(m => m.user_email === currentUserEmail);
-              if (me && !isCancelled) setMemberRole(me.role as any);
-            }
-          }
-        } catch {}
-
         return;
       } catch {
         console.warn("Direct chat fetch failed — falling back");
@@ -222,7 +200,7 @@ export default function MessagesPage() {
     loadChat();                        // 🔹 run once immediately
 
     const interval = setInterval(() => {
-      loadChat();                      // 🔁 refresh — BUT respects editOpen
+      if (!document.hidden) loadChat();  // 🔁 refresh — respects editOpen + tab visibility
     }, 4000);
 
     return () => {
@@ -231,6 +209,26 @@ export default function MessagesPage() {
     };
 
   }, [chatId, editOpen]);              // 👈 keep this — reopening closes override
+
+  // §15.12: derive RBAC role ONCE per chat/project — not inside the 4s meta poll.
+  useEffect(() => {
+    const pId = chat?.project_id || projectId;
+    if (!pId) return;
+    let cancelled = false;
+    (async () => {
+      const email = localStorage.getItem('cs_email') || '';
+      try {
+        const proj = await getProject(pId);
+        if (cancelled) return;
+        if (proj.owner === email) { setMemberRole('owner'); return; }
+        const members = await getProjectMembers(pId);
+        if (cancelled) return;
+        const me = members.find(m => m.user_email === email);
+        if (me) setMemberRole(me.role as any);
+      } catch { /* role stays default */ }
+    })();
+    return () => { cancelled = true; };
+  }, [chat?.project_id, projectId]);
 
 
 
@@ -303,7 +301,7 @@ export default function MessagesPage() {
 
 
   useEffect(() => {
-    const interval = setInterval(fetchMessages, 4000);
+    const interval = setInterval(() => { if (!document.hidden) fetchMessages(); }, 4000);
     return () => clearInterval(interval);
   }, [fetchMessages]);
 
@@ -317,7 +315,21 @@ export default function MessagesPage() {
 
     try {
       if (role === "user") {
-        await askChat(chatId, sender, text);
+        const res = await askChat(chatId, sender, text);
+        // §16.5: the conflict gate held this answer back. The server already reset the
+        // turn, so just surface an "Ask Anyway" retry instead of fetching messages.
+        if (res?.status === "conflict_gate" && res?.can_retry_ask_anyway) {
+          setConflictRetry({ sender, text, detail: res.detail });
+          return;
+        }
+        // §16.8: the noise classifier filtered this message — overridable. The canned
+        // note + user turn are already persisted, so show them, then offer Ask Anyway.
+        if (res?.status === "noise_filtered" && res?.can_retry_ask_anyway) {
+          setConflictRetry({ sender, text, detail: res.detail });
+          await fetchMessages();
+          scrollToBottom(true);
+          return;
+        }
       } else {
         await createMessage(chatId, { text, role: role as any, sender });
       }
@@ -325,6 +337,28 @@ export default function MessagesPage() {
       await fetchMessages();
       scrollToBottom(true);
 
+    } catch (err) {
+      toast({
+        title: "Error",
+        description: err instanceof Error ? err.message : "Failed to send message",
+        variant: "destructive"
+      });
+    } finally {
+      setIsSending(false);
+    }
+  };
+
+  /* ---------- ASK ANYWAY (§16.5 conflict-gate override) ---------- */
+
+  const handleAskAnyway = async () => {
+    if (!chatId || !conflictRetry) return;
+    const { sender, text } = conflictRetry;
+    setConflictRetry(null);
+    setIsSending(true);
+    try {
+      await askChat(chatId, sender, text, true);   // relax the conflict gate
+      await fetchMessages();
+      scrollToBottom(true);
     } catch (err) {
       toast({
         title: "Error",
@@ -628,6 +662,26 @@ export default function MessagesPage() {
                     <span className="text-xs text-muted-foreground italic">typing...</span>
                   </div>
                 )}
+                {/* §16.5 Ask-Anyway banner: the conflict gate held an answer back */}
+                {conflictRetry && (
+                  <div className="mx-4 mb-2 rounded-lg border border-amber-500/30 bg-amber-500/[0.07] px-4 py-3 flex items-start gap-3">
+                    <Split className="w-4 h-4 text-amber-400 mt-0.5 shrink-0" />
+                    <div className="flex-1">
+                      <p className="text-sm font-semibold text-amber-300">Answer held back</p>
+                      <p className="text-xs text-muted-foreground leading-snug mt-0.5">
+                        {conflictRetry.detail || "The models surfaced a conflict the validator couldn't confirm."}
+                      </p>
+                      <div className="flex gap-2 mt-2">
+                        <Button size="sm" className="h-7 bg-amber-500 hover:bg-amber-600 text-black" onClick={handleAskAnyway} disabled={isSending}>
+                          Ask Anyway
+                        </Button>
+                        <Button size="sm" variant="ghost" className="h-7" onClick={() => setConflictRetry(null)} disabled={isSending}>
+                          Dismiss
+                        </Button>
+                      </div>
+                    </div>
+                  </div>
+                )}
                 {!isViewer ? (
                   <MessageInput onSubmit={handleSendMessage} isLoading={isSending} onTyping={sendTypingEvent} />
                 ) : (
@@ -754,7 +808,9 @@ function KnowledgeInspector({
   const [loading, setLoading] = useState(true);
   const [graph, setGraph] = useState<any>(null);
   const [resolvedId, setResolvedId] = useState<string | null>(null);
-  const [temporalMode, setTemporalMode] = useState<'current' | 'history' | 'drift'>('current');
+  const [disagreement, setDisagreement] = useState<any>(null);
+  const [trace, setTrace] = useState<DecisionTraceItem[]>([]);   // §17.4 "Why this decision?"
+  const [readiness, setReadiness] = useState<DecisionReadiness[]>([]);   // §17.5 Decision Readiness
 
 
   useEffect(() => {
@@ -786,6 +842,24 @@ function KnowledgeInspector({
         }
         setResolvedId(paramId);
 
+        // Disagreement Spotlight: recompute where the ensemble diverged for THIS
+        // reply group (independent of the KG — works even when the graph is empty).
+        if (synthesis.reply_group_id) {
+          api<any>(`/chats/${synthesis.chat_id}/synthesis/${synthesis.reply_group_id}/disagreement`)
+            .then((d) => { if (isMounted) setDisagreement(d); })
+            .catch(() => { if (isMounted) setDisagreement(null); });
+        }
+
+        // §17.4 "Why this decision?": edge-grounded trace per decision (semantic edges).
+        getDecisionTrace(synthesis.chat_id)
+          .then((t) => { if (isMounted) setTrace(t?.decisions || []); })
+          .catch(() => { if (isMounted) setTrace([]); });
+
+        // §17.5 Decision Readiness: verdict + resolve-path, fused from agreement + edges.
+        getDecisionReadiness(synthesis.chat_id)
+          .then((r) => { if (isMounted) setReadiness(r?.decisions || []); })
+          .catch(() => { if (isMounted) setReadiness([]); });
+
       } catch (err) {
         console.error(err);
         if (isMounted) setGraph(null);
@@ -796,7 +870,7 @@ function KnowledgeInspector({
 
     loadData();
     return () => { isMounted = false; };
-  }, [synthesis?.chat_id]);
+  }, [synthesis?.chat_id, synthesis?.reply_group_id]);
 
   // Helper: Deduplicate & Filter
   const getNodes = (list: any[]) => {
@@ -849,22 +923,6 @@ function KnowledgeInspector({
           </div>
 
           <div className="flex items-center gap-3">
-            {/* 🕒 TEMPORAL TOGGLE */}
-            <div className="flex bg-black/40 rounded-lg p-0.5 border border-white/5">
-              {(['current', 'history', 'drift'] as const).map(mode => (
-                <button
-                  key={mode}
-                  onClick={() => setTemporalMode(mode)}
-                  className={`
-                            px-2 py-1 text-[10px] uppercase font-bold rounded-md transition-all
-                            ${temporalMode === mode ? 'bg-white/10 text-white shadow-sm' : 'text-muted-foreground hover:text-white/70'}
-                        `}
-                >
-                  {mode}
-                </button>
-              ))}
-            </div>
-
             <Button variant="ghost" size="icon" onClick={onClose} className="hover:bg-white/10 rounded-full">
               <X className="w-5 h-5" />
             </Button>
@@ -877,6 +935,11 @@ function KnowledgeInspector({
           <MetricGauge label="Opposition" score={metrics.conflictScore} color="bg-red-500" />
           <MetricGauge label="Uncertainty" score={metrics.riskScore} color="bg-amber-500" />
         </div>
+
+        {/* ⑂ DISAGREEMENT SPOTLIGHT — where the ensemble actually diverged */}
+        {disagreement && disagreement.n_models >= 2 && (
+          <DisagreementSpotlight data={disagreement} />
+        )}
       </div>
 
       {/* CAUSAL MAP : The "Thinking Surface" */}
@@ -890,6 +953,11 @@ function KnowledgeInspector({
         </div>
       ) : (
         <div className="flex-1 overflow-y-auto p-6 space-y-8 no-scrollbar bg-gradient-to-b from-transparent to-black/40">
+
+          {/* 🎯 DECISION READINESS — the headline verdict + resolve-path (§17.5) */}
+          <DecisionReadinessPanel
+            decisions={(readiness || []).filter((r) => !resolvedId || r.synthesis_id === resolvedId)}
+          />
 
           {/* LAYER 1: FOUNDATION (Evidence) */}
           <div className="space-y-3">
@@ -911,11 +979,6 @@ function KnowledgeInspector({
 
           {/* LAYER 2: THE CORE (Decision) */}
           <div className="relative p-1 rounded-xl bg-gradient-to-b from-emerald-500/20 via-primary/10 to-transparent">
-            {/* 🔗 CROSS-LINK CUE */}
-            <div className="absolute -top-10 left-4 text-[10px] text-muted-foreground/50 rotate-[-5deg] border border-white/5 rounded px-2 py-1">
-              ↳ Depends on Synthesis #3
-            </div>
-
             <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-3 px-3 py-1 bg-black border border-emerald-500/50 rounded-full text-[10px] uppercase font-bold text-emerald-400 shadow-[0_0_10px_rgba(16,185,129,0.4)]">
               The Decision
             </div>
@@ -978,6 +1041,13 @@ function KnowledgeInspector({
             </div>
           )}
 
+          {/* 🔎 WHY THIS DECISION? — edge-grounded trace (§17.4) */}
+          <DecisionTracePanel
+            decisions={(trace || []).filter((t) => !resolvedId || t.synthesis_id === resolvedId)}
+          />
+
+          {/* ⚔ DEVIL'S ADVOCATE — red-team the decision (§17.2) */}
+          <DevilsAdvocatePanel chatId={synthesis.chat_id} replyGroupId={synthesis.reply_group_id} />
 
           <div className="h-12" />
         </div>
@@ -986,7 +1056,326 @@ function KnowledgeInspector({
   );
 }
 
+// Colour + label per red-team category (mirrors the cockpit's evidence/conflict palette).
+const CRITIQUE_META: Record<string, { label: string; cls: string }> = {
+  RISK:         { label: "Risk",          cls: "text-red-300 bg-red-500/10 border-red-500/30" },
+  ASSUMPTION:   { label: "Shaky Assumption", cls: "text-cyan-300 bg-cyan-500/10 border-cyan-500/30" },
+  FAILURE_MODE: { label: "Failure Mode",  cls: "text-amber-300 bg-amber-500/10 border-amber-500/30" },
+  COUNTERPOINT: { label: "Counterpoint",  cls: "text-violet-300 bg-violet-500/10 border-violet-500/30" },
+};
+
+/**
+ * Devil's Advocate — on-demand red-team of the decision. Most AI rubber-stamps; this
+ * argues the other side. One paid model call, so it loads only on click. Reuses the
+ * stored synthesis (no migration, no extra column).
+ */
+function DevilsAdvocatePanel({ chatId, replyGroupId }: { chatId?: string; replyGroupId?: string }) {
+  const [loading, setLoading] = useState(false);
+  const [data, setData] = useState<DevilsAdvocateResult | null>(null);
+  const [err, setErr] = useState<string | null>(null);
+
+  const run = async () => {
+    if (!chatId || !replyGroupId) return;
+    setLoading(true);
+    setErr(null);
+    try {
+      setData(await getDevilsAdvocate(chatId, replyGroupId));
+    } catch (e: any) {
+      setErr(e?.message || "Could not red-team this decision.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <div className="border-t border-white/5 pt-6 mt-4">
+      <div className="flex items-center justify-between mb-3">
+        <h4 className="text-xs font-bold uppercase tracking-wider text-red-400/80 flex items-center gap-2">
+          <Swords className="w-3.5 h-3.5" />
+          Devil's Advocate
+        </h4>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 text-xs border-red-500/40 text-red-300 hover:bg-red-500/10"
+          onClick={run}
+          disabled={loading || !replyGroupId}
+        >
+          {loading ? "Red-teaming…" : data ? "Re-run" : "Red-team this decision"}
+        </Button>
+      </div>
+
+      {err && (
+        <p className="text-xs text-red-400/90 flex items-center gap-1.5">
+          <AlertTriangle className="w-3.5 h-3.5" /> {err}
+        </p>
+      )}
+
+      {!data && !loading && !err && (
+        <p className="text-[11px] text-muted-foreground/70 leading-relaxed">
+          Stress-test this decision: surface its risks, shaky assumptions, failure modes,
+          and the strongest argument for a different choice.
+        </p>
+      )}
+
+      {data && data.note === "no_decision" && (
+        <p className="text-xs text-muted-foreground italic">No definitive decision here to challenge.</p>
+      )}
+
+      {data && data.note === "unstructured_response" && (
+        <p className="text-xs text-amber-400/80">The critic responded but its answer couldn't be structured. Try Re-run.</p>
+      )}
+
+      {data && data.challenges.length > 0 && (
+        <div className="space-y-2">
+          {data.challenges.map((c, i) => {
+            const meta = CRITIQUE_META[c.category] || { label: c.category, cls: "text-slate-300 bg-slate-500/10 border-slate-500/30" };
+            return (
+              <div key={i} className="rounded-lg bg-black/30 border border-white/5 p-2.5">
+                <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border ${meta.cls}`}>
+                  {meta.label}
+                </span>
+                <p className="text-xs text-foreground/90 leading-snug mt-1.5">{c.text}</p>
+              </div>
+            );
+          })}
+          {data.model && (
+            <p className="text-[9px] font-mono text-muted-foreground/50 pt-1">critic: {data.model}</p>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --- SUBCOMPONENTS ---
+
+// Shorten an honest model label ("groq:llama-3.1-8b-instant" / "nvidia:meta/llama-3.1-70b-instruct")
+// to something compact for a chip.
+function shortModel(label: string): string {
+  const afterColon = label.includes(":") ? label.split(":").slice(1).join(":") : label;
+  const afterSlash = afterColon.includes("/") ? afterColon.split("/").pop()! : afterColon;
+  return afterSlash.length > 22 ? afterSlash.slice(0, 22) + "…" : afterSlash;
+}
+
+const CONTESTED_SECTION_COLOR: Record<string, string> = {
+  FACT: "text-emerald-300 bg-emerald-500/10 border-emerald-500/30",
+  DECISION: "text-violet-300 bg-violet-500/10 border-violet-500/30",
+  CONFLICT: "text-red-300 bg-red-500/10 border-red-500/30",
+  OPTION: "text-blue-300 bg-blue-500/10 border-blue-500/30",
+  UNKNOWN: "text-amber-300 bg-amber-500/10 border-amber-500/30",
+  ASSUMPTION: "text-cyan-300 bg-cyan-500/10 border-cyan-500/30",
+  CONSTRAINT: "text-pink-300 bg-pink-500/10 border-pink-500/30",
+};
+
+/**
+ * Disagreement Spotlight — the signature view. Surfaces the claims the ensemble did
+ * NOT unanimously extract (contested), turning hidden model disagreement into an
+ * actionable brainstorming signal. Reuses the measured-agreement engine; no extra
+ * model calls. A claim with support 1/N (only one model said it) is flagged hardest.
+ */
+function DisagreementSpotlight({ data }: { data: any }) {
+  const contested: any[] = data?.contested || [];
+  const total: number = (data?.claims || []).length;
+  const n: number = data?.n_models || 0;
+
+  if (contested.length === 0) {
+    return (
+      <div className="mt-4 flex items-center gap-2 rounded-lg border border-emerald-500/25 bg-emerald-500/5 px-3 py-2">
+        <Split className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+        <p className="text-[11px] text-emerald-300/90 leading-snug">
+          <span className="font-semibold">Full consensus</span> — all {n} models extracted every one of the {total} claims.
+        </p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="mt-4 rounded-xl border border-amber-500/25 bg-gradient-to-b from-amber-500/[0.07] to-transparent overflow-hidden">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-amber-500/15">
+        <div className="flex items-center gap-2">
+          <Split className="w-4 h-4 text-amber-400" />
+          <span className="text-xs font-bold uppercase tracking-wider text-amber-300">Where the AIs split</span>
+        </div>
+        <span className="text-[10px] font-bold text-amber-300/90 bg-amber-500/15 border border-amber-500/30 rounded-full px-2 py-0.5">
+          {contested.length} contested / {total}
+        </span>
+      </div>
+      <p className="px-3 pt-2 text-[10px] text-muted-foreground/70 leading-relaxed">
+        Claims not extracted by every model. This is where your judgment matters most.
+      </p>
+      <div className="max-h-56 overflow-y-auto no-scrollbar px-3 py-2 space-y-2">
+        {contested.map((c, i) => (
+          <div key={i} className="rounded-lg bg-black/30 border border-white/5 p-2.5">
+            <div className="flex items-center gap-2 mb-1">
+              <span className={`text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border ${CONTESTED_SECTION_COLOR[c.section] || "text-slate-300 bg-slate-500/10 border-slate-500/30"}`}>
+                {c.section}
+              </span>
+              <span className={`text-[9px] font-bold ${c.support === 1 ? "text-red-400" : "text-amber-400"}`}>
+                {c.support}/{c.n_models} models
+              </span>
+              {c.support === 1 && (
+                <span className="text-[8px] uppercase font-bold text-red-400/80 tracking-wider">⚠ lone claim</span>
+              )}
+            </div>
+            <p className="text-xs text-foreground/90 leading-snug mb-1.5">{c.text}</p>
+            <div className="flex flex-wrap gap-1">
+              {(c.models || []).map((m: string) => (
+                <span key={m} className="text-[8px] font-mono text-muted-foreground/70 bg-white/5 border border-white/5 rounded px-1.5 py-0.5">
+                  {shortModel(m)}
+                </span>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Per-relation colour for the grounded "Why this decision?" trace.
+const RELATION_COLOR: Record<string, string> = {
+  SUPPORTS:       "text-emerald-300 border-emerald-500/30 bg-emerald-500/10",
+  CONTRADICTS:    "text-red-300 border-red-500/30 bg-red-500/10",
+  BLOCKS:         "text-amber-300 border-amber-500/30 bg-amber-500/10",
+  DEPENDS_ON:     "text-cyan-300 border-cyan-500/30 bg-cyan-500/10",
+  ALTERNATIVE_OF: "text-blue-300 border-blue-500/30 bg-blue-500/10",
+  REFINES:        "text-violet-300 border-violet-500/30 bg-violet-500/10",
+};
+
+/**
+ * "Why this decision?" — walks the SEMANTIC KG edges (§16.2 fix) into each decision so
+ * it shows only the evidence/conflicts actually linked to it, plus the shared terms that
+ * justified each link. The old cross-product wired every fact to every decision; this
+ * makes the reasoning auditable instead of asserted.
+ */
+function DecisionTracePanel({ decisions }: { decisions: DecisionTraceItem[] }) {
+  if (!decisions || decisions.length === 0) return null;
+  return (
+    <div className="border-t border-white/5 pt-6 mt-4">
+      <h4 className="text-xs font-bold uppercase tracking-wider text-primary/80 mb-3 flex items-center gap-2">
+        <Search className="w-3.5 h-3.5" /> Why this decision?
+      </h4>
+      <div className="space-y-4">
+        {decisions.map((d) => (
+          <div key={d.decision_id} className="rounded-xl border border-white/10 bg-black/30 p-3">
+            <p className="text-sm font-medium text-foreground/90 mb-2">{d.decision}</p>
+            {d.links.length === 0 ? (
+              <p className="text-[11px] text-muted-foreground/70 italic">
+                No evidence is lexically linked to this decision — surfaced on its own.
+              </p>
+            ) : (
+              <div className="space-y-1.5">
+                {d.links.map((l, i) => {
+                  const cls = RELATION_COLOR[l.relation] || "text-slate-300 border-slate-500/30 bg-slate-500/10";
+                  return (
+                    <div key={i} className="flex items-start gap-2 text-xs">
+                      <span className={`shrink-0 text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border ${cls}`}>
+                        {l.phrase}
+                      </span>
+                      <div className="min-w-0">
+                        <span className="text-foreground/85">{l.content}</span>
+                        {l.shared_terms.length > 0 && (
+                          <span className="ml-1.5 text-[9px] font-mono text-muted-foreground/50">
+                            ↪ {l.shared_terms.join(", ")}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+// Verdict styling per readiness band.
+const BAND_META: Record<string, { label: string; ring: string; text: string; bar: string }> = {
+  ready:       { label: "Ready",       ring: "border-emerald-500/40 bg-emerald-500/[0.07]", text: "text-emerald-300", bar: "bg-emerald-500" },
+  forming:     { label: "Forming",     ring: "border-amber-500/40 bg-amber-500/[0.07]",     text: "text-amber-300",   bar: "bg-amber-500" },
+  exploratory: { label: "Exploratory", ring: "border-red-500/40 bg-red-500/[0.07]",         text: "text-red-300",     bar: "bg-red-500" },
+};
+const RESOLVE_KIND_META: Record<string, string> = {
+  BLOCKS:      "text-amber-300 bg-amber-500/10 border-amber-500/30",
+  CONTRADICTS: "text-red-300 bg-red-500/10 border-red-500/30",
+  DEPENDS_ON:  "text-cyan-300 bg-cyan-500/10 border-cyan-500/30",
+};
+
+/**
+ * Decision Readiness (§17.5) — the capstone. Fuses measured inter-model agreement
+ * (§10.3) with the semantic KG edges (§17.4) into one verdict per decision —
+ * Exploratory / Forming / Ready — plus the cheapest *resolve-path*: the specific open
+ * questions, conflicts, and unvalidated assumptions to clear, each tagged with the
+ * readiness it would unlock. Answers the product's core question: "act on this yet?"
+ */
+function DecisionReadinessPanel({ decisions }: { decisions: DecisionReadiness[] }) {
+  if (!decisions || decisions.length === 0) return null;
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2 text-xs font-bold uppercase tracking-wider text-primary/90">
+        <Target className="w-3.5 h-3.5" /> Decision Readiness
+      </div>
+      {decisions.map((d) => {
+        const meta = BAND_META[d.band] || BAND_META.exploratory;
+        const pct = Math.round(d.readiness * 100);
+        return (
+          <div key={d.decision_id} className={`rounded-xl border ${meta.ring} p-4`}>
+            <div className="flex items-start justify-between gap-3 mb-2">
+              <p className="text-sm font-medium text-foreground/90 leading-snug">{d.decision}</p>
+              <span className={`shrink-0 text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-full border ${meta.ring} ${meta.text}`}>
+                {meta.label}
+              </span>
+            </div>
+
+            {/* readiness bar */}
+            <div className="flex items-center gap-2 mb-2">
+              <div className="h-1.5 flex-1 bg-white/10 rounded-full overflow-hidden">
+                <div className={`h-full ${meta.bar} transition-all duration-700`} style={{ width: `${pct}%` }} />
+              </div>
+              <span className={`text-xs font-bold ${meta.text}`}>{pct}%</span>
+            </div>
+
+            {/* evidence summary */}
+            <div className="flex flex-wrap gap-x-3 gap-y-1 text-[10px] text-muted-foreground/80 mb-2">
+              <span>agreement {d.agreement == null ? "n/a" : `${Math.round(d.agreement * 100)}%`}</span>
+              <span className="text-emerald-400/80">{d.evidence.support} support</span>
+              {d.evidence.conflict > 0 && <span className="text-red-400/80">{d.evidence.conflict} conflict</span>}
+              {d.evidence.blocker > 0 && <span className="text-amber-400/80">{d.evidence.blocker} open</span>}
+              {d.evidence.depends_on > 0 && <span className="text-cyan-400/80">{d.evidence.depends_on} assumption</span>}
+            </div>
+
+            {/* resolve-path */}
+            {d.resolve_path.length === 0 ? (
+              <p className="text-[11px] text-emerald-300/90">Nothing blocking — no open questions, conflicts, or unvalidated assumptions linked.</p>
+            ) : (
+              <div className="space-y-1.5">
+                <p className="text-[10px] uppercase tracking-wider text-muted-foreground/60 font-bold">
+                  Resolve {d.n_to_resolve} to raise readiness
+                </p>
+                {d.resolve_path.map((s, i) => {
+                  const cls = RESOLVE_KIND_META[s.kind] || "text-slate-300 bg-slate-500/10 border-slate-500/30";
+                  return (
+                    <div key={i} className="flex items-start gap-2 text-xs">
+                      <span className={`shrink-0 text-[8px] font-black uppercase tracking-widest px-1.5 py-0.5 rounded border ${cls}`}>
+                        {s.action}
+                      </span>
+                      <span className="text-foreground/85 min-w-0">{s.content}</span>
+                      <span className="shrink-0 text-[9px] font-mono text-muted-foreground/50">+{Math.round(s.unlocks * 100)}%</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
 
 function MetricGauge({ label, score, color }: { label: string, score: number, color: string }) {
   return (
@@ -1019,16 +1408,6 @@ function NodeCard({ node, type }: { node: any, type: 'support' | 'conflict' | 'r
             transition-all duration-200 hover:scale-[1.02] cursor-default group
         `}>
       <p className="text-sm leading-snug mb-1">{node.content}</p>
-
-      {/* ACTION HOOKS - Operational */}
-      <div className="flex gap-2 mt-2 opacity-0 group-hover:opacity-100 transition-opacity">
-        <button className="text-[9px] uppercase tracking-wider font-bold bg-white/10 hover:bg-white/20 px-2 py-0.5 rounded text-white/80 transition-colors">
-          Validate
-        </button>
-        <button className="text-[9px] uppercase tracking-wider font-bold bg-primary/20 hover:bg-primary/30 px-2 py-0.5 rounded text-primary-foreground transition-colors">
-          + Task
-        </button>
-      </div>
     </div>
   );
 }

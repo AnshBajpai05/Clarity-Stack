@@ -90,7 +90,10 @@ export function MessageBubble({ message, onRefresh, dim, onClick, isViewer }: Me
   const isUser = message.role === "user";
 
   const timestamp = message.created_at
-    ? format(new Date(message.created_at + "Z"), "MMM d, yyyy — h:mm a")
+    ? format(
+        new Date(message.created_at.endsWith("Z") ? message.created_at : message.created_at + "Z"),
+        "MMM d, yyyy — h:mm a"
+      )
     : "";
 
   const handleAccept = async () => {

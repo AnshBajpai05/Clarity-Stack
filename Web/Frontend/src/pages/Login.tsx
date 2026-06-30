@@ -1,5 +1,4 @@
 import React, { useState } from "react";
-import axios from "axios";
 import { useNavigate } from "react-router-dom";
 
 type FormData = {
@@ -49,7 +48,7 @@ function Login() {
 
     setNoAccount(false);
     try {
-      const res = await fetch("http://127.0.0.1:8000/api/auth/login", {
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}/api/auth/login`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         credentials: "include", // §5.4: Backend will set httpOnly cookies
@@ -62,6 +61,20 @@ function Login() {
       if (res.ok) {
         // We no longer store the JWT in localStorage
         localStorage.setItem("cs_email", formData.email || "");
+        // Pull the server-side profile so greetings (cs_nickname) populate without
+        // needing a manual Settings save. Non-critical — never block login on it.
+        try {
+          const meRes = await fetch(
+            `${import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}/api/auth/me`,
+            { credentials: "include" }
+          );
+          if (meRes.ok) {
+            const me = await meRes.json();
+            if (me.nickname && !localStorage.getItem("cs_nickname")) {
+              localStorage.setItem("cs_nickname", me.nickname);
+            }
+          }
+        } catch { /* greeting is best-effort */ }
         navigate("/projects");
         return;
       }

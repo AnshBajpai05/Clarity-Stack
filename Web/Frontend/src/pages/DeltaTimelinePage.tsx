@@ -1,7 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
-import { getDeltas, computeDelta, generateTemporalCard } from "@/lib/api";
+import { getDeltas, computeDelta, generateCardFromDeltaId } from "@/lib/api";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { Button } from "@/components/ui/button";
 import { Activity, Plus, Minus, Zap, RefreshCcw, FileText } from "lucide-react";
@@ -52,7 +52,7 @@ export default function DeltaTimelinePage() {
     if (!projectId) return;
     setIsGeneratingCard(deltaId);
     try {
-      await generateTemporalCard(projectId);
+      await generateCardFromDeltaId(projectId, deltaId);   // §15.14: from THIS delta, not the latest
       toast({ title: "Temporal Card generated successfully!" });
       navigate(`/projects/${projectId}/cards`);
     } catch (err: any) {

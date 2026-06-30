@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Layers, Sparkles, ChevronLeft, ChevronUp, ChevronDown, MessageSquare, Star, ArrowLeft, Zap, AlertTriangle, Clock, Pencil, Trash2, CheckCircle, Lightbulb, FileText, Code, HelpCircle } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
@@ -67,6 +68,16 @@ function sortCardsWithPinned(cards: ExtendedCardData[]): ExtendedCardData[] {
   return [...cards].sort((a, b) => (a.isPinned === b.isPinned ? 0 : a.isPinned ? -1 : 1));
 }
 
+// Pins are a client-side preference (no server endpoint) — persist them so they
+// survive reloads instead of resetting every render (§15.13).
+const PINNED_KEY = 'cs_pinned_cards';
+function getPinnedSet(): Set<string> {
+  try { return new Set(JSON.parse(localStorage.getItem(PINNED_KEY) || '[]')); } catch { return new Set(); }
+}
+function savePinnedSet(s: Set<string>) {
+  try { localStorage.setItem(PINNED_KEY, JSON.stringify([...s])); } catch { /* ignore quota */ }
+}
+
 export default function CardsPage() {
   const [projects, setProjects] = useState<ProjectWithGlow[]>([]);
   const [loadingProjects, setLoadingProjects] = useState(true);
@@ -78,6 +89,7 @@ export default function CardsPage() {
   const [isTransitioning, setIsTransitioning] = useState(false);
   const [chatsWithCards, setChatsWithCards] = useState<ChatWithCards[]>([]);
   const [loadingCards, setLoadingCards] = useState(false);
+  const navigate = useNavigate();
 
   useEffect(() => {
     (async () => {
@@ -92,6 +104,7 @@ export default function CardsPage() {
     if (!selectedProjectId) return;
     (async () => {
       setLoadingCards(true);
+      const pinnedSet = getPinnedSet();
       try {
         const [ch, cr] = await Promise.all([getChats(selectedProjectId), getTemporalCards(selectedProjectId)]);
         const map = new Map<string, any>();
@@ -115,7 +128,7 @@ export default function CardsPage() {
               version: `v${c.version || 1}.0`,
               created_at: c.createdAt || new Date().toISOString(),
               updated_at: c.updatedAt || new Date().toISOString(),
-              isPinned: false
+              isPinned: pinnedSet.has(c._id || c.id || `card-${idx}-${(c.title || 'untitled').slice(0, 24)}`)
             };
             const g = map.get(ui.chat_id) || map.get('project-context');
             ui.chat_title = g.title;
@@ -146,6 +159,9 @@ export default function CardsPage() {
 
   const togglePin = (id: string, e: any) => {
     e.stopPropagation();
+    const pinned = getPinnedSet();
+    if (pinned.has(id)) pinned.delete(id); else pinned.add(id);
+    savePinnedSet(pinned);
     setChatsWithCards(p => p.map(ch => ({ ...ch, cards: ch.cards.map(c => c.id === id ? { ...c, isPinned: !c.isPinned } : c) })));
   };
 
@@ -183,7 +199,7 @@ export default function CardsPage() {
                 <Layers className="w-16 h-16 text-muted-foreground mx-auto mb-6 opacity-20" />
                 <h2 className="text-2xl font-bold mb-3 text-foreground">Deck is Empty</h2>
                 <p className="text-muted-foreground mb-8 text-sm">No insights extracted for {selectedProject?.name}. Click below to trigger the synthesis engine.</p>
-                <Button variant="neon" size="lg" onClick={() => window.location.reload()}><Zap className="w-5 h-5 mr-2" /> Generate Now</Button>
+                <Button variant="neon" size="lg" onClick={() => navigate(`/projects/${selectedProjectId}/cards`)}><Zap className="w-5 h-5 mr-2" /> Generate Now</Button>
               </div>
             </div>
           </div>
@@ -282,9 +298,6 @@ export default function CardsPage() {
                       <div className="flex items-center gap-3">
                         <div className={cn("w-2.5 h-2.5 rounded-full animate-pulse", confidenceColors[currentCard.confidence]?.replace('text-', 'bg-'))} />
                         <span className={cn("text-xs font-black uppercase tracking-widest", confidenceColors[currentCard.confidence])}>{currentCard.confidence} Confidence Level</span>
-                      </div>
-                      <div className="flex -space-x-2">
-                        {[1,2,3].map(i => <div key={i} className="w-8 h-8 rounded-full border-2 border-background bg-muted/50 flex items-center justify-center text-[10px] font-bold">AI</div>)}
                       </div>
                     </div>
                   </div>

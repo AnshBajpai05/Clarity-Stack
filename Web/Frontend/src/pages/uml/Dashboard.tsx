@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { GitMerge, ExternalLink, RefreshCw, Wifi, WifiOff, Loader2, ArrowLeft } from "lucide-react";
+import { GitMerge, ExternalLink, RefreshCw, WifiOff, Loader2, ArrowLeft } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { MainLayout } from "@/components/layout/MainLayout";
 
-const UML_SERVICE_URL = "http://localhost:8007";
+const UML_SERVICE_URL =
+  (import.meta.env.VITE_UML_URL as string) || `http://${window.location.hostname}:8007`;
 
 type ConnectionStatus = "checking" | "online" | "offline";
 
@@ -47,7 +48,8 @@ export default function UMLDashboard() {
     try {
       const payload = JSON.parse(srsContext);
       if (Date.now() - payload.timestamp < 3600000) { // 1 hour max
-        iframeRef.current.contentWindow.postMessage({ type: 'SRS_CONTEXT', payload }, '*');
+        // §15.8: target the UML app's own origin, not '*' — don't broadcast SRS context to any frame.
+        iframeRef.current.contentWindow.postMessage({ type: 'SRS_CONTEXT', payload }, new URL(UML_SERVICE_URL).origin);
         // Clear it so it doesn't get resent on manual reloads
         sessionStorage.removeItem('uml_srs_context');
       }

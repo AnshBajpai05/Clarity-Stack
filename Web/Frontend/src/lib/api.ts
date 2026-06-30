@@ -7,13 +7,9 @@ const getSafeStorage = (key: string): string | null => {
   }
 };
 
-const SRS_API_BASE_URL = (import.meta.env.VITE_SRS_API_URL as string) || getSafeStorage('cs_api_url') || 'http://localhost:8001';
+const SRS_API_BASE_URL = (import.meta.env.VITE_SRS_API_URL as string) || 'http://localhost:8001';
 const SATELLITE_BASE_URL = `${(import.meta.env.VITE_SATELLITE_URL as string) || 'http://localhost:8003'}/api/satellite`;
 import { api } from "./http";
-
-
-// Demo mode - uses mock data when API is unavailable
-let useDemoMode = false;
 
 /* ===================== TYPES ===================== */
 
@@ -118,171 +114,10 @@ export interface CreateMessagePayload {
 }
 
 
-/* ===================== HELPERS ===================== */
-
-function iso(msAgo: number) {
-  return new Date(Date.now() - msAgo).toISOString();
-}
-
-/* ===================== MOCK DATA ===================== */
-
-const mockProjects: Project[] = [
-  {
-    id: 'demo-project-1',
-    name: 'AI Agent Development',
-
-    purpose: 'Build a multi-model AI assistant that supports structured knowledge workflows.',
-    success_criteria: 'Able to ingest chats, create cards, track versions, and support summaries.',
-    constraints: 'MVP architecture, small team, rapid iteration.',
-    owner: 'ansh',
-
-    created_at: iso(7 * 86400000),
-    updated_at: iso(2 * 86400000),
-  },
-  {
-    id: 'demo-project-2',
-    name: 'Product Roadmap Q1',
-
-    purpose: 'Plan and validate roadmap priorities for Q1.',
-    success_criteria: 'Stakeholder alignment + documented priorities.',
-    constraints: 'Time-boxed, roadmap clarity required.',
-    owner: 'product-team',
-
-    created_at: iso(14 * 86400000),
-    updated_at: iso(86400000),
-  },
-];
-
-
-const mockChats: Record<string, Chat[]> = {
-  'demo-project-1': [
-    
-  {
-  id: 'demo-chat-1',
-  project_id: 'demo-project-1',
-  title: 'Architecture Discussion',
-  source_type: 'chatgpt',
-
-  purpose: "Discuss core system architecture",
-  phase: "Design",
-  description: "High-level architecture conversations + trade-offs",
-  owner: "ansh",
-
-  created_at: iso(5 * 86400000),
-  updated_at: iso(86400000),
-  pinned: false,
-  archived: false,
-},
-
-  {
-    id: 'demo-chat-1',
-    project_id: 'demo-project-1',
-    title: 'Architecture Discussion',
-    source_type: 'chatgpt',
-
-    purpose: "Discuss core system architecture",
-    phase: "Design",
-    description: "High-level architecture conversations + trade-offs",
-    owner: "ansh",
-
-    created_at: iso(5 * 86400000),
-    updated_at: iso(86400000),
-    pinned: false,
-    archived: false,
-  },
-
-  ],
-  'demo-project-2': [
-  {
-    id: 'demo-chat-1',
-    project_id: 'demo-project-1',
-    title: 'Architecture Discussion',
-    source_type: 'chatgpt',
-
-    purpose: "Discuss core system architecture",
-    phase: "Design",
-    description: "High-level architecture conversations + trade-offs",
-    owner: "ansh",
-
-    created_at: iso(5 * 86400000),
-    updated_at: iso(86400000),
-    pinned: false,
-    archived: false,
-  },
-
-  ],
-};
-
-const mockMessages: Record<string, Message[]> = {
-  'demo-chat-1': [
-    {
-      id: 'msg-1',
-      chat_id: 'demo-chat-1',
-      role: 'user',
-      sender: 'Alex Chen',
-      text: 'What architecture should we use for the new AI agent system?',
-      created_at: iso(2 * 3600000),
-      ingested_at: iso(2 * 3600000),
-      accepted : false,
-      include_in_summary : false,
-      reply_group_id : 'abc',
-
-    },
-    {
-      id: 'msg-2',
-      chat_id: 'demo-chat-1',
-      role: 'assistant',
-      sender: 'Claude',
-      text: 'I recommend a microservices architecture with event-driven communication...',
-      created_at: iso(1.9 * 3600000),
-      ingested_at: iso(1.9 * 3600000),
-      accepted : false,
-      include_in_summary : false,
-      reply_group_id : 'abc',
-    },
-  ],
-  'demo-chat-2': [
-    {
-      id: 'msg-6',
-      chat_id: 'demo-chat-2',
-      role: 'user',
-      sender: 'Jordan',
-      text: 'Standup: Finished the API integration yesterday. Today working on tests.',
-      created_at: iso(20 * 3600000),
-      ingested_at: iso(20 * 3600000),
-      accepted : false,
-      include_in_summary : false,
-      reply_group_id : 'abc',
-    },
-  ],
-  'demo-chat-3': [
-    {
-      id: 'msg-9',
-      chat_id: 'demo-chat-3',
-      role: 'user',
-      sender: 'Product Manager',
-      text: 'We need to prioritize features for Q1...',
-      created_at: iso(48 * 3600000),
-      ingested_at: iso(48 * 3600000),
-      accepted : false,
-      include_in_summary : false,
-      reply_group_id : 'abc',
-    },
-  ],
-};
-
 /* ===================== PROJECTS ===================== */
 
 export async function getProjects(): Promise<Project[]> {
-  try {
-    const result = await api<Project[]>('/projects');
-    useDemoMode = false;
-    return result;
-  } catch {
-    console.log('API unavailable, using demo mode');
-    useDemoMode = true;
-    return [...mockProjects];
-  }
+  return api<Project[]>('/projects');
 }
 
 export async function getPublicProjects(search?: string): Promise<Project[]> {
@@ -295,7 +130,6 @@ export async function getPublicProjects(search?: string): Promise<Project[]> {
 }
 
 export async function searchProjects(query: { projectId: string }): Promise<Project[]> {
-  if (useDemoMode) return [];
   const params = new URLSearchParams();
   params.append("project_id", query.projectId);
   return api<Project[]>(`/projects/search?${params.toString()}`);
@@ -381,7 +215,6 @@ export async function getActivityLogs(projectId: string): Promise<ActivityLog[]>
 
 
 export async function getChats(projectId: string): Promise<Chat[]> {
-  if (useDemoMode) return mockChats[projectId] || [];
   return api<Chat[]>(`/projects/${projectId}/chats`);
 }
 export async function createChat(
@@ -407,10 +240,6 @@ export async function createChat(
 /* ===================== MESSAGES ===================== */
 
 export async function getMessages(chatId: string): Promise<Message[]> {
-  if (useDemoMode) {
-    return [...(mockMessages[chatId] || [])].reverse(); // newest first
-  }
-
   return api<Message[]>(`/chats/${chatId}/messages`);
 }
 export async function createMessage(chatId: string, payload: CreateMessagePayload): Promise<Message> {
@@ -421,12 +250,6 @@ export async function createMessage(chatId: string, payload: CreateMessagePayloa
   });
 }
 
-
-/* ===================== MODE FLAG ===================== */
-
-export function isDemoMode(): boolean {
-  return useDemoMode;
-}
 
 /* ===================== AUTH HELPERS ===================== */
 
@@ -515,10 +338,12 @@ export async function setMessageIncludeSummary(messageId: string, include: boole
   });
 }
 
-export async function askChat(chatId: string, sender: string, text: string) {
+export async function askChat(chatId: string, sender: string, text: string, askAnyway = false) {
+  // §16.5 ask_anyway: relax the conservative CONFLICT gate on an explicit retry so a
+  // valid answer isn't held back. Default false keeps the gate on.
   return api<any>(`/chats/${chatId}/ask`, {
     method: "POST",
-    body: JSON.stringify({ sender, text }),
+    body: JSON.stringify({ sender, text, ask_anyway: askAnyway }),
   });
 }
 
@@ -573,6 +398,109 @@ export async function generateSynthesis(
     method: "POST",
     body: JSON.stringify({ reply_group_id: replyGroupId }),
   });
+}
+
+/* ===================== DISAGREEMENT SPOTLIGHT ===================== */
+
+export interface ClaimAnalysis {
+  section: string;
+  text: string;
+  models: string[];
+  support: number;
+  n_models: number;
+  contested: boolean;
+  agreement: number | null;
+}
+
+export interface DisagreementResult {
+  n_models: number;
+  models: string[];
+  overall: { score: number | null; level: string };
+  claims: ClaimAnalysis[];
+  contested: ClaimAnalysis[];
+}
+
+/** Where the ensemble diverged for one reply group (recomputed from stored blocks). */
+export async function getDisagreement(
+  chatId: string,
+  replyGroupId: string
+): Promise<DisagreementResult> {
+  return api<DisagreementResult>(`/chats/${chatId}/synthesis/${replyGroupId}/disagreement`);
+}
+
+/* ===================== DEVIL'S ADVOCATE (§17.2) ===================== */
+
+export interface DevilsAdvocateChallenge {
+  category: 'RISK' | 'ASSUMPTION' | 'FAILURE_MODE' | 'COUNTERPOINT';
+  text: string;
+}
+
+export interface DevilsAdvocateResult {
+  decision: string[];
+  challenges: DevilsAdvocateChallenge[];
+  model: string | null;
+  n_challenges: number;
+  note?: 'no_decision' | 'unstructured_response' | null;
+}
+
+/** On-demand red-team of a decision. Triggers one paid LLM call (members-only). */
+export async function getDevilsAdvocate(
+  chatId: string,
+  replyGroupId: string
+): Promise<DevilsAdvocateResult> {
+  return api<DevilsAdvocateResult>(`/chats/${chatId}/synthesis/${replyGroupId}/devils-advocate`);
+}
+
+/* ===================== WHY THIS DECISION? — grounded trace (§17.4) ===================== */
+
+export interface DecisionLink {
+  relation: string;
+  phrase: string;
+  section: string;
+  content: string;
+  node_id: string;
+  shared_terms: string[];
+}
+
+export interface DecisionTraceItem {
+  decision_id: string;
+  synthesis_id: string | null;
+  decision: string;
+  confidence: number | null;
+  links: DecisionLink[];
+  n_links: number;
+}
+
+/** Edge-grounded "why" for each decision in a chat (no model call). */
+export async function getDecisionTrace(chatId: string): Promise<{ decisions: DecisionTraceItem[] }> {
+  return api<{ decisions: DecisionTraceItem[] }>(`/chats/${chatId}/decision-trace`);
+}
+
+/* ===================== DECISION READINESS (§17.5) ===================== */
+
+export interface ResolveStep {
+  kind: 'BLOCKS' | 'CONTRADICTS' | 'DEPENDS_ON';
+  action: string;
+  content: string;
+  node_id: string | null;
+  unlocks: number;
+}
+
+export interface DecisionReadiness {
+  decision_id: string;
+  synthesis_id: string | null;
+  decision: string;
+  readiness: number;          // 0..1
+  band: 'ready' | 'forming' | 'exploratory';
+  agreement: number | null;   // measured inter-model agreement (§10.3)
+  evidence: { support: number; conflict: number; blocker: number; depends_on: number };
+  resolve_path: ResolveStep[];
+  n_to_resolve: number;
+}
+
+/** Per-decision readiness verdict + cheapest resolve-path (no model call). */
+export async function getDecisionReadiness(chatId: string): Promise<{ decisions: DecisionReadiness[] }> {
+  return api<{ decisions: DecisionReadiness[] }>(`/chats/${chatId}/decision-readiness`);
 }
 
 /* ===================== SATELLITE SERVICE ===================== */
@@ -658,6 +586,11 @@ export async function getTemporalCards(projectId: string) {
 
 export async function generateTemporalCard(projectId: string) {
   return fetchSatellite<any>(`/cards/${projectId}/generate`, { method: "POST" });
+}
+
+// §15.14: generate a card from a SPECIFIC delta (the one the user selected), not the latest.
+export async function generateCardFromDeltaId(projectId: string, deltaId: string) {
+  return fetchSatellite<any>(`/cards/${projectId}/generate/delta/${deltaId}`, { method: "POST" });
 }
 
 export async function generateCardFromChat(projectId: string, chatId: string, label?: string) {

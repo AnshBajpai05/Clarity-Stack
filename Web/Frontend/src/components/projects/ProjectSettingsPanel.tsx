@@ -108,7 +108,8 @@ export function ProjectSettingsPanel({ projectId, projectName, currentUserEmail,
   },[projectId, isPrivileged]);
 
   useEffect(()=>{ fetchMembers(); },[fetchMembers]);
-  useEffect(()=>{ if(tab==='requests') fetchRequests(); },[tab,fetchRequests]);
+  // Fetch requests on mount (not just when the tab opens) so the pending-count badge pre-warns.
+  useEffect(()=>{ fetchRequests(); },[fetchRequests]);
   useEffect(()=>{ if(tab==='activity') fetchLogs(); },[tab,fetchLogs]);
 
   /* handlers */

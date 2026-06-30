@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useParams, Link, useNavigate } from 'react-router-dom';
-import { Plus, MessageSquare, ArrowLeft, FolderKanban, Info, Settings } from 'lucide-react';
+import { Plus, MessageSquare, ArrowLeft, FolderKanban, Settings } from 'lucide-react';
 
 import { MainLayout } from '@/components/layout/MainLayout';
 import { ChatCard } from '@/components/chats/ChatCard';
@@ -20,7 +20,6 @@ import {
   getArchivedChats,
   deleteChat,
   Chat,
-  isDemoMode,
   togglePinChat,
   getProject,
   Project,
@@ -114,7 +113,6 @@ function EditProjectBannerModal({
   const [purpose, setPurpose] = useState(project.purpose);
   const [success, setSuccess] = useState(project.success_criteria);
   const [constraints, setConstraints] = useState(project.constraints);
-  const [owner, setOwner] = useState(project.owner ?? "");
 
   if (!isOpen) return null;
 
@@ -148,13 +146,6 @@ function EditProjectBannerModal({
           placeholder="Constraints"
         />
 
-        <input
-          className="w-full p-2 bg-background/40 rounded"
-          value={owner}
-          onChange={e => setOwner(e.target.value)}
-          placeholder="Owner"
-        />
-
         <div className="flex justify-end gap-2 pt-2">
           <Button variant="outline" onClick={onClose}>Cancel</Button>
 
@@ -163,8 +154,7 @@ function EditProjectBannerModal({
             onClick={() => onSave({
               purpose,
               success_criteria: success,
-              constraints,
-              owner
+              constraints
             })}
           >
             Save
@@ -197,11 +187,7 @@ export default function ChatsPage() {
 
   const { toast } = useToast();
   const navigate = useNavigate();
-  const demoMode = isDemoMode();
   const currentUserEmail = localStorage.getItem('cs_email') || '';
-  const isOwnerOrPm = !!(project && (
-    project.owner === currentUserEmail
-  ));
 
   // Real RBAC role from members list
   const [memberRole, setMemberRole] = useState<'owner'|'pm'|'member'|'viewer'>('member');
@@ -212,6 +198,7 @@ export default function ChatsPage() {
     if (project.owner === currentUserEmail) return 'owner';
     return memberRole;
   })();
+  const isOwnerOrPm = currentUserRole === 'owner' || currentUserRole === 'pm';
   const [showSettings, setShowSettings] = useState(false);
   
 
@@ -365,24 +352,6 @@ const handleCreateChat = async (
 
   return (
     <MainLayout>
-
-      {demoMode && !isLoading && (
-        <div className="mb-6 glass-panel p-4 border-neon-peach/30 animate-fade-in">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-neon-peach/20 flex items-center justify-center">
-              <Info className="w-4 h-4 text-neon-peach" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-neon-peach">Demo Mode</p>
-              <p className="text-xs text-muted-foreground">
-                Backend unavailable. Using sample data.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
-
 
       <div className="mb-8">
 

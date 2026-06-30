@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, FolderKanban, LogIn, Sparkles } from 'lucide-react';
+import { Search, FolderKanban, LogIn } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { ProjectCard } from '@/components/projects/ProjectCard';
 import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
@@ -88,7 +88,7 @@ export default function ProjectSearch() {
       {isLoading ? (
         <LoadingSpinner className="py-20" text="Searching projects..." />
       ) : error ? (
-        <ErrorState message={error} onRetry={() => handleSearch} />
+        <ErrorState message={error} onRetry={() => { if (query.trim()) handleSearch(new Event('submit') as unknown as React.FormEvent); }} />
       ) : results.length > 0 ? (
         <div className="space-y-4">
           <h2 className="text-xl font-semibold mb-4">Results ({results.length})</h2>

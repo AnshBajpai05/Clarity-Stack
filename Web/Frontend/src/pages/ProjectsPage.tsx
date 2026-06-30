@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
-import { Plus, FolderKanban, Sparkles, Info, Search } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Plus, FolderKanban, Sparkles, Search } from 'lucide-react';
 import { MainLayout } from '@/components/layout/MainLayout';
 import { ProjectCard } from '@/components/projects/ProjectCard';
 import { CreateProjectModal } from '@/components/projects/CreateProjectModal';
@@ -12,8 +13,7 @@ import {
   getProjects,
   createProject,
   Project,
-  CreateProjectPayload,
-  isDemoMode
+  CreateProjectPayload
 } from '@/lib/api';
 
 import { useToast } from '@/hooks/use-toast';
@@ -26,6 +26,7 @@ export default function ProjectsPage() {
   const [isCreating, setIsCreating] = useState(false);
 
   const { toast } = useToast();
+  const navigate = useNavigate();
 
   const fetchProjects = useCallback(async () => {
     setIsLoading(true);
@@ -69,31 +70,8 @@ export default function ProjectsPage() {
     }
   };
 
-  const demoMode = isDemoMode();
-
   return (
     <MainLayout>
-      {/* Demo Mode Banner */}
-      {demoMode && !isLoading && (
-        <div className="mb-6 glass-panel p-4 border-neon-peach/30 animate-fade-in-up">
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-lg bg-neon-peach/15 flex items-center justify-center">
-              <Info className="w-4 h-4 text-neon-peach" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-neon-peach">Demo Mode</p>
-              <p className="text-xs text-muted-foreground">
-                Backend unavailable. Using sample data. Connect to
-                <code className="px-1 py-0.5 rounded bg-muted text-foreground mx-1 border border-border/50">
-                  http://127.0.0.1:8000
-                </code>
-                for live data.
-              </p>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Header */}
       <div className="mb-8 flex justify-between items-center animate-fade-in-up">
         <div>
@@ -109,7 +87,7 @@ export default function ProjectsPage() {
             Manage your knowledge projects and chat histories.
           </p>
         </div>
-        <Button variant="outline" data-tour="discover-projects" onClick={() => window.location.href = '/projects/search'}>
+        <Button variant="outline" data-tour="discover-projects" onClick={() => navigate('/projects/search')}>
           <Search className="w-4 h-4" />
           Discover Projects
         </Button>

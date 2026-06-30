@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { Settings, Server, Palette, Bell, Shield, Database, Save, Check, Plus, LogOut } from 'lucide-react';
+import { Settings, Server, Palette, Bell, Shield, Database, Save, Check, Plus } from 'lucide-react';
 import { getCookie } from '@/lib/http';
 import { applyAccentColor } from '@/lib/utils';
 import { MainLayout } from '@/components/layout/MainLayout';
@@ -30,8 +30,6 @@ export default function SettingsPage() {
   const [activeSection, setActiveSection] = useState('profile');
   const [fullName, setFullName] = useState('');
   const [placeholderName, setPlaceholderName] = useState('User');
-  const [apiUrl, setApiUrl] = useState('http://127.0.0.1:8000');
-  const [autoSync, setAutoSync] = useState(true);
   const [darkMode, setDarkMode] = useState(true);
   const [compactView, setCompactView] = useState(false);
   const [notifications, setNotifications] = useState(true);
@@ -43,12 +41,6 @@ export default function SettingsPage() {
 
   useEffect(() => {
     // Load persisted settings
-    const savedApiUrl = localStorage.getItem('cs_api_url');
-    if (savedApiUrl) setApiUrl(savedApiUrl);
-    
-    const savedAutoSync = localStorage.getItem('cs_auto_sync');
-    if (savedAutoSync !== null) setAutoSync(savedAutoSync === 'true');
-    
     const savedDarkMode = localStorage.getItem('cs_dark_mode');
     if (savedDarkMode !== null) setDarkMode(savedDarkMode === 'true');
     
@@ -60,6 +52,13 @@ export default function SettingsPage() {
 
     const savedNickname = localStorage.getItem('cs_nickname');
     if (savedNickname) setFullName(savedNickname);
+
+    const savedNotifications = localStorage.getItem('cs_notifications');
+    if (savedNotifications !== null) setNotifications(savedNotifications === 'true');
+    const savedSound = localStorage.getItem('cs_sound');
+    if (savedSound !== null) setSoundEnabled(savedSound === 'true');
+    const savedAnalytics = localStorage.getItem('cs_analytics');
+    if (savedAnalytics !== null) setAnalyticsEnabled(savedAnalytics === 'true');
 
     async function loadUser() {
       try {
@@ -111,9 +110,13 @@ export default function SettingsPage() {
         // If no supabase, we just continue (local save already happened)
       }
 
-      if (activeSection === 'api') {
-        localStorage.setItem('cs_api_url', apiUrl);
-        localStorage.setItem('cs_auto_sync', String(autoSync));
+      if (activeSection === 'notifications') {
+        localStorage.setItem('cs_notifications', String(notifications));
+        localStorage.setItem('cs_sound', String(soundEnabled));
+      }
+
+      if (activeSection === 'privacy') {
+        localStorage.setItem('cs_analytics', String(analyticsEnabled));
       }
 
       if (activeSection === 'appearance') {
@@ -170,7 +173,7 @@ export default function SettingsPage() {
                 <div>
                   <p className="font-medium text-foreground">Identity Verification</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Your nickname is stored in your secure account metadata.
+                    Your nickname is saved on this device.
                   </p>
                 </div>
               </div>
@@ -181,30 +184,6 @@ export default function SettingsPage() {
       case 'api':
         return (
           <div className="space-y-6">
-            <div className="space-y-2">
-              <Label htmlFor="api-url">Backend API URL</Label>
-              <Input
-                id="api-url"
-                value={apiUrl}
-                onChange={(e) => setApiUrl(e.target.value)}
-                placeholder="http://127.0.0.1:8000"
-                className="bg-muted/50 border-glass focus:border-primary"
-              />
-              <p className="text-xs text-muted-foreground">
-                The base URL for your ClarityStack backend API.
-              </p>
-            </div>
-
-            <div className="flex items-center justify-between p-4 glass-panel rounded-xl">
-              <div>
-                <p className="font-medium text-foreground">Auto-sync</p>
-                <p className="text-sm text-muted-foreground">
-                  Automatically refresh data from the backend
-                </p>
-              </div>
-              <Switch checked={autoSync} onCheckedChange={setAutoSync} />
-            </div>
-
             <div className="flex items-center justify-between p-4 glass-panel rounded-xl">
               <div>
                 <p className="font-medium text-foreground">Connection Status</p>
@@ -221,7 +200,7 @@ export default function SettingsPage() {
                   "text-sm",
                   getCookie('csrf_token') ? "text-neon-mint" : "text-neon-peach"
                 )}>
-                  {getCookie('csrf_token') ? "Connected" : "Local / Demo Mode"}
+                  {getCookie('csrf_token') ? "Connected" : "Not signed in"}
                 </span>
               </div>
             </div>
@@ -230,9 +209,11 @@ export default function SettingsPage() {
               <div className="flex items-start gap-3">
                 <Database className="w-5 h-5 text-neon-cyan mt-0.5" />
                 <div>
-                  <p className="font-medium text-foreground">Database</p>
+                  <p className="font-medium text-foreground">Backend</p>
                   <p className="text-sm text-muted-foreground mt-1">
-                    Using in-memory demo storage. Connect your backend for persistent data.
+                    {getCookie('csrf_token')
+                      ? "Connected to the ClarityStack backend — your data is persisted server-side."
+                      : "Sign in to connect to the ClarityStack backend."}
                   </p>
                 </div>
               </div>
@@ -377,7 +358,7 @@ export default function SettingsPage() {
               onClick={() => {
                 const data = {
                   settings: {
-                    apiUrl, autoSync, darkMode, compactView, notifications, soundEnabled, analyticsEnabled
+                    darkMode, compactView, notifications, soundEnabled, analyticsEnabled
                   },
                   exportedAt: new Date().toISOString()
                 };
@@ -398,7 +379,7 @@ export default function SettingsPage() {
               onClick={async () => {
                 if (window.confirm("Are you sure? This will clear all local settings and log you out.")) {
                   try {
-                    await fetch('http://127.0.0.1:8000/api/auth/logout', { method: 'POST', credentials: 'include' });
+                    await fetch(`${import.meta.env.VITE_API_BASE_URL || 'http://localhost:8000'}/api/auth/logout`, { method: 'POST', credentials: 'include' });
                   } catch (e) {}
                   localStorage.clear();
                   sessionStorage.clear();
