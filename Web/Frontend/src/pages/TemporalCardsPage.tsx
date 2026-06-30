@@ -18,7 +18,7 @@ import { Button } from "@/components/ui/button";
 import {
   Layers, FileCode, FileImage, Presentation,
   RefreshCw, Clock, GitBranch, Brain, Zap,
-  AlertTriangle, CheckCircle, Archive, Tag, Trash2, ArrowLeft
+  AlertTriangle, CheckCircle, Archive, Tag, Trash2, ArrowLeft, Network
 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { useGenerationStore } from "@/store/generationStore";
@@ -330,6 +330,9 @@ export default function TemporalCardsPage() {
               const isExpanded = expandedCard === card._id;
               const labelStyle = LABEL_BADGE[card.label] || LABEL_BADGE.general;
               const versionChain = isExpanded ? getVersionChain(card) : [];
+              // §16.4: a card has a real KG diff waiting to be committed (not yet flushed).
+              const hasPendingKG = !card.kgUpdated && ((card.kgDiff?.add?.length ?? 0) > 0);
+              const sourceChatId = card.sourceChatIds?.[0];
 
               return (
                 <div
@@ -346,6 +349,16 @@ export default function TemporalCardsPage() {
                       {(card.version > 1 || card.version === 0) && (
                         <span className="bg-neon-violet/15 text-neon-violet text-[9px] font-black tracking-widest px-2 py-0.5 rounded-md border border-neon-violet/30">
                           V{card.version || 0}
+                        </span>
+                      )}
+                      {hasPendingKG && (
+                        <span className="flex items-center gap-1 bg-amber-500/15 text-amber-400 text-[9px] font-black tracking-widest px-2 py-0.5 rounded-md border border-amber-500/30 uppercase">
+                          <Brain className="w-2.5 h-2.5" /> KG Pending
+                        </span>
+                      )}
+                      {card.kgUpdated && (
+                        <span className="flex items-center gap-1 bg-green-500/15 text-green-400 text-[9px] font-black tracking-widest px-2 py-0.5 rounded-md border border-green-500/30 uppercase">
+                          <CheckCircle className="w-2.5 h-2.5" /> In KG
                         </span>
                       )}
                     </div>
@@ -396,11 +409,11 @@ export default function TemporalCardsPage() {
                       </div>
 
                       <div className="flex gap-2">
-                        {!card.kgUpdated && (
+                        {hasPendingKG && (
                           <Button
                             variant="outline"
                             size="sm"
-                            onClick={() => handleApplyKG(card._id)}
+                            onClick={(e) => { e.stopPropagation(); handleApplyKG(card._id); }}
                             disabled={isGenerating(`kg-${card._id}`)}
                             className="h-8 text-[11px] px-3 border-neon-violet/30 hover:border-neon-violet text-neon-violet bg-neon-violet/5"
                           >
@@ -413,7 +426,18 @@ export default function TemporalCardsPage() {
                             )}
                           </Button>
                         )}
-                        
+                        {sourceChatId && (
+                          <Button
+                            variant="ghost"
+                            size="sm"
+                            onClick={(e) => { e.stopPropagation(); navigate(`/projects/${projectId}/kg?chat=${sourceChatId}`); }}
+                            title="See where this card's knowledge lives in the Knowledge Graph"
+                            className="h-8 text-[11px] px-3 text-muted-foreground hover:text-neon-violet hover:bg-neon-violet/5"
+                          >
+                            <Network className="w-3.5 h-3.5 mr-1.5" /> View in Graph
+                          </Button>
+                        )}
+
                         <Button
                           variant="ghost"
                           size="sm"

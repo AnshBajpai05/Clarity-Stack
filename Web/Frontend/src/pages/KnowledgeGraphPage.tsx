@@ -1,5 +1,5 @@
 import { useState, useEffect, useCallback, useRef, useMemo } from "react";
-import { useParams, useNavigate } from "react-router-dom";
+import { useParams, useNavigate, useSearchParams } from "react-router-dom";
 import { MainLayout } from "@/components/layout/MainLayout";
 import ForceGraph2D from "react-force-graph-2d";
 import { forceCollide } from "d3-force";
@@ -61,6 +61,8 @@ function arcPositions(
 export default function KnowledgeGraphPage() {
   const { projectId } = useParams();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const deepLinkChat = searchParams.get("chat");   // §16.4: arrive from a card's "View in Graph"
   const { toast } = useToast();
 
   // Raw data
@@ -173,6 +175,17 @@ export default function KnowledgeGraphPage() {
   }, []);
 
   useEffect(() => { loadGraph(); }, [loadGraph]);
+
+  // Deep-link (§16.4): when navigated here from a card's "View in Graph", auto-expand that
+  // card's source chat and fetch its KG so the user lands exactly where the card's knowledge
+  // lives — same effect as clicking the chat node, but driven by the ?chat= param.
+  useEffect(() => {
+    if (!deepLinkChat || isLoading) return;
+    if (!chats.some((c: any) => c.id === deepLinkChat)) return;
+    if (expandedChats.has(deepLinkChat)) return;
+    fetchChatKG(deepLinkChat);
+    setExpandedChats(new Set([deepLinkChat]));
+  }, [deepLinkChat, isLoading, chats, expandedChats, fetchChatKG]);
 
   // ── Build graph from state ─────────────────────────────────────────────────
   const buildGraph = useCallback(() => {
@@ -597,7 +610,7 @@ export default function KnowledgeGraphPage() {
             ) : graphData.nodes.length === 0 ? (
               <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground gap-3">
                 <Info className="w-12 h-12 opacity-40" />
-                <p className="text-sm">No data — trigger a snapshot first.</p>
+                <p className="text-sm">No knowledge yet — ask questions in this project's chats, then hit Reload.</p>
               </div>
             ) : (
               <ForceGraph2D
