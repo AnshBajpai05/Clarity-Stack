@@ -157,33 +157,89 @@ async function takeSnapshot(projectId, token) {
 }
 
 /**
- * Stable key for an edge (§11.2). Edge ids coming from Core can be missing; keying
- * a Set directly on `edgeId` would collapse every id-less edge to a single
- * `undefined` bucket and silently corrupt the diff. Fall back to a composite of the
- * endpoints + relation so distinct edges stay distinct.
+ * §16.3 fix — diff by CONTENT, not by UUID.
+ *
+ * Core re-mints a fresh node UUID for every claim on every `/ask` and is append-only,
+ * so keying the diff on `nodeId` made an identical, re-stated decision look brand-new
+ * each time (inflating "+N") while nothing ever matched the old ids to count as
+ * "removed". The timeline measured *that an ask happened*, not *how the thinking
+ * evolved*. Keying on normalized content collapses those UUID restatements: "added"
+ * now means genuinely new content entered the project, and a re-asked-but-unchanged
+ * decision contributes nothing.
  */
-function edgeKey(e) {
-  return e.edgeId != null
-    ? `id:${e.edgeId}`
-    : `pair:${e.fromNodeId}->${e.toNodeId}:${e.relation ?? ""}`;
+function normContent(s) {
+  return String(s || "")
+    .toLowerCase()
+    .replace(/\s+/g, " ")        // collapse whitespace
+    .replace(/[.,;:!?]+$/g, "")  // drop trailing punctuation
+    .trim();
+}
+
+// Section-scoped content identity: the same text under FACT vs DECISION is distinct.
+function nodeContentKey(n) {
+  return `${String(n.section || "").toUpperCase()}::${normContent(n.content)}`;
+}
+
+// An edge's identity is the MEANING of its endpoints + relation, not their churned
+// UUIDs. Resolve each endpoint to its node content key (falling back to the raw id
+// when the endpoint node isn't in the snapshot's node set) so edges stop churning too.
+function edgeContentKey(e, nodeKeyById) {
+  const from = nodeKeyById.get(e.fromNodeId) || `id:${e.fromNodeId}`;
+  const to = nodeKeyById.get(e.toNodeId) || `id:${e.toNodeId}`;
+  return `${from}|${e.relation ?? ""}|${to}`;
+}
+
+// Map nodeId -> content key for one snapshot (used to resolve edge endpoints).
+function nodeKeyIndex(snapshot) {
+  const m = new Map();
+  for (const n of snapshot?.nodes || []) m.set(n.nodeId, nodeContentKey(n));
+  return m;
+}
+
+// Keep ONE representative item per content key (first seen), so duplicate restatements
+// within the same window don't double-count and "+N" stays a count of distinct ideas.
+function dedupeByKey(items, keyFn) {
+  const seen = new Set();
+  const out = [];
+  for (const it of items) {
+    const k = keyFn(it);
+    if (seen.has(k)) continue;
+    seen.add(k);
+    out.push(it);
+  }
+  return out;
 }
 
 /**
- * Compute the delta between two snapshots.
- * If no "from" snapshot, the delta is everything in the "to" snapshot.
+ * Compute the delta between two snapshots, by content (see §16.3 note above).
+ * If no "from" snapshot, the delta is everything (deduped) in the "to" snapshot.
  */
 function computeDiff(fromSnapshot, toSnapshot) {
-  const fromNodeIds = new Set((fromSnapshot?.nodes || []).map((n) => n.nodeId));
-  const toNodeIds = new Set((toSnapshot?.nodes || []).map((n) => n.nodeId));
+  const fromNodeKeys = new Set((fromSnapshot?.nodes || []).map(nodeContentKey));
+  const toNodeKeys = new Set((toSnapshot?.nodes || []).map(nodeContentKey));
 
-  const fromEdgeKeys = new Set((fromSnapshot?.edges || []).map(edgeKey));
-  const toEdgeKeys = new Set((toSnapshot?.edges || []).map(edgeKey));
+  const fromIndex = nodeKeyIndex(fromSnapshot);
+  const toIndex = nodeKeyIndex(toSnapshot);
+  const fromEdgeKeys = new Set((fromSnapshot?.edges || []).map((e) => edgeContentKey(e, fromIndex)));
+  const toEdgeKeys = new Set((toSnapshot?.edges || []).map((e) => edgeContentKey(e, toIndex)));
 
-  const addedNodes = (toSnapshot.nodes || []).filter((n) => !fromNodeIds.has(n.nodeId));
-  const removedNodes = (fromSnapshot?.nodes || []).filter((n) => !toNodeIds.has(n.nodeId));
+  const addedNodes = dedupeByKey(
+    (toSnapshot.nodes || []).filter((n) => !fromNodeKeys.has(nodeContentKey(n))),
+    nodeContentKey
+  );
+  const removedNodes = dedupeByKey(
+    (fromSnapshot?.nodes || []).filter((n) => !toNodeKeys.has(nodeContentKey(n))),
+    nodeContentKey
+  );
 
-  const addedEdges = (toSnapshot.edges || []).filter((e) => !fromEdgeKeys.has(edgeKey(e)));
-  const removedEdges = (fromSnapshot?.edges || []).filter((e) => !toEdgeKeys.has(edgeKey(e)));
+  const addedEdges = dedupeByKey(
+    (toSnapshot.edges || []).filter((e) => !fromEdgeKeys.has(edgeContentKey(e, toIndex))),
+    (e) => edgeContentKey(e, toIndex)
+  );
+  const removedEdges = dedupeByKey(
+    (fromSnapshot?.edges || []).filter((e) => !toEdgeKeys.has(edgeContentKey(e, fromIndex))),
+    (e) => edgeContentKey(e, fromIndex)
+  );
 
   return { addedNodes, removedNodes, addedEdges, removedEdges };
 }
@@ -223,4 +279,8 @@ async function computeDelta(projectId, token) {
   return delta;
 }
 
-module.exports = { fetchKGFromCore, takeSnapshot, computeDiff, computeDelta };
+module.exports = {
+  fetchKGFromCore, takeSnapshot, computeDiff, computeDelta,
+  // exported for unit tests (§16.3 content-hash diff)
+  normContent, nodeContentKey, edgeContentKey,
+};

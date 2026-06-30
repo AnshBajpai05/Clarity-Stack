@@ -70,7 +70,8 @@ def _stub_llm(monkeypatch):
     # overwritten by the measured value.
     synth_ir = ("SUMMARY:\n- merged\nFACT:\n- system stores data in postgres\n"
                 "CONFIDENCE:\n- I am absolutely certain\n")
-    monkeypatch.setattr(main, "synthesize_content", lambda blocks: synth_ir)
+    # NB: /ask now calls synthesize_content(blocks, strict_conflict=...) — accept the kwarg.
+    monkeypatch.setattr(main, "synthesize_content", lambda blocks, **kw: synth_ir)
 
 
 def test_ask_persists_honest_labels_and_measured_confidence(client, monkeypatch):

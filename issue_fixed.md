@@ -183,3 +183,55 @@ Audit of the D1/D2 work (which was interrupted mid-edit by a session limit) foun
 
 Re-verified the rest of the §5.4/§1.7 surface end-to-end (auth.py cookie/CSRF/rotation, models + migration `0029088d6806`, Satellite cookie→Bearer forwarding, Editor socket handshake + `canAccessRoom`, frontend silent-refresh + `withCredentials`). Grep confirms **zero** access tokens in `localStorage` across `Web/Frontend/src` — the XSS-exposure crux of §5.4 holds. No other partials found.
 
+---
+
+## E. Deep-core engine fixes + creative flagships (2026-06-29, branch `Clarity_Stack_V3`)
+
+> Addresses defects from the §16 Deep Core / Engine Audit and ships the §17 creative
+> features. Full per-feature write-ups live in `existing_issues.md §17.1–§17.5`.
+> Each fix verified by: isolated engine test + `tsc -p tsconfig.app.json` exit 0 + route
+> live on the running `:8000` server (401 unauth) + a real end-to-end live drive.
+
+### E1. §16.5 — conflict gate no longer 503s a valid answer → Ask-Anyway [⭐⭐⭐⭐] (existing_issues §16.5 → §17.2)
+- New `ConflictGateError` (≠ plain `RuntimeError`); `synthesize_content(strict_conflict=)` keeps **structural** validation fail-closed in every mode while the **conflict-semantics** check becomes recoverable. `/ask` returns `200 {status:"conflict_gate", can_retry_ask_anyway:true}` and deletes the just-committed user turn (no dup); `ask_anyway:true` retry relaxes the gate. Threaded through `/synthesis/generate` too.
+- UI: amber "Answer held back → Ask Anyway / Dismiss" banner in `MessagesPage.tsx`.
+- **Verified live:** a real `/ask` *tripped the gate*; the `ask_anyway` retry returned `ok`.
+- ⚠ Note: the audit's suggested direction was "soft-drop the offending bullet"; we chose an explicit user-controlled override instead (keeps the gate honest, no silent edits).
+
+### E2. §17.2 — Devil's Advocate (red-team a decision) [⭐⭐⭐⭐] (new feature; partial §16.7)
+- `providers.ask_devils_advocate` *raises* on failure (never stores an error string as a critique); `devils_advocate.py` parses `RISK/ASSUMPTION/FAILURE_MODE/COUNTERPOINT`; no DECISION ⇒ no model call. `GET /chats/{id}/synthesis/{rg}/devils-advocate` (members-only, rate-limited). Cockpit panel.
+- **Verified live:** 9 real challenges on a real synthesis (`groq:llama-3.3-70b-versatile`).
+- ⚠ This applies the §16.7 *pattern* (errors must not masquerade as content) in the new code path **only**. The original §16.7 site — `ask_direct_answer`'s fallback persisting its error string at `main.py:~1271` with `accepted=True` — is **still open**.
+
+### E3. §16.3 — Delta Engine diffs content, not UUID churn [⭐⭐⭐⭐] (existing_issues §16.3 → §17.3)
+- `Satellite/services/deltaEngine.js` `computeDiff` rewritten: nodes keyed on `SECTION::normContent`, edges on endpoint *content* keys (not churned UUIDs), `dedupeByKey`. Re-asking an unchanged question adds ~0; identical edges stop re-appearing. API/UI shape unchanged.
+- **Verified:** 7 Node unit tests + **live** (baseline `+53` → identical re-ask `+6`, the 6 being only genuinely-changed SUMMARY/CONFIDENCE text; stable FACT/DECISION/OPTION nodes did not re-add).
+- ⚠ Still open from §16.3: the `fetchKGFromCore` N+1 serial fan-out and unbounded Mongo snapshot growth.
+
+### E4. §16.2 — KG edges are semantic, not a cartesian product [⭐⭐⭐⭐⭐] (existing_issues §16.2 → §17.4)
+- `knowledge_graph_builder.relate_node_to_decisions` (lexical Jaccard) replaces the `for src: for dst:` cross-product — attribute each node to its most-related decision(s); **zero overlap ⇒ no edge**. `reasoning_queries.get_decision_trace` walks the now-real edges into each decision with the shared terms that justify each link. `GET /chats/{id}/decision-trace` + "Why this decision?" cockpit panel.
+- **Verified:** 5 unit + DB integration (2-decision IR ⇒ **3 real edges, not 6**, no cross-decision fabrication) + **live** (Postgres decision rests on Postgres facts; frontend decision linked its own — no cross-wiring).
+- ⚠ Still open from §16.2: `parse_ir_from_synthesis` still emits SUMMARY/CONFIDENCE bullets as KnowledgeNodes (metadata-as-knowledge; also the source of the residual delta churn in E3).
+
+### E5. §17.5 — Decision Readiness + Resolve-Path [⭐⭐⭐⭐⭐] (new capstone flagship)
+- `decision_readiness.py` fuses measured agreement (§10.3) + the §17.4 semantic edges into a per-decision verdict (Exploratory/Forming/Ready) + a prioritized resolve-path (open question → conflict → assumption, each tagged with the readiness it unlocks). Neutral-prior, bounded-term scoring so one noisy agreement number can't flatten everything (§16.1). Zero extra model calls. `GET /chats/{id}/decision-readiness` + top-of-cockpit panel.
+- **Verified:** unit + DB integration (clean ⇒ 0.89 Ready; contested ⇒ ordered BLOCKS→CONTRADICTS path) + **live**.
+
+### E6. Dev convenience — Atlas IP auto-allow [⭐⭐] (infra)
+- `Satellite/scripts/atlas_allow_current_ip.py` adds the machine's current public IP to the MongoDB Atlas allowlist (stdlib digest auth, idempotent, optional TTL); wired into `start_project.bat` as a best-effort pre-step that skips silently without `ATLAS_*` keys. Fixes the recurring `buffering timed out` when a dev's IP rotates.
+
+### E7. §16-tail cleanup pass (2026-06-29, same session) — consolidate before next flagship
+Knocked out the cheap remaining §16 correctness/quality tails in one pass (grouped by file, each touched once) so the flagships sit on clean foundations and we don't revisit:
+- **§16.1 — ensemble diversity [⭐⭐⭐⭐].** Replaced the 8B Llama (most correlated with the 70B) with a genuinely non-Llama architecture — OpenAI open-weight **`openai/gpt-oss-20b`** on Groq — at the *same* model count (no extra cost). `providers.py` MODELS + `ask_groq_oss` + `EXTRACTION_ENSEMBLE`. **Verified live:** ensemble is now `llama-3.3-70b + gpt-oss-20b + nvidia-llama-70b`, gpt-oss emits clean IR, and measured agreement honestly *drops* (the models genuinely disagree more) — the §10.3 signal is no longer inflated by homogeneity.
+  - 🔎 While fixing this, found **3 dead pinned models** (§11.5 drift): `gemma2-9b-it` (Groq 400), `google/gemma-2-9b-it` (NVIDIA 404), `mistralai/mixtral-8x22b-instruct-v0.1` (NVIDIA **410 — EOL 2026-05-21**). Only the live ensemble was repointed; the stale ids remain in `MODELS`/`run_multi_model_extraction` (legacy harness) — logged below.
+- **§16.2 tail — metadata is not knowledge [⭐⭐⭐].** `knowledge_graph_builder.KG_EXCLUDED_SECTIONS = {SUMMARY, CONFIDENCE}`; those sections no longer become KnowledgeNodes (they polluted the trace and caused the residual Delta churn, since CONFIDENCE text changes every ask). Synthesis CONTENT still keeps both. **Verified** (test + clean live delta).
+- **§16.6 — idempotent join approval [⭐⭐⭐].** `update_join_request` now validates the `status` enum and only acts on a still-`pending` request, guarding on existing membership ⇒ no duplicate `ProjectMember` rows from double-approve / re-PATCH / already-auto-enrolled users.
+- **§16.7 — error string never stored as answer [⭐⭐⭐].** `ask_direct_answer` now RAISES; the `/ask` fallback's existing try/except turns a provider outage into a clean 503 instead of persisting `"I encountered an error…"` as an `accepted=True` message.
+- **§16.8 — noise gate is overridable [⭐⭐⭐].** `/ask` honors `ask_anyway` to bypass the `noise` classification (a false-negative no longer silently eats a real question); the client reuses the same "Ask Anyway" banner as the §16.5 conflict gate.
+- **Verified:** 3 engine unit tests (metadata exclusion / raising answer / non-Llama ensemble) + §17.4/§17.5 integration re-run green + `tsc` 0 + `import main` OK + live `/ask` on the new ensemble.
+
+### E — Still OPEN from the §16 audit (deliberately deferred — not "minor")
+- **§16.4** — Temporal Cards: `expireOldCards` no-op, "Commit to KG" dead-end, "always works" dup spawning. (Multi-part Satellite work — a real feature pass, not a tail.)
+- **§16.3 tail** — `fetchKGFromCore` N+1 serial fan-out + unbounded Mongo snapshot growth (perf/ops, not correctness).
+- **§11.5 drift** — stale pinned model ids in `MODELS`/legacy harness (gemma2-9b-it, NVIDIA gemma/mixtral); only the live ensemble was repointed.
+

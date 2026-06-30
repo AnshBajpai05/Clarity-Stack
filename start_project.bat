@@ -13,6 +13,12 @@ set "ROOT_DIR=%ROOT_DIR:~0,-1%"
 :: NOTE: Before starting, fill in your API keys in each service's .env file!
 :: Required keys: GROQ_API_KEY, NVIDIA_API_KEY, MONGO_URI (for Satellite)
 
+:: Best-effort: add this machine's current public IP to the MongoDB Atlas allowlist so
+:: Satellite can reach the cluster from a changing/dynamic IP. Skips silently unless
+:: ATLAS_PUBLIC_KEY / ATLAS_PRIVATE_KEY / ATLAS_PROJECT_ID are set (env or Satellite\.env).
+echo [startup] Ensuring current IP is on the Atlas allowlist...
+"%ROOT_DIR%\Backend\venv\Scripts\python.exe" "%ROOT_DIR%\Satellite\scripts\atlas_allow_current_ip.py"
+
 :: Use Windows Terminal (wt) to open all services in one window
 wt -w 0 ^
   nt --title "1. Backend" -d "%ROOT_DIR%\Backend" cmd /k "title 1. Backend && venv\Scripts\python.exe -m uvicorn main:app --reload --port 8000" ; ^
@@ -22,7 +28,7 @@ wt -w 0 ^
   nt --title "5. Edit" -d "%ROOT_DIR%\Editor_Service" cmd /k "title 5. Edit && set PORT=8004 && npm start" ; ^
   nt --title "6. UI" -d "%ROOT_DIR%\Web\Frontend" cmd /k "title 6. UI && npm run dev -- --port 8006" ; ^
   nt --title "7. UML API" -d "%ROOT_DIR%\UML_Clarity_Service\backend" cmd /k "title 7. UML API && venv\Scripts\python.exe -m uvicorn main:app --reload --port 8005" ; ^
-  nt --title "8. UML UI" -d "%ROOT_DIR%\UML_Clarity_Service" cmd /k "title 8. UML UI && npm run dev" ; ^
+  nt --title "8. UML UI" -d "%ROOT_DIR%\UML_Clarity_Service" cmd /k "title 8. UML UI && npm run dev -- --port 8007" ; ^
   nt --title "9. KILL" -d "%ROOT_DIR%" cmd /k "title 9. KILL && kill_services.bat"
 
 echo.

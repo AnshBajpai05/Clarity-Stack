@@ -596,3 +596,202 @@ This is a feature-rich, ambitious **prototype/academic** system. The product sur
 Notice where almost all of the low scores are: DevOps, Observability, AI evaluation, and Operational maturity. 
 
 Those are **not** foundational architecture flaws. They are the kinds of capabilities teams typically add as a system moves from a solid MVP to a production service. There are no fundamental issues like "wrong database," "poor separation of concerns," or "unmaintainable architecture." The remaining work is largely about making the system easier to operate, measure, and evolve at scale. That is a much better position to be in than having to redesign the core architecture.
+
+---
+
+## §15 Frontend Page-by-Page Functional Audit (2026-06-29)
+
+> **Mode:** UI walkthrough — every protected page from `/projects` outward, every button/feature traced to its handler. Lens: real-vs-mock data, dead controls, misleading copy, broken wiring. All items **OPEN** unless noted. Scope: `Web/Frontend/src` only (the `UML_Clarity_Service` embedded app is separate — see §1.6).
+> Routes covered: `/projects`, `/projects/search`, `/discovery`, `/projects/:id/chats`, `/projects/:id/chats/:chatId`, `/projects/:id/{kg,delta,cards}`, `/srs/*`, `/editor/*`, `/uml/dashboard`, `/cards`, `/settings`.
+
+### §15.1 — Read-path "demo mode" still ships mock fixtures (violates the "no mocks" goal)
+- **Severity:** High · **Status:** OPEN
+- **Evidence:** `lib/api.ts:127-272` still defines `mockProjects`/`mockChats`/`mockMessages`. `getProjects()` (`:276`) catches *any* error and returns `[...mockProjects]` + sets `useDemoMode=true`; `getChats()` (`:384`) and `getMessages()` (`:410`) then serve mock arrays for the rest of the session. §3.1/§7.2 removed *write* fakery and added a banner, but the **read path still substitutes fabricated projects/chats/messages** behind the banner.
+- **Why it matters:** A single transient failure on the projects fetch silently swaps the whole app onto demo data. The user asked explicitly for "no mocks." The fixtures should be deleted (or gated behind an explicit `?demo=1` build flag), and reads should surface the real error via `ErrorState` (which every page already renders).
+- **Direction:** Delete the three mock consts + `useDemoMode` swap; let `getProjects/getChats/getMessages` throw. Drop the demo banners on ProjectsPage/ChatsPage once the flag is gone.
+
+### §15.2 — Mock fixtures are themselves corrupt (would crash/duplicate if ever shown)
+- **Severity:** Low (cosmetic until §15.1 triggers) · **Status:** OPEN
+- **Evidence:** `lib/api.ts:160-192` — `mockChats['demo-project-1']` contains the **same `id:'demo-chat-1'` twice** (duplicate React keys). `:195-213` — `mockChats['demo-project-2']` holds a chat whose `project_id` is `'demo-project-1'`. `mockMessages` (`:216-272`) keys on `demo-chat-2`/`demo-chat-3` which **don't exist** in `mockChats`. Dead, inconsistent data.
+
+### §15.3 — SettingsPage is mostly dead / misleading controls
+- **Severity:** Medium (UX/trust) · **Status:** OPEN
+- **Evidence (`pages/SettingsPage.tsx`):**
+  1. **"Backend API URL" field** (`:33,:114`) writes `localStorage.cs_api_url`, but the core client (`lib/http.ts:5`) reads **only** `VITE_API_BASE_URL` env — it never reads `cs_api_url`. The field is a no-op for the core API; the only consumer of `cs_api_url` is the **SRS** base (`lib/api.ts:10`), so editing "Backend API URL" silently re-points the SRS service instead. Mislabeled + misleading.
+  2. **"Auto-sync" switch** (`:205`) → `cs_auto_sync`, never read anywhere (all polling intervals are hardcoded). Dead.
+  3. **Notifications + Sound + Analytics switches** (`:327,:337,:359`) are **not persisted** — `handleSave` (`:98`) only writes `profile`/`api`/`appearance`; the notifications/privacy toggles reset on reload and drive no behavior.
+  4. **Database panel** (`:235`) hardcodes "Using in-memory demo storage" regardless of the (real) SQLite/Postgres backend — stale copy.
+  5. **Profile copy** "stored in your secure account metadata" (`:173`) — nickname is `localStorage`-only (Supabase client is `null` in normal config; §15.11). Not synced to `/me`, device-local only.
+  6. **Logout fetch** hardcodes `http://127.0.0.1:8000` (`:401`) — same host-mismatch class as the fixed login bug (cookie set on `localhost` won't be sent to `127.0.0.1`, so server-side logout is a no-op; client only clears localStorage).
+
+### §15.4 — KnowledgeInspector "Decision Cockpit" has hardcoded + dead UI (MessagesPage)
+- **Severity:** Medium · **Status:** OPEN
+- **Evidence (`pages/MessagesPage.tsx`):**
+  - `:916` renders a literal **`↳ Depends on Synthesis #3`** cross-link cue — hardcoded, shown on every synthesis regardless of data.
+  - `:1025-1029` — NodeCard **"Validate"** and **"+ Task"** buttons have **no `onClick`** (pure decoration).
+  - `:853-866` — temporal toggle **current/history/drift**: `setTemporalMode` flips state but `temporalMode` is never read in any data path → 3 buttons that do nothing.
+  - `:821-832` — the 3 metric gauges (Support/Opposition/Uncertainty) are `confidence × arbitrary constant (20/25/15)` clamped to 100 — presented as precise "%" but the weights are made-up.
+
+### §15.5 — ProjectSearch "Retry" button is a no-op
+- **Severity:** Low · **Status:** OPEN
+- **Evidence:** `pages/ProjectSearch.tsx:91` — `<ErrorState ... onRetry={() => handleSearch} />` returns the function reference instead of calling it (and `handleSearch` needs a form event). Clicking Retry does nothing. Fix: `onRetry={() => handleSearch(new Event('submit') as any)}` or refactor `handleSearch` to not require the event.
+
+### §15.6 — PMs are wrongly excluded from the inline Join-Requests panel
+- **Severity:** Medium · **Status:** OPEN
+- **Evidence:** `pages/ChatsPage.tsx:202-204` computes `isOwnerOrPm` as **`project.owner === currentUserEmail`** (owner only — ignores the `pm` role it correctly derives into `memberRole`/`currentUserRole`). It is passed to `JoinRequestsPanel` (`:519`), whose `if (!isOwnerOrPm) return null` (`JoinRequestsPanel.tsx:59`) then hides the panel from PMs — despite the name and despite PMs being able to approve requests via the Settings → Requests tab. Use `currentUserRole === 'owner' || currentUserRole === 'pm'`.
+
+### §15.7 — Project "Owner" is editable in the UI but the backend ignores it (silent no-op)
+- **Severity:** Medium (UX/trust) · **Status:** ✅ FIXED (2026-06-29)
+- **Evidence:** EditProjectBannerModal (`pages/ChatsPage.tsx`) exposed an editable **Owner** field and sent it via `updateProject`, but §5.2 dropped `owner` from the backend's `update_project` allow-list (`{purpose, success_criteria, constraints}`, `Backend/main.py:1418`), so the save toasted "updated" while owner was unchanged on reload.
+- **Correction:** the **chat** owner field is NOT a no-op — `update_chat` (`Backend/main.py:1470`) `setattr`s every set field including `owner`, so EditChatBannerModal's owner edit persists correctly and was left in place.
+- **Fix:** removed the dead Owner field from EditProjectBannerModal (`ChatsPage.tsx`) only.
+
+### §15.8 — UML dashboard hardcodes the embedded service URL
+- **Severity:** Medium · **Status:** OPEN (port half fixed in `start_project.bat` this session)
+- **Evidence:** `pages/uml/Dashboard.tsx:7` — `const UML_SERVICE_URL = "http://localhost:8007"` (also `:74,:128,:188`), no env/`window.location.hostname` fallback (inconsistent with Editor `:45` and the Messages WS `:104-106`). **Directly tied to the `start_project.bat` fix:** before tab 8 was pinned to `--port 8007`, the UML UI ran on Vite's default 5173, so this iframe always showed "UML-Clarity is not running / Offline." Now aligned. Still won't work off-localhost. Also `postMessage(..., '*')` (`:50`) uses a wildcard target origin.
+
+### §15.9 — Personalized greeting never populates at login
+- **Severity:** Low · **Status:** OPEN
+- **Evidence:** `cs_nickname` is **only** written in `pages/SettingsPage.tsx:102` (manual profile save). Login (`pages/Login.tsx`) stores only `cs_email`, never the nickname from `/me`. So `ProjectsPage.tsx:105` ("Hello, X" vs "Projects") and `editor/Dashboard.jsx:34` ("Hello, User") fall back until the user visits Settings and saves. Fetch + store nickname on login (or read `/me` on app boot).
+
+### §15.10 — Remaining `127.0.0.1` host-mismatch references
+- **Severity:** Low · **Status:** OPEN (Login/Register fixed this session)
+- **Evidence:** Beyond the fixed auth pages, `127.0.0.1:8000` is still hardcoded in `SettingsPage.tsx:33,190,401` and surfaced as user-facing copy in the demo banners (`ProjectsPage.tsx:88`) and `ProjectsPage`/`SettingsPage` "Connect to …" text. Normalize all to the same env-driven base the rest of the app uses.
+
+### §15.11 — Orphaned / dead components and patterns
+- **Severity:** Low (tech debt; one security note) · **Status:** OPEN
+- **Evidence:**
+  - **Parallel Supabase auth, orphaned:** `pages/editor/App.jsx` + `pages/editor/Login.jsx` (Supabase email/password auth) are **not wired into the main router** (`App.tsx` mounts editor `Dashboard/Workspace/Snapshot` directly). They're a dead standalone bundle — a second auth system that, if ever re-routed, bypasses the cookie/JWT auth. `supabaseClient.ts` is `null` unless `VITE_SUPABASE_*` set, but `SettingsPage.tsx:66-90` still imports it.
+  - **`components/cards/CardFilterBar.tsx`** — no importers (orphaned).
+  - **`components/cards/KnowledgeCard.tsx`** (+ its `CardEditModal`) — CardsPage imports only the *types* (`KnowledgeCardData`, `CardType`), not the component; appears unused as a rendered component (verify before deleting).
+  - **`ChatCard.tsx:67-94`** — `handleDelete`/`handlePin` + `MoreVertical/Star/Archive/Trash2` imports are defined but never rendered (the actual dropdown lives in `ChatsPage.tsx:586`). Dead.
+  - **`TemporalCardsPage.tsx:135` `handleRefresh` / imported `refreshCard`** — no button renders it. Dead.
+  - **Full-page reloads instead of SPA nav:** `ProjectsPage.tsx:112` (`window.location.href='/projects/search'`), CardsPage "Generate Now"/"Re-initialize" (`:186,:311`), and `http.ts`/`api.ts` 401 redirects via `window.location.href` — drop SPA state and re-bootstrap the bundle.
+
+### §15.12 — Over-eager polling on MessagesPage
+- **Severity:** Low/Medium (perf) · **Status:** OPEN
+- **Evidence:** `pages/MessagesPage.tsx` runs **two** 4s intervals: messages (`:306`) and chat-meta (`:224`). The meta loop calls `getChat` **and** `getProject` **and** `getProjectMembers` every 4s (`:173,:185,:189`) — 3 calls/4s purely to re-derive a role that rarely changes, on top of the message poll. Derive role once (or on focus), and back off/stop polling when the tab is hidden.
+
+### §15.13 — CardsPage (`/cards`): non-persistent pin + decorative fakes
+- **Severity:** Low · **Status:** OPEN
+- **Evidence:** `pages/CardsPage.tsx:147` — `togglePin` mutates local state only; there is no pin API, so pins vanish on reload. `:287` — three hardcoded **"AI"** avatar circles (fake collaborators). `:186` — "Generate Now" (copy: "trigger the synthesis engine") just calls `window.location.reload()`; real generation lives on TemporalCardsPage. `:210` — "Neural Synthesis Active" is a static decorative badge.
+
+### §15.14 — Delta "Generate AI Card" ignores the selected delta
+- **Severity:** Low · **Status:** OPEN
+- **Evidence:** `pages/DeltaTimelinePage.tsx:51-63` — `handleGenerateCard(deltaId)` takes a `deltaId` but calls `generateTemporalCard(projectId)` (project-level), so the per-delta "Generate AI Card" button doesn't actually synthesize from that delta window.
+
+### §15.15 — KnowledgeGraph empty-state points at a missing action
+- **Severity:** Low · **Status:** OPEN
+- **Evidence:** `pages/KnowledgeGraphPage.tsx:600` empty-state says "No data — trigger a snapshot first," but the page has **no Snapshot button** (only "Reload"); it reads Backend `/api/reasoning/chat/:id` (`:131`) and never uses the Satellite KG endpoints (`getKnowledgeGraph`/`snapshotKnowledgeGraph` in `api.ts` are unused by this page). Update the copy or add the snapshot control.
+
+### §15.16 — Minor correctness nits
+- **Severity:** Low · **Status:** OPEN
+- **Evidence:** `MessageBubble.tsx:93` appends `"Z"` unconditionally (`new Date(message.created_at + "Z")`) — double-`Z` risk if the API ever returns a Z-suffixed timestamp (other components guard with `endsWith("Z")`). `ProjectSettingsPanel.tsx:111,192` — the Requests-tab unread badge (`pendingCount`) only populates **after** the Requests tab is opened (lazy fetch), so it never pre-warns. `Sidebar.tsx:43` — `startsWith(item.to)` marks "Projects" active on every `/projects/*` route (acceptable, but can double-highlight).
+
+### §15 — What's actually solid (no findings)
+Real data, correct wiring, good error/empty/loading states: **ProjectCard**, **CreateProjectModal**, **ProjectSettingsPanel** (members/requests/activity/danger all hit real APIs), **DiscoveryPage** (graceful Satellite degradation), **KnowledgeGraphPage** (live force-graph off real reasoning), **DeltaTimelinePage**, **TemporalCardsPage**, **SRS Dashboard** (real upload → SRS svc via env base), **Editor Dashboard** (real Editor svc, cookie+CSRF), **MessageInput/MessageBubble** (accept/summary toggles real). The defects above are concentrated in (a) the demo-mode read fallback, (b) SettingsPage, (c) decorative/placeholder UI in the synthesis & cards surfaces, and (d) a handful of dead handlers/buttons.
+
+### §15 — Remediation log (2026-06-29, this session)
+> All items below applied to the working tree. Frontend `tsc --noEmit` passes clean; UI compiles/serves on :8006. Fixes are behavioral where a real path exists, and removals only where the control had no backing service.
+
+| Item | Status | What changed |
+|------|--------|--------------|
+| §15.1 | ✅ FIXED | Deleted `mockProjects/mockChats/mockMessages` + the `useDemoMode` swap from `lib/api.ts`. `getProjects/getChats/getMessages/searchProjects` now hit the real API and throw on failure (surfaced by each page's `ErrorState`). |
+| §15.2 | ✅ FIXED | Corrupt fixtures gone with §15.1. |
+| §15.3 | ✅ FIXED | SettingsPage: removed the no-op "Backend API URL" field + dead "Auto-sync"; Notifications/Sound/Analytics now persist in `handleSave` + load on mount; Database panel copy now reflects real connection; "secure account metadata" → "saved on this device"; logout uses the env API base. Also dropped the `cs_api_url` fallback from the SRS base in `api.ts` (it silently mis-pointed SRS). |
+| §15.4 | ✅ FIXED | KnowledgeInspector: removed hardcoded "↳ Depends on Synthesis #3", the dead **Validate**/**+Task** buttons, and the inert **current/history/drift** toggle (+ its state). Metric gauges kept (derived from real nodes). |
+| §15.5 | ✅ FIXED | ProjectSearch `onRetry` now actually re-runs the search. |
+| §15.6 | ✅ FIXED | `isOwnerOrPm` now derives from `currentUserRole` (owner **or** pm) → PMs see the inline Join-Requests panel. |
+| §15.7 | ✅ FIXED | Removed dead Owner field from the **project** edit modal; chat owner left intact (it persists — see corrected note above). |
+| §15.8 | ✅ FIXED | UML iframe URL now `VITE_UML_URL || http://${hostname}:8007`. |
+| §15.9 | ✅ FIXED | Login now fetches `/api/auth/me` and stores `cs_nickname` (best-effort) → greetings populate without a Settings visit. |
+| §15.10 | ✅ FIXED | Remaining `127.0.0.1` references removed (SettingsPage logout + demo banners deleted with §15.1). |
+| §15.11 | ✅ FIXED | Deleted orphans `CardFilterBar.tsx`, `editor/App.jsx`, `editor/Login.jsx`; removed dead `ChatCard` handlers + imports and `TemporalCardsPage.handleRefresh`; `ProjectsPage` Discover button now uses SPA `navigate()`. (KnowledgeCard/CardEditModal kept — types are in use.) |
+| §15.12 | ✅ FIXED | MessagesPage: role derivation moved out of the 4s meta-poll into a once-per-chat effect; both poll intervals now skip while `document.hidden`. |
+| §15.13 | ✅ FIXED | CardsPage: pins persist to `localStorage` (`cs_pinned_cards`); fake "AI" avatar circles removed; "Generate Now" routes to the real per-project generator. |
+| §15.14 | ⚠️ ACCEPTED | Delta "Generate AI Card" stays project-level — Satellite exposes no delta-scoped generate endpoint. Left functional; revisit if a delta-scoped route is added. |
+| §15.15 | ✅ FIXED | KG empty-state copy now matches reality ("ask questions… then Reload"); no phantom snapshot action referenced. |
+| §15.16 | ✅ FIXED | MessageBubble guards against double-`Z` timestamps; ProjectSettingsPanel fetches join-requests on mount so the badge pre-warns. |
+
+---
+
+## §16 Deep Core / Engine Audit (2026-06-29)
+
+> **Mode:** Not wiring — the *engine* of each feature traced through Core (FastAPI) → Satellite (Express/Mongo): algorithms, data integrity, race conditions, and whether each feature actually does what it claims. Deeper than §15 (UI). All **OPEN**.
+
+### §16.1 — Ensemble is "diverse" in name only → measured-confidence is inflated
+- **Severity:** High (research integrity / product claim) · **Status:** ADDRESSED (2026-06-29 — 8B Llama swapped for non-Llama `openai/gpt-oss-20b`; agreement signal no longer homogeneity-inflated. See issue_fixed §E7.)
+- **Evidence:** `EXTRACTION_ENSEMBLE` (`providers.py:294`) = `groq:llama-3.3-70b` + `groq:llama-3.1-8b-instant` + `nvidia:llama-3.1-70b` — **2 providers, all Llama family**. `agreement.py` measures agreement *lexically* (Jaccard cluster), then `apply_measured_confidence` stamps it as the synthesis CONFIDENCE.
+- **Why it matters:** Near-homogeneous models phrase claims similarly, so they **lexically agree more often regardless of truth** → the measured-agreement "honest confidence" (§11.4) reads systematically *high*. Add a genuinely different architecture (NVIDIA Mixtral/Gemma — already in `MODELS`) to the live ensemble.
+
+### §16.2 — KG relationships are a blind cartesian product, not extracted reasoning
+- **Severity:** High (core feature is semantically hollow) · **Status:** ADDRESSED (§17.4, 2026-06-29)
+- **Evidence:** `knowledge_graph_builder.build_graph_from_ir` (`:54-67`) links **every** node in a section to **every** DECISION node (5 facts × 3 decisions ⇒ 15 `SUPPORTS` edges). `link_previous_decisions` (`:73-95`) cross-links every old↔new decision as `REFINES`.
+- **Why it matters:** The graph asserts "Fact X supports Decision Y" for **all** pairs — relationships are fabricated, not extracted. `get_decision_explanation` (`reasoning_queries.py:45`) sidesteps the edge helpers with flat lists re-grouped client-side by `synthesis_id`, so the edges are stored, wrong, and mostly unused (DB bloat + latent trap). Also `parse_ir_from_synthesis` returns SUMMARY/CONFIDENCE, so **confidence-metadata bullets become KnowledgeNodes**. Direction: emit explicit edges from synthesis, or link by similarity; exclude SUMMARY/CONFIDENCE.
+
+### §16.3 — Delta Engine tracks UUID churn, not knowledge change
+- **Severity:** High (feature doesn't deliver its premise) · **Status:** ADDRESSED (§17.3, 2026-06-29 — engine fixed; live Satellite demo pending Mongo/Atlas reachability)
+- **Evidence:** `deltaEngine.computeDiff` (`:175`) diffs snapshots by **`nodeId` (UUID)**. Core mints fresh UUIDs per node every synthesis (`build_graph_from_ir`→`gen_id()`), nodes are **append-only** (old never deleted), regeneration re-ids identical content.
+- **Why it matters:** Added/Removed reflect **identity, not content**: re-extracted identical facts read as churn; superseded knowledge is never "removed" so the **Removed column is ~always empty**; "+N additions" ≈ "asks happened," not evolution. Plus `fetchKGFromCore` does an **N+1 serial HTTP fan-out** (one `/api/reasoning` per chat) and every compute writes a new Mongo snapshot (unbounded). Direction: diff on normalized **content hash** keyed by (section, content); supersede instead of append.
+
+### §16.4 — Temporal Cards: "temporal" is disabled, "Commit to KG" is a dead-end
+- **Severity:** High · **Status:** OPEN
+- **Evidence (`cardChainer.js`):** `expireOldCards` (`:350`) is a hard `return 0` no-op — nothing ever expires/goes `stale` despite `expiresAt` + the UI's expiry framing; `getExpiredCards` always `[]`. `applyKGDiff` (`:156`) writes card KG nodes into a **Satellite `KGSnapshot`** (`chatId:"auto"`), but the KG page reads **Core** `/api/reasoning` — so **"Commit to KG" never shows in the visualized graph** (and feeds §16.3 churn). `generateCardFromChat` "always works" fallback (`:275`) re-summarizes the last 5 messages when nothing's new ⇒ repeat clicks spawn near-dup versions. Chaining keys on **coarse category**, conflating unrelated risks/decisions into one lineage.
+
+### §16.5 — Synthesis IR gate can 503 a valid answer on an English-phrasing technicality
+- **Severity:** Medium (reliability cliff) · **Status:** ADDRESSED (§17.2, 2026-06-29)
+- **Evidence:** `synthesize_content` (`synthesis_service.py:310-315`) raises ⇒ `/ask` rolls back ⇒ 503 if `validate_conflict_semantics` (`:230`) finds a CONFLICT bullet lacking a hardcoded English connective (` vs `, ` but `, ` however`…). A correctly-identified conflict phrased without those tokens (or non-English) **nukes the whole synthesis**, no retry. Direction: soft-drop the offending bullet, don't 503 the answer.
+
+### §16.6 — Join-request approval is non-idempotent → duplicate members
+- **Severity:** Medium (data integrity) · **Status:** ✅ FIXED (2026-06-29 — status enum validated, pending-guard + existing-member check; no dup members. issue_fixed §E7.)
+- **Evidence:** `update_join_request` (`main.py:533`) adds a `ProjectMember` on `accepted` with **no existing-member check, no `status=="pending"` guard** (unlike `invite_user:559`). Two PMs approving / double-click before optimistic refresh / re-PATCH / approving an already-auto-enrolled public user ⇒ **duplicate member rows**. `status` is an unvalidated raw query string. Direction: guard status, upsert member, validate enum.
+
+### §16.7 — `ask_direct_answer` stores its error string as the answer
+- **Severity:** Low/Medium · **Status:** ✅ FIXED (2026-06-29 — `ask_direct_answer` raises; `/ask` fallback → 503, no error-string persisted. issue_fixed §E7.)
+- **Evidence:** `providers.ask_direct_answer` (`:412`) `except` returns `"I encountered an error… {e}"` as the answer; `/ask` fallback (`main.py:1271`) persists it as `accepted=True` ⇒ provider errors become permanent conversation/KG content (extraction returns `None` to skip; this path doesn't).
+
+### §16.8 — Signal classifier can silently swallow a real question (no override)
+- **Severity:** Medium (UX) · **Status:** ✅ FIXED (2026-06-29 — `ask_anyway` override bypasses the noise gate; "Ask Anyway" banner. issue_fixed §E7.)
+- **Evidence:** `/ask` (`main.py:1195`) drops any message `classify_signal` (`signal_classify.py:78`, DistilBERT) labels `noise` — canned reply, `noise_filtered`, **no answer, no force-send**. A false negative silently eats a legit question. Direction: "Ask anyway" override (`force=true` skips the gate).
+
+### §16 — What's genuinely strong
+`/ask` orchestration (concurrent extraction, atomic provider+synthesis commit §3.2, measured confidence §11.4), `agreement.py` metric design (honest, deterministic, self-documenting lexical floor), the IR structural validators, WebSocket presence auth (cookie→JWT→`get_chat_or_403`, fail-closed), and rate-limited/RBAC-gated endpoints are careful engineering. The defects above are about **semantic fidelity** (KG edges, delta, card→KG) and **reliability/idempotency cliffs**, not broken plumbing.
+
+---
+
+## §17 New Features (creative direction)
+
+### §17.1 — Disagreement Spotlight ✅ BUILT (2026-06-29)
+- **What:** Surfaces the claims the ensemble did NOT unanimously extract ("contested") as a first-class signal — turning hidden model disagreement into the product's signature brainstorming view. Directly monetizes the wasted signal called out in §16.1: the agreement engine already knew *where* models diverged; now the user sees it.
+- **Engine (zero extra model calls):** `agreement.analyze_claims()` / `contested_claims()` re-cluster the per-provider IR (same Jaccard@0.5 as measured confidence) and keep the bullet text + contributing models per cluster. A claim with `support < n_models` is contested; `support == 1` (only one model said it) is flagged hardest.
+- **API:** `GET /chats/{chat_id}/synthesis/{reply_group_id}/disagreement` — recomputes on demand from the provider extraction blocks already persisted at `/ask` time (no migration, no new column). Auth: `get_chat_or_403(allow_public=True)`, consistent with sibling synthesis reads (§5.7).
+- **UI:** `DisagreementSpotlight` panel in the Decision Cockpit (`MessagesPage.tsx`) — "Where the AIs split" with `contested/total` badge, per-claim section chip, `support/N models`, ⚠ lone-claim marker, and the honest model labels; a green "Full consensus" state when all models agreed.
+- **Verified:** unit-exercised (correctly isolates lone claims from consensus), `tsc` clean, route live on the running server.
+
+### §17.2 — Ask-Anyway override + Devil's Advocate ✅ BUILT (2026-06-29)
+- **What:** Two things. (a) The §16.5 conflict-semantics gate no longer 503s a valid answer — the caller can re-run with the gate relaxed. (b) "Devil's Advocate" red-teams a committed decision (risks / shaky assumptions / failure modes / counter-argument), so a choice is stress-tested before it's relied on.
+- **Engine (Ask-Anyway):** new `ConflictGateError` (distinct from a plain `RuntimeError`) in `synthesis_service.py`; `synthesize_content(strict_conflict=)` splits the gate so **structural** validation stays fail-closed in every mode while **conflict-semantics** becomes recoverable. `/ask` on the gate rolls back the AI unit *and deletes the just-committed user turn*, returning `200 {status:"conflict_gate", can_retry_ask_anyway:true}` — so the "Ask Anyway" retry (`ask_anyway:true`) leaves **no duplicate user message**. Same flag threaded through `/synthesis/generate`.
+- **Engine (Devil's Advocate):** `providers.ask_devils_advocate` *raises* on failure (never stores an error string as a critique — fixes the §16.7 pattern); `devils_advocate.py` builds a red-team prompt from the synthesis DECISION + context and deterministically parses `RISK/ASSUMPTION/FAILURE_MODE/COUNTERPOINT` bullets. No DECISION ⇒ no model call.
+- **API:** `GET /chats/{chat_id}/synthesis/{rg}/devils-advocate` — members-only (no `allow_public`) + rate-limited (paid LLM call), computed from stored synthesis (no migration). `AskPayload.ask_anyway` added.
+- **UI (`MessagesPage.tsx`):** amber "Answer held back → **Ask Anyway / Dismiss**" banner above the composer; a "Red-team this decision" panel in the Decision Cockpit rendering categorised challenge cards.
+- **Verified:** 6 engine tests (gate strict raises / ask_anyway bypass / structural fail-closed even with ask_anyway / critique parser / no-decision skip / prompt build); `tsc` 0; route live (401 unauth, in openapi). **Live drive:** real `/ask` *tripped the gate*, `ask_anyway` retry returned `ok`; Devil's Advocate returned **9 real challenges** (`groq:llama-3.3-70b-versatile`).
+- **Note:** §16.8 noise-gate override was NOT bundled here (scope re-aimed at the §16.5 conflict gate, the actual answer-killer). A `force=true` for `classify_signal=="noise"` remains a small follow-up.
+
+### §17.3 — Real Evolution Timeline (content-hash delta) ✅ BUILT (2026-06-29)
+- **What:** The Delta Engine measured *that an ask happened* (UUID churn), not *how the thinking evolved* (§16.3). It now diffs on normalized **content**, so re-asking an unchanged question adds ~0 and "+N" means N genuinely new ideas.
+- **Engine (`Satellite/services/deltaEngine.js`):** `computeDiff` rewritten to key nodes on `nodeContentKey = SECTION::normContent(content)` and edges on `edgeContentKey` (endpoints resolved to *their* content keys, not churned UUIDs), with `dedupeByKey` so duplicate restatements within a window count once. Append-only no longer inflates Added; semantically identical edges stop re-appearing.
+- **API/UI:** unchanged shape (`totalAdded/totalRemoved/addedNodes/...`) — `DeltaTimelinePage` and the routes are untouched; the honest "No structural changes detected" state now actually fires on an identical re-ask.
+- **Verified:** 7 Node unit tests (identical-restatement→not added, append-only→not removed, new content→added, dedupe, edge churn collapse, section scoping). **Live:** blocked only by the Satellite's MongoDB Atlas cluster being unreachable (`buffering timed out`) — infra, not code; the old code fails there identically.
+
+### §17.4 — Semantic KG edges + "Why this decision?" trace ✅ BUILT (2026-06-29)
+- **What:** Edges are no longer a blind cartesian product (§16.2). Each non-decision node is attributed only to the decision(s) it is actually related to, and a grounded trace explains each decision from those real edges.
+- **Engine (`knowledge_graph_builder.py`):** `relate_node_to_decisions` (lexical Jaccard, same dependency-free method as `agreement.py`) replaces the `for src: for dst:` cross-product — 1 decision ⇒ attribute (unambiguous); N decisions ⇒ attach to the highest-overlap decision(s) (ties included); **zero overlap ⇒ no edge** (honest silence over a fabricated relationship).
+- **Trace (`reasoning_queries.get_decision_trace`):** walks the now-semantic `KnowledgeEdges` into each DECISION, grouped by relation with a human phrase ("rests on" / "is challenged by" / …) and the **shared terms** that justified each link (auditable, not asserted).
+- **API/UI:** `GET /chats/{chat_id}/decision-trace` (pure DB read); `getDecisionTrace` + `DecisionTracePanel` ("Why this decision?") in the Decision Cockpit, filtered to the current synthesis.
+- **Verified:** 5 attribution unit tests + a **DB integration test** (2-decision IR ⇒ **3 real edges, not the 6 cross-product**, no cross-decision fabrication, trace grounded with shared terms); `tsc` 0; route live (401, in openapi). **Live drive:** a real 2-decision `/ask` produced a trace where the Postgres decision "rests on" Postgres facts (shared `[concurrent, postgres, writers]`) and the frontend decision linked its own evidence — no cross-wiring.
+
+### §17.5 — Decision Readiness + Resolve-Path ✅ BUILT (2026-06-29) · capstone flagship
+- **What:** The question the product exists to answer — *is this decision ready to act on yet, and if not, what is the cheapest path to get there?* A per-decision verdict (**Exploratory / Forming / Ready**) plus a prioritized **resolve-path**: the specific open questions, conflicts, and unvalidated assumptions to clear, each tagged with the readiness it would unlock.
+- **Engine (`decision_readiness.py`, zero extra model calls):** fuses signals already computed honestly — measured inter-model agreement (§10.3, carried on the decision node's `confidence`) + the now-SEMANTIC KG edges (§17.4: SUPPORTS / CONTRADICTS / BLOCKS / DEPENDS_ON). Readiness is a balance around a **neutral prior** with *bounded* terms (agreement ±0.25, evidence ≤+0.20, per-item friction), so one noisy agreement number (the §16.1 Llama-heavy floor) can't flatten every decision — friction + evidence still differentiate. Constants are documented/tunable, never a black-box gauge; the resolve-path orders biggest-lever-first (open question → conflict → assumption).
+- **API/UI:** `GET /chats/{chat_id}/decision-readiness` (pure read). `DecisionReadinessPanel` sits at the TOP of the Decision Cockpit — verdict badge + readiness bar + evidence chips + the "Resolve N to raise readiness" checklist with per-step `+%` unlock.
+- **Verified:** unit (band thresholds + biggest-lever-first ordering) + **DB integration** (clean decision ⇒ 0.89 **Ready**, contested decision ⇒ lower band with an ordered BLOCKS→CONTRADICTS resolve-path); `tsc` 0; route live (401, in openapi). **Live drive:** on the real (noisy, multi-ask) chat it honestly reports the decisions as **Exploratory (0–9%)** — low measured agreement + several open questions — and hands back a concrete 3–4 item resolve-path per decision instead of a falsely confident score.

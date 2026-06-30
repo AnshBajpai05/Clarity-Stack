@@ -136,6 +136,10 @@ MODELS = {
     "groq_llama":     _model("MODEL_GROQ_LLAMA",     "llama-3.3-70b-versatile"),
     "groq_instant":   _model("MODEL_GROQ_INSTANT",   "llama-3.1-8b-instant"),
     "groq_gemma":     _model("MODEL_GROQ_GEMMA",     "gemma2-9b-it"),
+    # §16.1: a genuinely non-Llama architecture (OpenAI open-weight) for ensemble
+    # diversity. Verified live on Groq to emit clean IR (no <think> traces, all section
+    # headers). Replaces the now-decommissioned gemma2-9b-it (HTTP 400) in the live set.
+    "groq_oss":       _model("MODEL_GROQ_OSS",       "openai/gpt-oss-20b"),
     "nvidia_llama":   _model("MODEL_NVIDIA_LLAMA",   "meta/llama-3.1-70b-instruct"),
     "nvidia_mixtral": _model("MODEL_NVIDIA_MIXTRAL", "mistralai/mixtral-8x22b-instruct-v0.1"),
     "nvidia_gemma":   _model("MODEL_NVIDIA_GEMMA",   "google/gemma-2-9b-it"),
@@ -226,6 +230,24 @@ def ask_groq_gemma(prompt: str) -> "str | None":
         return _error_block(str(e))   # returns None — caller skips
 
 
+def ask_groq_oss(prompt: str) -> "str | None":
+    # §16.1: OpenAI open-weight (gpt-oss) on Groq — the non-Llama ensemble member.
+    try:
+
+        raw = _generic_chat(
+            api_url=GROQ_URL,
+            api_key=GROQ_KEY,
+            model=MODELS["groq_oss"],
+            system_prompt=EXTRACTION_SYSTEM_PROMPT,
+            user_prompt=prompt
+        )
+
+        return _ensure_all_sections(raw)
+
+    except Exception as e:
+        return _error_block(str(e))   # returns None — caller skips
+
+
 # =========================================================
 # NVIDIA MODELS
 # =========================================================
@@ -293,7 +315,13 @@ def ask_nvidia_gemma(prompt: str) -> "str | None":
 # hardcoding provider names, so the label stored on each Message is always truthful.
 EXTRACTION_ENSEMBLE = [
     (f"groq:{MODELS['groq_llama']}",     ask_groq_llama),
-    (f"groq:{MODELS['groq_instant']}",   ask_groq_instant),
+    # §16.1: the weak 8B Llama (most correlated with the 70B) is REPLACED by a genuinely
+    # different architecture — OpenAI open-weight gpt-oss. Near-homogeneous models
+    # lexically agree regardless of truth, which inflated the measured-agreement "honest
+    # confidence" (§10.3) and floored Decision Readiness (§17.5). This decorrelates the
+    # ensemble at the SAME model count (no extra cost). gpt-oss was verified live to emit
+    # clean IR on Groq; a provider that fails simply returns None and is skipped.
+    (f"groq:{MODELS['groq_oss']}",       ask_groq_oss),
     (f"nvidia:{MODELS['nvidia_llama']}", ask_nvidia_llama),
 ]
 
@@ -410,24 +438,63 @@ def ask_gemini(prompt: str) -> str:
 # DIRECT ANSWER
 # =========================================================
 def ask_direct_answer(prompt: str) -> str:
-    """Provides a natural language answer without forcing structured extraction."""
+    """Provides a natural language answer without forcing structured extraction.
+
+    §16.7: RAISES on provider failure instead of returning an error string. The old
+    `except: return "I encountered an error… {e}"` let the `/ask` fallback persist that
+    string as an `accepted=True` assistant message — a provider outage became permanent
+    conversation/KG content. The caller already wraps this in try/except → clean 503.
+    """
     system_prompt = (
         "You are ClarityStack Assistant, a senior software architect and project manager. "
         "Help the user with their technical questions, risks, and project strategy. "
         "Be concise, professional, and practical."
     )
-    
-    try:
-        return _generic_chat(
-            api_url=GROQ_URL,
-            api_key=GROQ_KEY,
-            model=DIRECT_ANSWER_MODEL,
-            system_prompt=system_prompt,
-            user_prompt=prompt,
-            temperature=0.3
-        )
-    except Exception as e:
-        return f"I encountered an error while trying to answer: {str(e)}"
+
+    return _generic_chat(
+        api_url=GROQ_URL,
+        api_key=GROQ_KEY,
+        model=DIRECT_ANSWER_MODEL,
+        system_prompt=system_prompt,
+        user_prompt=prompt,
+        temperature=0.3
+    )
+
+
+# =========================================================
+# DEVIL'S ADVOCATE (§17.2) — red-team a decision
+# =========================================================
+# Honest label for the model that backs the red-team critique (so the UI can show it).
+DEVILS_ADVOCATE_MODEL_LABEL = f"groq:{DIRECT_ANSWER_MODEL}"
+
+DEVILS_ADVOCATE_SYSTEM_PROMPT = (
+    "You are a Devil's Advocate: a senior engineer and risk reviewer whose ONLY job is "
+    "to red-team a proposed decision. Be specific, concrete, and adversarial but fair — "
+    "no generic platitudes, no praise. Surface what could make THIS decision fail.\n\n"
+    "Respond ONLY in this exact format — bullet lines under these headers, no preamble, "
+    "no closing prose:\n"
+    "RISK:\n- <a concrete risk this decision introduces>\n"
+    "ASSUMPTION:\n- <an unstated assumption it depends on that may be false>\n"
+    "FAILURE_MODE:\n- <a specific scenario in which this decision goes wrong>\n"
+    "COUNTERPOINT:\n- <the strongest argument for a different choice>\n\n"
+    "Give 1-4 bullets per header. Omit a header only if you genuinely have nothing real for it."
+)
+
+
+def ask_devils_advocate(prompt: str) -> str:
+    """Red-team critique of a decision.
+
+    RAISES on provider failure (the caller returns a 503) instead of returning an error
+    string — an error must never be stored or shown as if it were a real critique (§16.7).
+    """
+    return _generic_chat(
+        api_url=GROQ_URL,
+        api_key=GROQ_KEY,
+        model=DIRECT_ANSWER_MODEL,
+        system_prompt=DEVILS_ADVOCATE_SYSTEM_PROMPT,
+        user_prompt=prompt,
+        temperature=0.5,
+    )
 
 # =========================================================
 # FULL PIPELINE

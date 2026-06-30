@@ -190,6 +190,72 @@ def compute_agreement(provider_blocks: Dict[str, str]) -> dict:
     }
 
 
+def _cluster_section_detailed(per_model_bullets: Dict[str, List[str]]) -> List[dict]:
+    """Like `_cluster_section` but RETAINS the bullet text + per-model contributions.
+
+    Powers the Disagreement Spotlight: we need not just *how many* models agreed, but
+    *which* models said *what*. Same greedy Jaccard@SIM_THRESHOLD clustering, same
+    deterministic sorted-model iteration as the scoring path.
+    """
+    clusters: List[dict] = []  # {"models": set, "token_sets": [set], "texts": [(model, text)]}
+    for model in sorted(per_model_bullets):
+        for bullet in per_model_bullets[model]:
+            tok = _tokens(bullet)
+            if not tok:
+                continue
+            placed = False
+            for c in clusters:
+                if any(_jaccard(tok, ts) >= SIM_THRESHOLD for ts in c["token_sets"]):
+                    c["models"].add(model)
+                    c["token_sets"].append(tok)
+                    c["texts"].append((model, bullet))
+                    placed = True
+                    break
+            if not placed:
+                clusters.append({"models": {model}, "token_sets": [tok], "texts": [(model, bullet)]})
+    return clusters
+
+
+def analyze_claims(provider_blocks: Dict[str, str]) -> List[dict]:
+    """Per-claim agreement detail across the ensemble — the Disagreement Spotlight core.
+
+    Returns one entry per distinct claim (cluster):
+        {section, text, models[], support, n_models, contested, agreement}
+    where `contested` is True when fewer than ALL responding models extracted it.
+    A claim only one model surfaced (`support == 1`) is the strongest contested
+    signal — exactly where human judgment is most valuable in brainstorming.
+    """
+    n_models = len(provider_blocks)
+    parsed = {m: _parse_sections(b) for m, b in provider_blocks.items()}
+    out: List[dict] = []
+    for section in COMPARABLE_SECTIONS:
+        per_model = {m: secs[section] for m, secs in parsed.items() if secs.get(section)}
+        if not per_model:
+            continue
+        for c in _cluster_section_detailed(per_model):
+            models = sorted(c["models"])
+            support = len(models)
+            # Representative = shortest phrasing (usually the cleanest restatement).
+            rep = min((t for _, t in c["texts"]), key=len)
+            out.append({
+                "section": section,
+                "text": rep,
+                "models": models,
+                "support": support,
+                "n_models": n_models,
+                "contested": support < n_models,
+                "agreement": round((support - 1) / (n_models - 1), 3) if n_models > 1 else None,
+            })
+    # Most-contested first (lowest support), then by section for stable display.
+    out.sort(key=lambda c: (c["support"], c["section"]))
+    return out
+
+
+def contested_claims(provider_blocks: Dict[str, str]) -> List[dict]:
+    """Only the claims NOT extracted by every model — the actionable disagreement."""
+    return [c for c in analyze_claims(provider_blocks) if c["contested"]]
+
+
 def confidence_bullets(result: dict) -> List[str]:
     """Render a measured-agreement result as CONFIDENCE-section bullets (IR `- ` lines).
 

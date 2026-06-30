@@ -229,6 +229,19 @@ def validate_ir_structure(text: str, *, require_all_sections: bool = True) -> Tu
 
 CONFLICT_MARKERS = [" vs ", " but ", " however", " whereas", " while ", " on the other hand"]
 
+
+class ConflictGateError(RuntimeError):
+    """Raised when a synthesis is well-formed but its CONFLICT bullets don't lexically
+    read as a real opposition (the §10.6 conflict-semantics gate).
+
+    Distinct from a plain RuntimeError (structural garbage / provider outage) so the
+    /ask path can tell the two apart: a structural failure is fail-closed (503), but a
+    conflict-gate failure is RECOVERABLE — the answer may well be valid, the lexical
+    marker check is just conservative (§16.5). Callers surface an "Ask Anyway" retry
+    that re-runs with strict_conflict=False instead of 503-ing a good answer.
+    """
+
+
 def validate_conflict_semantics(text: str) -> Tuple[bool, List[str]]:
     errors = []
     sections = parse_sections(text)
@@ -282,11 +295,17 @@ def build_synthesis_message(chat_id: str, reply_group_id: str, synth: Synthesis)
 # =========================================================
 # STABLE SYNTHESIS PIPELINE
 # =========================================================
-def synthesize_content(assistant_replies: List[str]) -> str:
+def synthesize_content(assistant_replies: List[str], *, strict_conflict: bool = True) -> str:
     """Blocking LLM merge + cleanup, with NO database access.
 
     §2.5: kept DB-free so it can be run via `asyncio.to_thread` from the async
     `/ask` handler — the event loop stays free during the (slow) synthesis call.
+
+    `strict_conflict=True` (default): an unconfirmed CONFLICT raises ConflictGateError
+    so the caller can offer an "Ask Anyway" retry (§16.5). `strict_conflict=False`
+    (the override): the conflict-semantics check is downgraded to a logged warning and
+    the answer is returned — the user has explicitly accepted the weaker phrasing.
+    Structural validation stays fail-closed in BOTH modes: garbage IR never persists.
     """
     raw_merged = ask_hf_synthesis(assistant_replies)
     print("\n=== RAW SYNTHESIS FROM MODEL ===\n", raw_merged)
@@ -307,12 +326,21 @@ def synthesize_content(assistant_replies: List[str]) -> str:
     # Fail-closed: invalid synthesis raises, and both LLM callers (`/ask`,
     # `/synthesis/generate`) roll the unit back and surface a 503 instead of
     # persisting garbage. This makes the previously-dead validators the real gate.
+    # Structural gate: fail-closed in every mode — hallucinated/garbled IR never persists.
     ok_struct, struct_errs = validate_ir_structure(cleaned, require_all_sections=False)
+    if not ok_struct:
+        print("\n=== SYNTHESIS STRUCTURE INVALID ===\n" + "\n".join(struct_errs))
+        raise RuntimeError("synthesis_validation_failed: " + "; ".join(struct_errs))
+
+    # Conflict-semantics gate: recoverable. The lexical marker check is conservative
+    # and can flag a perfectly valid answer (§16.5), so it raises a DISTINCT error the
+    # caller can offer to override — unless the caller already opted in (strict=False).
     ok_conflict, conflict_errs = validate_conflict_semantics(cleaned)
-    if not (ok_struct and ok_conflict):
-        errs = struct_errs + conflict_errs
-        print("\n=== SYNTHESIS VALIDATION FAILED ===\n" + "\n".join(errs))
-        raise RuntimeError("synthesis_validation_failed: " + "; ".join(errs))
+    if not ok_conflict:
+        if strict_conflict:
+            print("\n=== SYNTHESIS CONFLICT GATE TRIPPED ===\n" + "\n".join(conflict_errs))
+            raise ConflictGateError("conflict_validation_failed: " + "; ".join(conflict_errs))
+        print("\n=== CONFLICT GATE BYPASSED (ask_anyway) ===\n" + "\n".join(conflict_errs))
 
     return cleaned
 
@@ -366,14 +394,19 @@ def generate_and_store_synthesis(
     chat_id: str,
     reply_group_id: str,
     assistant_replies: List[str],
+    *,
+    strict_conflict: bool = True,
 ):
     """Synchronous convenience wrapper (LLM merge → persist + commit + KG).
 
     Used by the `/synthesis/generate` endpoint. The atomic `/ask` path instead
     calls `synthesize_content` + `save_or_update_synthesis(commit=False)` +
     `build_kg_for_synthesis` so it controls the transaction boundary itself.
+
+    `strict_conflict=False` is the Ask-Anyway override (§16.5): it relaxes the
+    recoverable conflict-semantics gate while keeping structural validation strict.
     """
-    final_clean = synthesize_content(assistant_replies)
+    final_clean = synthesize_content(assistant_replies, strict_conflict=strict_conflict)
     return save_or_update_synthesis(
         db=db,
         chat_id=chat_id,

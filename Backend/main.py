@@ -27,6 +27,7 @@ from synthesis_service import (
     save_or_update_synthesis,
     build_synthesis_message,
     build_kg_for_synthesis,
+    ConflictGateError,
     SYNTHESIS_MODEL,
 )
 from auth import (
@@ -539,7 +540,17 @@ def update_join_request(request_id: str, status: str, db: Session = Depends(get_
     # Validate PM/Owner access
     get_project_or_403(db, req.project_id, current_user["email"], required_roles=["owner", "pm"])
 
-    if status == "accepted":
+    # §16.6: validate the status enum (it's a raw query string) and make approval
+    # idempotent. Previously two PMs approving, a double-click, a re-PATCH, or approving
+    # an already-auto-enrolled public user each added a fresh ProjectMember → duplicate
+    # member rows. Guard on existing membership + only act on a still-pending request.
+    if status not in ("accepted", "rejected"):
+        raise HTTPException(status_code=400, detail="Invalid status (expected 'accepted' or 'rejected')")
+
+    if req.status != "pending":
+        return {"status": f"Request already {req.status}"}
+
+    if status == "accepted" and not _get_project_member(db, req.project_id, req.user_email):
         new_member = ProjectMember(project_id=req.project_id, user_email=req.user_email, role="member")
         db.add(new_member)
         log_project_activity(db, req.project_id, current_user["email"], "request_approved", f"Approved join request for {req.user_email}")
@@ -1151,7 +1162,10 @@ from sqlalchemy.orm import Session
 class AskPayload(BaseModel):
     sender: str
     text: str
-    
+    # §16.5 Ask-Anyway override: relax the conservative CONFLICT-semantics gate so a
+    # valid answer isn't held back over phrasing. Default False keeps the gate on.
+    ask_anyway: bool = False
+
 def tag_with_provider(provider: str, block: str) -> str:
     return block.replace("- SOURCE::", f"- {provider.upper()}::")
 
@@ -1191,8 +1205,11 @@ async def ask_multi_model(
     db.commit()
     db.refresh(user)
 
-    # 2. Noise filter
-    if signal == "noise":
+    # 2. Noise filter — §16.8: now overridable. A false-negative from the classifier used
+    #    to silently eat a legitimate question with no recourse. `ask_anyway` forces the
+    #    message through the full ensemble; the client surfaces it as an "Ask Anyway"
+    #    retry (same affordance as the §16.5 conflict gate).
+    if signal == "noise" and not payload.ask_anyway:
         default_reply = Message(
             chat_id=chat_id,
             role="assistant",
@@ -1200,7 +1217,7 @@ async def ask_multi_model(
             text=(
                 "This message looks like it contains very little actionable project "
                 "context — so it wasn't added to your working summary.\n\n"
-                "If this was important, please resend it with more details 🙂"
+                "If this was important, use **Ask Anyway** to send it to the AI regardless 🙂"
             ),
             include_in_summary=False,
             accepted=False,
@@ -1208,7 +1225,11 @@ async def ask_multi_model(
         )
         db.add(default_reply)
         db.commit()
-        return {"status": "noise_filtered"}
+        return {
+            "status": "noise_filtered",
+            "can_retry_ask_anyway": True,
+            "detail": "This message looked low-signal, so it wasn't sent to the AI. Ask Anyway to force it through.",
+        }
 
     # 3. Multi-model tagged extraction
     group = str(uuid4())
@@ -1304,7 +1325,9 @@ async def ask_multi_model(
     #    the unit back (the user message, committed earlier, survives).
     #    NOTE: temperature=0 on a hosted LLM is NOT bit-reproducible (§8.1 / §11.6).
     try:
-        content = await asyncio.to_thread(synthesize_content, extracted_blocks)
+        content = await asyncio.to_thread(
+            synthesize_content, extracted_blocks, strict_conflict=not payload.ask_anyway
+        )
 
         # §10.3 / §11.4: replace the LLM's self-reported CONFIDENCE with the agreement
         # actually MEASURED across the ensemble's independent answers. Pure/CPU-only,
@@ -1325,6 +1348,23 @@ async def ask_multi_model(
         db.add(build_synthesis_message(chat_id, group, synth))  # §3.4 single factory
         db.commit()
         synthesis_id = synth.id
+    except ConflictGateError as e:
+        # §16.5: the ensemble succeeded but its CONFLICT couldn't be lexically confirmed
+        # as a real opposition. This is RECOVERABLE — don't 503 a possibly-valid answer.
+        # Roll the AI unit back AND delete the user turn we committed earlier, so an
+        # "Ask Anyway" retry (re-posts the same text with ask_anyway=true) leaves no
+        # duplicate user message. Nothing else was committed, so the turn fully resets.
+        db.rollback()
+        db.query(Message).filter(Message.id == user.id).delete()
+        db.commit()
+        return {
+            "status": "conflict_gate",
+            "can_retry_ask_anyway": True,
+            "detail": (
+                "Synthesis was held back: the models surfaced a CONFLICT the validator "
+                "couldn't confirm as a genuine opposition. Re-run with Ask Anyway to accept it."
+            ),
+        }
     except Exception as e:
         db.rollback()
         from fastapi.responses import JSONResponse
@@ -1600,6 +1640,8 @@ def get_chat_synthesis(
 
 class ReplyGroupInput(BaseModel):
     reply_group_id: str
+    # §16.5 Ask-Anyway override (same semantics as /ask): relax the conflict-semantics gate.
+    ask_anyway: bool = False
 
 
 from models import Message
@@ -1635,12 +1677,28 @@ def generate_synthesis(
     if not replies:
         raise HTTPException(status_code=404, detail="No assistant replies for this group")
 
-    synthesis = generate_and_store_synthesis(
-        db=db,
-        chat_id=chat_id,
-        reply_group_id=payload.reply_group_id,
-        assistant_replies=[r.text for r in replies],
-    )
+    try:
+        synthesis = generate_and_store_synthesis(
+            db=db,
+            chat_id=chat_id,
+            reply_group_id=payload.reply_group_id,
+            assistant_replies=[r.text for r in replies],
+            strict_conflict=not payload.ask_anyway,
+        )
+    except ConflictGateError:
+        # §16.5: recoverable — tell the client it can retry with ask_anyway instead of
+        # surfacing a hard failure for what may be a perfectly valid synthesis. Return a
+        # JSONResponse so this bypasses the SynthesisResponse response_model.
+        db.rollback()
+        from fastapi.responses import JSONResponse
+        return JSONResponse(content={
+            "status": "conflict_gate",
+            "can_retry_ask_anyway": True,
+            "detail": (
+                "Synthesis was held back over an unconfirmed CONFLICT. "
+                "Re-run with Ask Anyway to accept it."
+            ),
+        })
 
     if not synthesis.content.strip():
         raise HTTPException(status_code=500, detail="Synthesis generation failed")
@@ -1680,6 +1738,110 @@ def get_reasoning(
         "others": data.get("others", []),
         "edges": data.get("edges", []),
     })
+
+
+@app.get("/chats/{chat_id}/decision-trace")
+def get_decision_trace_route(
+    chat_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """"Why this decision?" (§17.4): edge-grounded explanation per decision.
+
+    Reads the semantic KnowledgeEdges (§16.2 fix) into each DECISION node, so a decision
+    lists only the evidence/conflicts it is actually linked to — with the shared terms
+    that justified each link. Pure DB read; no model call.
+    """
+    get_chat_or_403(db, chat_id, current_user["email"], allow_public=True)
+    from reasoning_queries import get_decision_trace
+    from fastapi.encoders import jsonable_encoder
+    return jsonable_encoder({"decisions": get_decision_trace(db, chat_id)})
+
+
+@app.get("/chats/{chat_id}/decision-readiness")
+def get_decision_readiness_route(
+    chat_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """Decision Readiness (§17.5): per-decision "is this ready to act on, and if not,
+    what's the cheapest path?" — fuses measured agreement (§10.3) + the semantic KG
+    edges (§17.4) into a verdict and a prioritized resolve-path. Pure read; no model call.
+    """
+    get_chat_or_403(db, chat_id, current_user["email"], allow_public=True)
+    from decision_readiness import compute_readiness
+    from fastapi.encoders import jsonable_encoder
+    return jsonable_encoder({"decisions": compute_readiness(db, chat_id)})
+
+
+@app.get("/chats/{chat_id}/synthesis/{reply_group_id}/disagreement")
+def get_disagreement(
+    chat_id: str,
+    reply_group_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user)
+):
+    """Disagreement Spotlight: recompute, on demand, WHERE the ensemble diverged.
+
+    The per-provider extraction blocks are already persisted as assistant Messages
+    at /ask time (sender = honest model label, same reply_group_id). We reconstruct
+    {model: IR} from them and run the same Jaccard-cluster agreement engine that
+    backs measured confidence — so this needs NO extra model calls, NO new column.
+    'contested' claims are those NOT extracted by every model; support==1 means only
+    a single model surfaced it (the strongest signal for human review).
+    """
+    get_chat_or_403(db, chat_id, current_user["email"], allow_public=True)
+
+    rows = db.query(Message).filter(
+        Message.chat_id == chat_id,
+        Message.reply_group_id == reply_group_id,
+        Message.role == "assistant",
+        Message.sender.notin_(["synthesis", "clarity-stack"]),
+    ).all()
+    provider_blocks = {r.sender: r.text for r in rows if r.sender and r.text}
+
+    from agreement import analyze_claims, compute_agreement
+    claims = analyze_claims(provider_blocks)
+    return {
+        "n_models": len(provider_blocks),
+        "models": sorted(provider_blocks.keys()),
+        "overall": compute_agreement(provider_blocks),
+        "claims": claims,
+        "contested": [c for c in claims if c["contested"]],
+    }
+
+
+@app.get("/chats/{chat_id}/synthesis/{reply_group_id}/devils-advocate")
+def get_devils_advocate(
+    chat_id: str,
+    reply_group_id: str,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+    _rl: None = Depends(RateLimiter(10, 60, "devils_advocate")),
+):
+    """Devil's Advocate (§17.2): on-demand red-team of a synthesis's DECISION.
+
+    Argues the OTHER side of a committed decision — risks, unstated assumptions,
+    failure modes, the strongest counter-argument — so a choice gets stress-tested
+    before it's relied on. Members-only (NO allow_public) and rate-limited because it
+    triggers a paid LLM call. Computed from the stored synthesis content (no migration).
+    """
+    get_chat_or_403(db, chat_id, current_user["email"])
+    synth = get_synthesis(db, chat_id, reply_group_id)
+    if not synth:
+        raise HTTPException(status_code=404, detail="Synthesis not found")
+
+    from devils_advocate import generate_devils_advocate
+    try:
+        return generate_devils_advocate(synth.content)
+    except Exception as e:
+        # §16.7: a failed critique must surface as an error, never be stored/shown as
+        # if the model had nothing to say.
+        from fastapi.responses import JSONResponse
+        return JSONResponse(status_code=503, content={
+            "status": "error",
+            "detail": f"Devil's Advocate is temporarily unavailable: {str(e)}",
+        })
 
 
 # Register CORSMiddleware at the end of the file so it executes first,

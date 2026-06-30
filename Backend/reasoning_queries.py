@@ -86,3 +86,63 @@ def get_decision_explanation(db: Session, chat_id: str):
         "others": others,
         "edges": all_edges
     }
+
+
+# Human-readable phrasing for each grounded relation (drives the "Why this decision?" UI).
+_RELATION_PHRASE = {
+    "SUPPORTS": "rests on",
+    "CONTRADICTS": "is challenged by",
+    "BLOCKS": "is blocked by",
+    "DEPENDS_ON": "depends on",
+    "ALTERNATIVE_OF": "was chosen over",
+    "REFINES": "refines",
+}
+
+
+def get_decision_trace(db: Session, chat_id: str):
+    """"Why this decision?" — an EDGE-GROUNDED explanation per decision (§17.4).
+
+    Unlike `get_decision_explanation` (which buckets every node by section and so shows
+    the same facts under every decision), this walks the actual KnowledgeEdges into each
+    DECISION node, so a decision only lists the evidence/conflicts it is genuinely linked
+    to. Now that edges are semantic (§16.2 fix in knowledge_graph_builder) instead of a
+    cross-product, that link set is meaningful. We also surface the shared terms that
+    justified each link, so the trace is auditable rather than asserted.
+    """
+    from knowledge_graph_builder import _tokens
+
+    nodes = {n.id: n for n in db.query(KnowledgeNode).filter(KnowledgeNode.chat_id == chat_id).all()}
+    edges = db.query(KnowledgeEdge).filter(KnowledgeEdge.chat_id == chat_id).all()
+
+    incoming: dict = {}
+    for e in edges:
+        incoming.setdefault(e.to_node_id, []).append(e)
+
+    out = []
+    for d in (n for n in nodes.values() if n.section == "DECISION"):
+        d_tokens = _tokens(d.content)
+        links = []
+        for e in incoming.get(d.id, []):
+            src = nodes.get(e.from_node_id)
+            if not src:
+                continue
+            shared = sorted(_tokens(src.content) & d_tokens)
+            links.append({
+                "relation": e.relation,
+                "phrase": _RELATION_PHRASE.get(e.relation, e.relation.lower()),
+                "section": src.section,
+                "content": src.content,
+                "node_id": src.id,
+                "shared_terms": shared[:6],
+            })
+        # Most-grounded links first (more shared terms = stronger justification).
+        links.sort(key=lambda l: (-len(l["shared_terms"]), l["section"]))
+        out.append({
+            "decision_id": d.id,
+            "synthesis_id": d.synthesis_id,
+            "decision": d.content,
+            "confidence": d.confidence,
+            "links": links,
+            "n_links": len(links),
+        })
+    return out

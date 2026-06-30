@@ -129,9 +129,30 @@ def test_synthesize_content_passes_valid_ir(monkeypatch):
 
 
 def test_synthesize_content_raises_on_bad_conflict(monkeypatch):
-    # A CONFLICT bullet with no opposition survives pruning but must fail the gate.
+    # §16.5/§17.2: a CONFLICT bullet with no opposition now raises a *recoverable*
+    # ConflictGateError ("conflict_validation_failed") — distinct from structural
+    # garbage — so /ask can offer an Ask-Anyway retry instead of 503-ing a valid answer.
     bad = "FACT:\n- a\nCONFLICT:\n- just a plain statement"
     monkeypatch.setattr(ss, "ask_hf_synthesis", lambda blocks: bad)
-    with pytest.raises(RuntimeError) as e:
+    with pytest.raises(ss.ConflictGateError) as e:
         ss.synthesize_content(["x"])
+    assert "conflict_validation_failed" in str(e.value)
+
+
+def test_ask_anyway_bypasses_conflict_gate(monkeypatch):
+    # strict_conflict=False (the override) relaxes ONLY the conflict-semantics check.
+    bad = "FACT:\n- a\nCONFLICT:\n- just a plain statement"
+    monkeypatch.setattr(ss, "ask_hf_synthesis", lambda blocks: bad)
+    out = ss.synthesize_content(["x"], strict_conflict=False)
+    assert "FACT:" in out and "just a plain statement" in out
+
+
+def test_structural_garbage_fails_closed_even_with_ask_anyway(monkeypatch):
+    # Output with no known section survives prune as empty -> plain RuntimeError
+    # ("synthesis_validation_failed"), NOT a recoverable ConflictGateError, regardless
+    # of ask_anyway. Structural validation never relaxes.
+    monkeypatch.setattr(ss, "ask_hf_synthesis", lambda blocks: "RANDOM:\n- not a real section")
+    with pytest.raises(RuntimeError) as e:
+        ss.synthesize_content(["x"], strict_conflict=False)
     assert "synthesis_validation_failed" in str(e.value)
+    assert not isinstance(e.value, ss.ConflictGateError)
