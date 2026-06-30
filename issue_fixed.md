@@ -294,3 +294,41 @@ Knocked out the cheap remaining §16 correctness/quality tails in one pass (grou
   raw output, not transcripts. Also still open: seeds/experiment tracking, golden sets for the
   legacy 6-model harness, and the §11.5 stale legacy pins.
 
+---
+
+## G. Observability completion + lint gate (2026-06-30, branch `Clarity_Stack_V3`)
+
+> Closes the §10.5 / §5.7 observability leg (traces + errors + a dashboard) on top of
+> the existing structured logs + Prometheus metrics, and flips the Backend pyflakes
+> lint gate to blocking (§10.4). Commits: `4659859` (observability), `2be50ff` (lint).
+
+### G1. OpenTelemetry traces + Sentry + Grafana board [⭐⭐⭐] (existing_issues §10.5 → ✅ DONE)
+- **Traces** — `Backend/tracing.py` + `Satellite/tracing.js`: OTel auto-instruments
+  FastAPI/Express + outbound HTTP (`requests`/`httpx`), so one request becomes a single
+  distributed trace (UI→Core→Gateway→provider, Core→Satellite via W3C `traceparent`).
+  Backend server spans are stamped with the request's `request_id`, so a span and its
+  JSON log lines join on one id.
+- **Errors** — Sentry init (gated on `SENTRY_DSN`) captures the `request_error` the request
+  middleware already logs, tagged with `request_id`.
+- **Optional + no-op** — both are off unless enabled by env (`OTEL_TRACES_ENABLED` /
+  `OTEL_EXPORTER_OTLP_ENDPOINT`, `SENTRY_DSN`); the SDKs live in
+  `Backend/requirements_observability.txt` / `Satellite/observability.packages.txt`, so a
+  plain install + CI never pull them — same dependency-free discipline as `metrics.py`.
+- **Grafana** — `observability/` provisions Tempo (traces) + Prometheus (scrapes `/metrics`)
+  + a dashboard JSON (request rate, p95 latency, exceptions, LLM tokens/cost/calls), brought
+  up by the opt-in `docker-compose.observability.yml` overlay (doesn't bloat the default `up`).
+- **Verified:** Backend 108 + Satellite 16 green (no regressions); new `test_tracing.py` (5) +
+  `tracing.test.js` (2) assert the gating + no-op contract; `import main` clean on the no-op
+  path; compose overlay merges + parses (OTEL env + Tempo dep land on backend + satellite).
+- ⚠ **Still open (minor):** trace/`request_id` propagation into Editor/SRS/UML — browser-driven,
+  needs frontend OTel/header instrumentation (separate, low value).
+
+### G2. Backend pyflakes lint gate → blocking [⭐⭐] (existing_issues §10.4)
+- The ~44 pre-existing pyflakes hits (unused imports/vars/re-imports, unused `except … as e`
+  bindings, two authz-gate calls whose return was assigned but never used) are fixed across the
+  Backend app code; `ruff check . --select F --exclude venv,tests` is clean.
+- The CI "full pyflakes" step dropped `continue-on-error` — it's now a hard gate, so the
+  cleanliness can't regress. Bug-rule gate (E9,F63,F7,F82) unchanged. `ruff.toml` comment updated.
+- Frontend ESLint (188 errors, mostly `no-explicit-any`) stays non-blocking — a separate, larger
+  cleanup, not bundled here.
+
