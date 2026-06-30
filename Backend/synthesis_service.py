@@ -92,7 +92,6 @@ def list_synthesis_for_chat(db: Session, chat_id: str) -> List[Synthesis]:
 
     return list(db.scalars(stmt))
 
-from models import KnowledgeNode  # add this import at top
 
 
 

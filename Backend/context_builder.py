@@ -1,7 +1,6 @@
 from sqlalchemy.orm import Session
 from sqlalchemy import select, or_, and_
 from models import Message
-from typing import List
 
 def build_chat_context(db: Session, chat_id: str, limit: int = 15) -> str:
     """

@@ -1,6 +1,4 @@
 # ir_parser.py
-from typing import Dict, List
-import re
 
 SECTION_HEADERS = [
     "FACT",

@@ -9,7 +9,7 @@ from sqlalchemy import (
     Boolean,
     Float
 )
-from sqlalchemy.orm import declarative_base, relationship
+from sqlalchemy.orm import declarative_base
 from datetime import datetime
 import uuid
 
@@ -20,13 +20,12 @@ Base = declarative_base()
 def gen_id():
     return str(uuid.uuid4())
 
-from datetime import datetime, timezone
+from datetime import timezone
 def now():
     return datetime.now(timezone.utc)
 
 
 
-from sqlalchemy import Column, String, DateTime, Text
 
 
 class User(Base):

@@ -1,8 +1,15 @@
 name: CI
 
-# Regression gate for the §16/§17 engine work. Backend = pytest (in-memory SQLite,
-# no network, no models). Satellite = node --test (pure-fn delta diff). Both are
-# fast because neither installs torch/transformers or touches a real DB/cluster.
+# Regression gate for the engine work plus build/deploy hygiene (§10.4).
+#   backend          — pytest (in-memory SQLite, no network/models); also runs the
+#                      §10.10 offline AI-eval golden gate via test_eval_harness.py.
+#   satellite        — node --test (pure-fn delta diff).
+#   frontend         — typecheck (tsc) + production build are hard gates; eslint is
+#                      non-blocking (187 pre-existing no-explicit-any errors, tracked
+#                      separately rather than wedged into this gate).
+#   compose-validate — `docker compose config` lints the whole-stack compose so a broken
+#                      service/env reference fails fast, without a heavy image build.
+# All jobs are fast: none installs torch/transformers or touches a real DB/cluster.
 
 on:
   push:
@@ -31,8 +38,16 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements_ci.txt
-      - name: Run test suite
-        run: pytest tests/ -q
+      # Hard gate: real-bug rules only (undefined names, syntax, bad asserts/compares).
+      # This set is clean today; ruff.toml documents the scope.
+      - name: Lint — bug rules (ruff)
+        run: ruff check . --select E9,F63,F7,F82 --exclude venv
+      # Hard gate: full pyflakes (unused imports/vars, redefinitions). The ~44
+      # pre-existing hits were cleaned, so this is blocking — keep it clean.
+      - name: Lint — full pyflakes
+        run: ruff check . --select F --exclude venv,tests
+      - name: Run test suite + coverage gate
+        run: pytest tests/ -q --cov --cov-config=.coveragerc --cov-fail-under=70
 
   satellite:
     name: Satellite (node --test)
@@ -51,3 +66,43 @@ jobs:
         run: npm ci
       - name: Run test suite
         run: npm test
+
+  frontend:
+    name: Frontend (typecheck + build)
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: Web/Frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: Web/Frontend/package-lock.json
+      - name: Install deps
+        run: npm ci
+      # Hard gates: all clean today and must stay clean.
+      - name: Typecheck
+        run: npm run typecheck
+      - name: Unit tests (vitest)
+        run: npm run test
+      - name: Build
+        run: npm run build
+      # Non-blocking: 187 pre-existing eslint errors (mostly no-explicit-any).
+      # Surfaced in the log so the debt is visible; flip to blocking once cleaned.
+      - name: Lint (non-blocking)
+        run: npm run lint
+        continue-on-error: true
+
+  compose-validate:
+    name: Compose (validate)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      # JWT_SECRET is the one required (no-default) variable in the compose file;
+      # a dummy value lets `config` interpolate so it validates structure, not secrets.
+      - name: Validate docker-compose.yml
+        env:
+          JWT_SECRET: ci-validate-only
+        run: docker compose config -q

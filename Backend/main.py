@@ -38,7 +38,7 @@ from auth import (
 )
 import llm_gateway as gateway  # §5.1/§10.2 LLM Gateway — stats/observability surface
 from models import User
-from pydantic import BaseModel, EmailStr
+from pydantic import EmailStr
 
 
 
@@ -288,7 +288,7 @@ def refresh(request: Request, db: Session = Depends(get_db), _rl: None = Depends
 
 
 
-from typing import Optional, List, Dict
+from typing import Optional, Dict
 
 # ---------- Pydantic Schemas ----------
 
@@ -650,7 +650,7 @@ from pydantic import BaseModel, Field
 from typing import Optional, List
 from datetime import datetime
 from fastapi import Path
-from models import Project, Chat
+from models import Chat
 
 
 class ChatCreate(BaseModel):
@@ -689,7 +689,6 @@ class ChatOut(BaseModel):
         from_attributes = True
 
 
-from fastapi import HTTPException
 
 
 @app.post("/projects/{project_id}/chats", response_model=ChatOut)
@@ -723,7 +722,6 @@ def create_chat(
 
 
 
-from fastapi import Query
 
 @app.get("/projects/{project_id}/chats", response_model=List[ChatOut])
 def list_chats(
@@ -747,7 +745,7 @@ def list_chats(
 
 
 from typing import List
-from models import Message, Chat
+from models import Message
 
 from pydantic import BaseModel, Field, field_validator
 from typing import Optional
@@ -822,8 +820,9 @@ def create_message(
     db: Session = Depends(get_db),
     current_user: dict = Depends(get_current_user)
 ):
-    # allow_public=True so members of public projects can post messages
-    chat = get_chat_or_403(db, chat_id, current_user["email"], allow_public=True, required_roles=["owner", "pm", "member"])
+    # allow_public=True so members of public projects can post messages.
+    # Called for its 403 side-effect (authz gate); return value intentionally unused.
+    get_chat_or_403(db, chat_id, current_user["email"], allow_public=True, required_roles=["owner", "pm", "member"])
 
     try:
         message = Message(
@@ -863,7 +862,7 @@ def create_message(
             logging.exception(f"Failed to persist quarantine record for chat {chat_id}")
         raise HTTPException(status_code=400, detail="Message rejected & quarantined for review")
 
-    except SQLAlchemyError as e:
+    except SQLAlchemyError:
         # Operational DB failure (locked / unreachable) — NOT the message's fault, so do
         # not quarantine. Surface 503 so the client can retry; log full detail server-side.
         db.rollback()
@@ -885,7 +884,8 @@ def list_messages(
     # §3.5: bound the payload. Defaults to the latest 500 messages (covers virtually
     # all chats); pass limit/offset to page through longer histories. Uses the
     # existing idx_messages_chatid_createdat index.
-    chat = get_chat_or_403(db, chat_id, current_user["email"], allow_public=True)
+    # Authz gate (raises 403); return value intentionally unused.
+    get_chat_or_403(db, chat_id, current_user["email"], allow_public=True)
 
     messages = (
         db.query(Message)
@@ -942,9 +942,7 @@ def update_message_type(
 
     return message
 
-from fastapi import HTTPException
 import requests
-from auth import create_access_token
 
 def _call_satellite_cleanup(scope: str, target_id: str):
     try:
@@ -1180,13 +1178,10 @@ def safe(fn, prompt):
     except Exception as e:
         return f"⚠️ Error calling model: {e}"
 
-from uuid import uuid4
-from fastapi import HTTPException, Depends
+from fastapi import Depends
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 from pydantic import BaseModel
-from uuid import uuid4
-import json
 from fastapi import Depends
 from sqlalchemy.orm import Session
 
@@ -1381,7 +1376,7 @@ async def ask_multi_model(
         db.add(build_synthesis_message(chat_id, group, synth))  # §3.4 single factory
         db.commit()
         synthesis_id = synth.id
-    except ConflictGateError as e:
+    except ConflictGateError:
         # §16.5: the ensemble succeeded but its CONFLICT couldn't be lexically confirmed
         # as a real opposition. This is RECOVERABLE — don't 503 a possibly-valid answer.
         # Roll the AI unit back AND delete the user turn we committed earlier, so an
@@ -1497,7 +1492,7 @@ def update_project(
     db.refresh(project)
     return project
 
-from fastapi import HTTPException, Depends
+from fastapi import Depends
 from sqlalchemy.orm import Session
 
 # make sure ChatOut + Chat + get_db are already imported
@@ -1550,7 +1545,6 @@ from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from database import get_db
-from models import Message
 from schemas import MessageSchema   # <-- your existing Pydantic schema
 
 
@@ -1592,12 +1586,11 @@ async def get_user_messages(
 # SYNTHESIS ROUTES
 # =========================
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends
 from sqlalchemy.orm import Session
 
 from database import get_db
 from synthesis_service import (
-    save_or_update_synthesis,
     get_synthesis,
     list_synthesis_for_chat
 )
@@ -1643,7 +1636,6 @@ def create_or_update_synthesis(
 
     return synthesis
 
-from prompts.synthesis_prompt import SYNTHESIS_SYSTEM_PROMPT, SYNTHESIS_USER_PROMPT_TEMPLATE
 
 
 @app.get("/chats/{chat_id}/synthesis", response_model=list[SynthesisResponse])
@@ -1706,7 +1698,6 @@ class ReplyGroupInput(BaseModel):
     ask_anyway: bool = False
 
 
-from models import Message
 
 def get_assistant_replies(db: Session, reply_group_id: str):
     return (
@@ -1720,7 +1711,6 @@ def get_assistant_replies(db: Session, reply_group_id: str):
         .all()
     )
 
-from synthesis_service import generate_and_store_synthesis
 
 
 
@@ -1775,10 +1765,9 @@ def generate_synthesis(
     return synthesis
 
 
-from fastapi import Depends, HTTPException
+from fastapi import Depends
 from sqlalchemy.orm import Session
 from database import get_db
-from reasoning_queries import get_decision_explanation
 from reasoning_queries import get_decision_explanation
 
 @app.get("/api/reasoning/chat/{chat_id}")
@@ -1947,8 +1936,6 @@ app.add_middleware(
 # SECRET_KEY and ALGORITHM already imported from auth at the top of the file.
 from jose import jwt, JWTError
 from http.cookies import SimpleCookie
-import json
-from typing import Dict, Set
 
 
 class ChatPresenceManager:

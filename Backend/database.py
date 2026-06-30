@@ -1,10 +1,8 @@
 import os
 
-from sqlalchemy import create_engine, event, text
+from sqlalchemy import create_engine, event
 from sqlalchemy.orm import sessionmaker, Session
-from sqlalchemy.engine import Engine
 
-from models import Base
 
 
 # ─── DB URL from env (default to local SQLite for dev) ───────────────────────

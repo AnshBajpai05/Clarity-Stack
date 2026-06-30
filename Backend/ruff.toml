@@ -1,0 +1,12 @@
+# Ruff config (§10.4 CI hardening). The CI "lint" job hard-gates TWO sets, both blocking:
+# the real-bug set (E9 syntax errors, F63 bad comparisons/asserts, F7 misplaced
+# statements, F82 undefined names) and the broader pyflakes pass (F401 unused-import,
+# F811 redefinition, F841 unused-var). The ~44 pre-existing cleanliness hits were
+# cleaned (2026-06-30), so the full F set is now clean and gated to stay that way.
+# Scope excludes tests/ (gated on the app code; test fixtures intentionally vary).
+target-version = "py312"
+exclude = ["venv", "__pycache__", "alembic"]
+
+[lint]
+# Default selection for local `ruff check`; CI narrows this per step via --select.
+select = ["E9", "F63", "F7", "F82"]
