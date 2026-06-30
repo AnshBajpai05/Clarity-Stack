@@ -21,6 +21,10 @@ Thumbs.db
 **/.env
 **/.env.*
 
+# ...but keep committed templates so teammates know what to set
+!.env.example
+!**/.env.example
+
 # --- Databases ---
 *.db
 *.sqlite3
