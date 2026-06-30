@@ -22,15 +22,14 @@ The Satellite is the **AI orchestration and intelligence layer**. It runs separa
 |---|---|
 | `GET /api/satellite/cards/:projectId` | Get all temporal cards (chained) |
 | `GET /api/satellite/cards/:projectId/label/:label` | Cards by category |
-| `GET /api/satellite/cards/:projectId/expired` | Stale/expired cards |
 | `GET /api/satellite/cards/:projectId/history/:cardId` | Full version chain for a card |
-| `POST /api/satellite/cards/:projectId/generate` | Generate card from latest delta |
-| `POST /api/satellite/cards/:projectId/generate/chat/:chatId` | Generate cards from a chat |
+| `POST /api/satellite/cards/:projectId/generate` | Generate card from the **latest** delta |
+| `POST /api/satellite/cards/:projectId/generate/delta/:deltaId` | Generate from the **selected** delta (§15.14, new) |
+| `POST /api/satellite/cards/:projectId/generate/chat/:chatId` | Generate cards from a chat (dedups — no dup versions, §16.4) |
 | `POST /api/satellite/cards/:projectId/generate/label/:label` | Generate cards by category |
 | `POST /api/satellite/cards/:projectId/auto-generate` | Scheduler-style auto-generation |
-| `POST /api/satellite/cards/:projectId/:cardId/refresh` | Refresh stale card (new version) |
-| `POST /api/satellite/cards/:projectId/:cardId/update-kg` | Flush KG diff from card |
-| `GET /api/satellite/kg/:projectId` | Get KG snapshot |
+| `POST /api/satellite/cards/:projectId/:cardId/update-kg` | **Commit to KG** → ingests into the **Core** KG (§16.4) |
+| `GET /api/satellite/kg/:projectId` | KG snapshot mirror (legacy; the live graph reads Core `/api/reasoning`) |
 | `GET /api/satellite/delta/:projectId` | Get graph delta history |
 | `GET /api/satellite/discovery` | Public projects feed |
 | `POST /api/satellite/join/:projectId` | Join request via email |
@@ -48,32 +47,30 @@ router.get("/:projectId", requireAuth, requireProjectAccess, async (req, res) =>
 
 ## 8.4 Temporal Card System — Version Chaining
 
-### Card Identity: `chainIndex`
+### Card Identity & lineage — scoped per `{chat, category}` (§16.4)
 ```
-chainIndex = `${chatId}_${category}`
-e.g., "abc123_risk"
+chainIndex = `${chatId}_${category}`   e.g., "abc123_risk"
 ```
-All cards for the same chat + category share a chain. When a new version is generated:
-1. Fetch the latest card in the chain: `TemporalCard.findOne({ chainIndex }).sort({ version: -1 })`
+The version parent is looked up by a pure `chainParentFilter(projectId, chatId, category)` →
+`{ projectId, sourceChatIds: chatId, category, status: "active" }`. When a new version is generated:
+1. Find the active card **for this chat + category** (not category alone — that previously conflated unrelated threads across chats)
 2. Set `previousCardId` on the new card to point to the old one
 3. Mark the old card `status: "superseded"`, set `supersededAt`
 4. Save new card with `version: old.version + 1`
 
 This creates a **singly linked list** of card versions — full playback of project evolution.
+*(Repeat "Generate" with no new messages returns the existing card + `upToDate:true` — it no longer spawns near-duplicate versions.)*
 
 ### Card Status Lifecycle
 ```
-draft → active → superseded (newer version exists)
-               → stale (expiresAt passed)
+draft → active → superseded (a newer version exists)
                → archived (manually archived)
 ```
 
-### `expiresAt` — Auto-Expiry
-Cards expire **3 days** after creation by default:
-```js
-expiresAt: { type: Date, default: () => new Date(Date.now() + 3 * 24 * 60 * 60 * 1000) }
-```
-The `cardScheduler.js` runs a cron job every hour to mark expired cards as `stale`.
+### Expiry — intentionally DISABLED (§16.4)
+There is **no auto-expiry**. `expireOldCards()` is a deliberate no-op ("cards remain active
+indefinitely, per user request"); the schema has **no `expiresAt` field** and there is no `stale`
+sweeper. (The old 3-day `expiresAt` + hourly cron described in earlier drafts was removed.)
 
 ## 8.5 Card Generation Pipeline (`services/cardChainer.js`)
 
@@ -101,12 +98,15 @@ Handles failover between LLM providers:
 1. Try Groq (Llama-3.1-70B) — fastest
 2. On rate limit or error → fallback to HuggingFace
 
-## 8.6 Graph Delta Engine (`services/deltaEngine.js`)
+## 8.6 Graph Delta Engine (`services/deltaEngine.js`) — content-keyed (§16.3 / §17.3)
 
-Computes what changed in the Knowledge Graph between two synthesis snapshots:
-- Fetches KG snapshots from MongoDB (`KGSnapshot` collection)
-- Computes `added_nodes`, `removed_nodes`, `changed_edges`
-- Stores as `GraphDelta` document
+Computes what genuinely **changed in knowledge** between two KG snapshots:
+- Pulls the Core KG (`fetchKGFromCore`) and stores a `KGSnapshot`
+- **`computeDiff` keys nodes/edges on normalized CONTENT, not UUIDs** — Core re-mints a fresh
+  `nodeId` every `/ask`, so the old UUID-keyed diff reported churn on identical content. Now a
+  re-minted id for the same text counts as **zero** change; only real content additions/removals
+  register (§16.3). Id-less edges use a stable `from→to:relation` composite (§11.2).
+- Stores the result as a `GraphDelta` document — the **Evolution Timeline** (§17.3) reads these.
 
 ## 8.7 Mailer (`services/mailer.js`)
 
@@ -133,7 +133,8 @@ await mongoose.connect(uri, {
 
 ---
 
-# 9. EDITOR SERVICE (Node.js / Socket.io / Supabase)
+# 9. EDITOR SERVICE (Node.js / Socket.io / file-based)
+*(Port 8004. Supabase was removed in the §2.2 / §6.2 cleanup — persistence is now a single hardened file-based backend.)*
 
 ## 9.1 Purpose
 
@@ -351,8 +352,9 @@ The API uses `rglob(f"{doc_id}*{suffix}")` to find files recursively — handles
 ## 11.1 Purpose
 An **AI Phishing Detection API** that analyzes URLs for malicious intent using a combination of structural heuristics, machine learning (BERT), and threat intelligence feeds.
 
-**Port:** 8004  
-**Responsibility:** Security auditing for all external URLs mentioned in the platform.
+**Port:** 8002  
+**Responsibility:** Security auditing for external URLs.
+> ⛔ **Out of scope this cycle** — ThreatLens is not yet linked into the platform; its own security findings (§1.4 SSRF, §4.1 blocking I/O) are intentionally deferred.
 
 ## 11.2 Core Detection Pipeline
 1. **Redirect Resolution:** Follows shorteners and nested redirects to find the final destination.
@@ -371,7 +373,7 @@ Returns a `risk_score` (0-100) and a `verdict` (safe, suspicious, phishing). The
 ## 12.1 Purpose
 A specialized service for **extracting UML Use Cases and generating diagrams** from SRS documents. It uses a semantic chunking engine to handle large documents that would otherwise overflow LLM context windows.
 
-**Port:** 5175 (UI) / 8002 (API)
+**Port:** 8007 (UI) / 8005 (API)
 
 ## 12.2 Key Features
 1. **Semantic Chunker:** Splits markdown into chunks based on heading hierarchy and semantic meaning.
@@ -410,8 +412,11 @@ A: Separation of concerns and fault isolation. Each stage has a single responsib
 **Q8: What is the difference between `socket.to(room).emit` and `io.to(room).emit`?**
 A: `socket.to(room).emit()` sends to all users in the room *except* the sender (used for content updates — sender already updated locally). `io.to(room).emit()` sends to *all* including sender (used for `section_added` and `user-count` — sender needs confirmation too).
 
-**Q9: How does the multi-model consensus reduce hallucination?**
-A: Each model independently extracts IR blocks from the same prompt. The synthesis model (Groq Llama 3.3 70B) merges them — facts agreed on by multiple models (Groq, NVIDIA, Mixtral) get higher confidence. If one provider fails or hallucinates, the consensus logic surfaces the discrepancy as a CONFLICT in the synthesis output, flagged for human review.
+**Q9: How does the multi-model ensemble reduce hallucination?**
+A: Three **independent, deliberately heterogeneous** models (`groq:llama-3.3-70b`, `groq:gpt-oss-20b`, `nvidia:llama-3.1-70b`) each extract IR from the same prompt. A deterministic agreement metric (§10.3) measures where they actually converge — that becomes the surfaced confidence, not any model's self-report. Claims a model *fails* to corroborate become the **Disagreement Spotlight** (§17.1, contested claims), and the synthesis model (`groq:llama-3.3-70b`) merges with each bullet **grounded** to source (§10.6). A failed provider returns `None` and is skipped — never fed to synthesis (§6.1).
+
+**Q13: What does "Commit to KG" actually do now?**
+A: It ingests a card's knowledge into the **Core** Knowledge Graph (`POST /chats/{id}/kg/ingest`), attached to the card's source chat, so it renders in the live graph view (which reads Core `/api/reasoning`) and survives re-sync. Previously it wrote to a Satellite Mongo snapshot that nothing displayed and the next sync overwrote — a dead-end. Ingestion is idempotent per `(chat, section, content)`, so re-committing doesn't duplicate nodes (§16.4).
 
 **Q10: What is `BackgroundTasks` in FastAPI?**
 A: FastAPI's `BackgroundTasks` runs a function after the HTTP response has been sent to the client. The client gets an immediate response (`status: "processing"`) while the heavy pipeline runs asynchronously. The frontend then polls a status endpoint to track progress.

@@ -57,7 +57,13 @@ app.add_middleware(CORSMiddleware, allow_origins=[...], allow_credentials=True)
 | GET | `/chats/{id}/synthesis` | List all synthesis for chat | JWT |
 | GET | `/chats/{id}/synthesis/{group_id}` | Get specific synthesis | JWT |
 | POST | `/chats/{id}/synthesis/generate` | Manually trigger synthesis | JWT |
-| GET | `/api/reasoning/chat/{id}` | Get decision reasoning chain | JWT |
+| GET | `/api/reasoning/chat/{id}` | Bucketed KG nodes + semantic edges for the graph view | JWT |
+| POST | `/chats/{id}/kg/ingest` | **Ingest card knowledge into the Core KG** ("Commit to KG", §16.4) | JWT |
+| GET | `/chats/{id}/decision-trace` | Edge-grounded "Why this decision?" (§17.4) | JWT |
+| GET | `/chats/{id}/decision-readiness` | Per-decision verdict + resolve-path (§17.5) | JWT |
+| GET | `/chats/{id}/synthesis/{gid}/disagreement` | Disagreement Spotlight — contested claims (§17.1) | JWT |
+| GET | `/chats/{id}/synthesis/{gid}/grounding` | Per-bullet source citations + grounding ratio (§10.6) | JWT |
+| GET | `/metrics` | Prometheus metrics (req/latency/LLM tokens) (§10.5) | No |
 
 
 ## 4.4 Middleware Chain
@@ -90,29 +96,22 @@ def get_project(project_id: str, db: Session = Depends(get_db)):
 - `RateLimiter(n, window, key)` — per-IP sliding window rate limiter dependency
 - Dependencies are composable — can chain them
 
-## 4.6 Signal Classifier (`classify_signal`)
+## 4.6 Signal Classifier (`signal_classify.py`) — DistilBERT (§4.3 / §6.2 / §16.8)
 
-Stored in `signal_classify.py` (separate module) — `main.py` imports it (the inline shadow was removed in §6.2 fix).
+The live classifier is **`signal_classify`** — a fine-tuned **DistilBERT** with a heuristic
+fallback. The old per-token `SequenceMatcher` keyword scorer (`count_signal_words` and its
+`TECH_KEYWORDS`/`fuzzy_ratio` helpers) was a **dead shadow** and has been **deleted** from
+`main.py` (§4.3) — no `SequenceMatcher` runs on the hot `/ask` path anymore.
 
 ```python
-TECH_KEYWORDS = ["deploy","database","pipeline","model","api","auth","docker",...]
-STOPWORDS = {"the","a","an","to","and",...}
-
-def classify_signal(text: str):
-    score = count_signal_words(text)
-    if score >= 6: return "high"
-    if score >= 3: return "medium"
-    if score >= 1: return "low"
-    return "noise"
+def classify_signal(text: str) -> str:   # → "high" | "medium" | "low" | "noise"
+    # DistilBERT inference (heuristic fallback if the model can't load)
+    ...
 ```
 
-**Scoring logic:**
-- Each tech keyword fuzzy-matched: +2 points (`SequenceMatcher` ratio ≥ 0.80)
-- Each word ≥ 7 chars (after stopword removal): +1 point
-- Score ≥ 6 → "high signal" → sent to AI pipeline
-- Score = 0 → "noise" → auto-reply and skip AI
-
-**Why fuzzy matching?** Typos like "databse" or "deploying" still get detected.
+- **Noise gate:** a message classified `noise` is filtered with a canned reply — **but** the
+  **Ask-Anyway override** (`force=true`) bypasses the gate so a real question is never silently
+  swallowed (§16.8). A false-negative no longer eats a legit question.
 
 ## 4.7 The `/chats/{id}/ask` Pipeline — Step by Step
 
@@ -124,12 +123,13 @@ async def ask_multi_model(chat_id: str, payload: AskPayload, db: Session = Depen
 
 1. **Signal classify** → if noise, save a polite rejection message, return early
 2. **Context inject** → `build_chat_context()` fetches last 10 relevant messages
-3. **Concurrent multi-model call** → `asyncio.gather` fans out [groq, nvidia, mixtral] in parallel via `asyncio.to_thread` (§2.1 fix — ~3× latency reduction)
-4. **Tag provider** → replace `SOURCE::` with `GROQ::`, `NVIDIA::`, `MIXTRAL::`
-5. **Store AI messages** → saved as `role="assistant"`, `accepted=False`
-6. **Synthesis** → `generate_and_store_synthesis()` merges all blocks via Groq Llama 3.3-70B
-7. **Store synthesis** → saved as `role="synthesis"`, `accepted=True`, `signal_level="high"`
-8. **Return** → `{ status: "ok", reply_group_id, synthesis_id }`
+3. **Concurrent ensemble call** → `asyncio.gather` fans out the 3-model `EXTRACTION_ENSEMBLE` in parallel via `asyncio.to_thread` (§2.1 — ~3× latency reduction; verified 0.33s vs 0.9s serial)
+4. **Honest labels** → each block is stored under its **real** model id (`groq:llama-3.3-70b`, `groq:openai/gpt-oss-20b`, `nvidia:meta/llama-3.1-70b`) — no `GROQ::`/`MIXTRAL::` fiction
+5. **Store AI messages** → saved as `role="assistant"`, `accepted=False`, same `reply_group_id`
+6. **Measured agreement (§10.3)** → Jaccard-cluster metric over the per-model IR → the confidence persisted on the synthesis (self-reported confidence discarded)
+7. **Synthesis + grounding** → `synthesize_content()` merges via `groq:llama-3.3-70b-versatile`; IR is structurally validated and each bullet is cited to source (§10.6)
+8. **Store synthesis** → `role="synthesis"`, `accepted=True`; semantic KnowledgeNodes/Edges written
+9. **Return** → `{ status: "ok", reply_group_id, synthesis_id }`
 
 **Error handling:** If any model fails, `_error_block()` returns `None` — failed providers are skipped, never fed to synthesis (§6.1 fix — prevents error-as-fact poisoning).
 
@@ -152,7 +152,7 @@ def build_chat_context(db, chat_id, limit=15):
 
 | Database | Used By | Port | Why |
 |---|---|---|---|
-| SQLite | Backend | 8000 | Zero-config, ACID, relational, perfect for MVP |
+| SQLite (dev) / **Postgres** (prod) | Backend | 8000 | SQLite = zero-config ACID dev default; **Postgres path validated** (§10.7) for multi-writer prod — same ORM, switched by `DATABASE_URL` |
 | SRS (JSON) | SRS Service | 8001 | Fast ingestion of extracted PDF metadata |
 | ML Model | ThreatLens | 8002 | BERT-based phishing detection engine |
 | MongoDB Atlas | Satellite | 8003 | Schema-less — AI card JSON evolves across versions |
@@ -270,26 +270,33 @@ error_reason, created_at
 ```
 **Purpose:** Instead of crashing on a malformed message, the error is captured here for debugging.
 
-## 5.3 SQLite Configuration (`database.py`)
+## 5.3 Database Configuration (`database.py`) — env-driven (§4.2 / §10.7)
 
 ```python
-DATABASE_URL = "sqlite:///./claritystack.db"
-engine = create_engine(DATABASE_URL, connect_args={"check_same_thread": False})
+# URL comes from the environment; SQLite is just the zero-config dev default.
+DATABASE_URL = os.getenv("DATABASE_URL", "sqlite:///./claritystack.db")
+_IS_SQLITE = DATABASE_URL.startswith("sqlite")
 
-@event.listens_for(Engine, "connect")
-def set_sqlite_pragma(dbapi_connection, connection_record):
-    cursor = dbapi_connection.cursor()
-    cursor.execute("PRAGMA foreign_keys=ON")  # SQLite disables FK by default!
-    cursor.execute("PRAGMA journal_mode=WAL")  # Write-Ahead Logging for concurrency
-    cursor.execute("PRAGMA synchronous=NORMAL") # Safe + faster than FULL
-    cursor.close()
+engine = create_engine(
+    DATABASE_URL,
+    connect_args={"check_same_thread": False} if _IS_SQLITE else {},  # SQLite-only flag
+)
+
+# WAL + FK + synchronous PRAGMAs are SQLite-specific → only registered for SQLite.
+if _IS_SQLITE:
+    @event.listens_for(engine, "connect")
+    def set_sqlite_pragmas(dbapi_connection, connection_record):
+        cur = dbapi_connection.cursor()
+        cur.execute("PRAGMA journal_mode=WAL")     # concurrent readers + writer
+        cur.execute("PRAGMA foreign_keys=ON")       # SQLite ignores FKs by default
+        cur.execute("PRAGMA synchronous=NORMAL")
+        cur.close()
 ```
 
-- `check_same_thread=False`: SQLite by default only allows the thread that created it. FastAPI uses a thread pool, so this must be disabled.
-- `PRAGMA foreign_keys=ON`: Critical — SQLite ignores foreign key constraints by default. This enables CASCADE deletes.
-- `PRAGMA journal_mode=WAL`: Enables concurrent reads during a write (§6.12 fix — single engine + WAL).
-- `SessionLocal`: factory that creates sessions. Each request gets its own session via `get_db()` dependency.
-- **Schema management**: `create_all` removed. Alembic `_ensure_schema_at_head()` runs on startup (§2.3 fix).
+- **Both backends from one codebase:** the SQLite-only `check_same_thread` flag and the WAL/FK PRAGMA listener are guarded on the dialect, so the **same ORM serves SQLite (dev) and Postgres (prod)** with no model changes.
+- **Postgres validated end-to-end (§10.7):** clean `alembic downgrade base → upgrade head` cycle on `postgres:16-alpine`, `alembic check` reports **zero drift** vs the models, and an app-engine ORM round-trip succeeds.
+- **Schema management:** `create_all` removed; Alembic `_ensure_schema_at_head()` runs on startup (upgrade for fresh DBs, stamp for pre-existing) — guarded by `RUN_MIGRATIONS_ON_STARTUP` (=`0` for multi-worker prod) (§2.3).
+- **Prod opt-in:** set `DATABASE_URL=postgresql+psycopg2://…` + `RUN_MIGRATIONS_ON_STARTUP=0` + `alembic upgrade head`.
 
 ## 5.4 SQLAlchemy ORM Concepts
 
@@ -313,16 +320,21 @@ category: Enum [risk, decision, architecture, action, insight, progress, conflic
 title, summary, keyChanges[], sourceFragment, fragmentConfidence
 previousCardId: String (linked list pointer to prior version)
 status: Enum [active, superseded, stale, draft, approved, archived]
-expiresAt: Date (default: 3 days from creation)
+sourceChatIds: [String]  → drives per-{chat,category} lineage (§16.4)
+kgUpdated: Boolean       → has this card been committed to the KG?
 kgDiff: { add[], remove[], edges[], confidence, flushed }
 modelUsed, generationMs
 ```
+> **Note (§16.4):** there is **no `expiresAt` field** — card expiry is intentionally disabled
+> ("cards remain active indefinitely"). Lineage is keyed on **{chat, category}** (the chain
+> parent is looked up by `sourceChatIds` + category), so an unrelated card in another chat is
+> never versioned over.
 
 **Compound indexes:**
 ```js
 TemporalCardSchema.index({ chainIndex: 1, status: 1 });
+TemporalCardSchema.index({ sourceChatIds: 1, status: 1 });   // per-chat lineage lookup
 TemporalCardSchema.index({ projectId: 1, category: 1, version: -1 });
-TemporalCardSchema.index({ expiresAt: 1, status: 1 }); // for stale card sweeper
 ```
 
 **Why MongoDB for cards?**
@@ -404,7 +416,7 @@ The anonymous `/api/auth/client-login` endpoint was removed. It minted valid JWT
 | `PRAGMA foreign_keys` off | Medium | ✅ FIXED — WAL + FK + single engine (§6.12) |
 | SQLite dual `create_all` + Alembic | Medium | ✅ FIXED — Alembic only, baseline migration (§2.3) |
 | Missing rate limiting | Medium | ✅ FIXED — per-IP limits on login/register/refresh (§5.6) |
-| SQLite for production | Low | ⏳ DEFERRED — still SQLite; Postgres migration is Tier-1 |
+| SQLite for production | Low | ✅ ADDRESSED — `DATABASE_URL` read; **Postgres path validated end-to-end** (§10.7). SQLite kept as dev default by choice |
 | SSRF in ThreatLens | Critical | ⛔ DEFERRED — ThreatLens out of scope this cycle |
 
 
@@ -433,29 +445,24 @@ CONFLICT:
 
 **Why strict IR?** Prevents free-text responses that can't be parsed into database records. Treats LLM like a compiler — fixed input/output contract.
 
-## 7.2 Extraction Models (`providers.py`)
+## 7.2 Extraction Ensemble (`providers.py`) — UPDATED (§10.3 / §16.1)
 
-### Groq (Llama-3.1-8B)
+> **The old "Groq-8B / HuggingFace-3B / Gemini→Mixtral" trio is gone.** The live
+> `EXTRACTION_ENSEMBLE` is **three genuinely different models**, each stored with its **real**
+> label (no fictional vendors):
+
 ```python
-def ask_groq(prompt):
-    raw = _call_chat("https://api.groq.com/openai/v1/chat/completions",
-        headers={"Authorization": f"Bearer {GROQ_KEY}"},
-        payload={"model": "llama-3.1-8b-instant", "temperature": 0.0, ...})
-    return _ensure_all_sections(raw)
+EXTRACTION_ENSEMBLE = [
+    (f"groq:{MODELS['groq_llama']}", ask_groq_llama),   # groq:llama-3.3-70b-versatile
+    (f"groq:{MODELS['groq_oss']}",   ask_groq_oss),     # groq:openai/gpt-oss-20b  (non-Llama)
+    (f"nvidia:{MODELS['nvidia_llama']}", ask_nvidia_llama), # nvidia:meta/llama-3.1-70b-instruct
+]
 ```
-- `temperature: 0.0` → deterministic output (no randomness)
-- `_ensure_all_sections()` appends any missing IR headers with `- None`
 
-### HuggingFace (Llama-3.2-3B)
-- Same pattern, different endpoint: `https://router.huggingface.co/v1/chat/completions`
-- `max_tokens: 900` — smaller model, smaller context
-
-### Gemini — Redirected
-```python
-def ask_gemini(prompt):
-    return ask_groq_mixtral(prompt) # Live Mixtral 8x7B
-```
-Returns a structurally valid IR block from a high-parameter model. This replaces the old mock with a live production provider.
+- **temperature 0.0** on every call (least-random; note: hosted LLMs are *not* bit-reproducible — §11.6).
+- Missing IR headers are back-filled with `- None`; a provider that errors returns `None` and is **skipped** (never fed to synthesis — §6.1, no error-as-fact poisoning).
+- **Why `gpt-oss-20b`?** It replaced a weak 8B Llama. Near-homogeneous Llamas agree *lexically* regardless of truth, which **inflated** the measured-agreement confidence. A non-Llama member **decorrelates** the ensemble at the same model count/cost (§16.1).
+- The per-model IR blocks feed the **measured agreement** metric (§10.3) — the honest confidence shown in the UI.
 
 ## 7.3 Synthesis Model (`ask_hf_synthesis`)
 - Directs to `ask_synthesis()` which uses **meta/llama-3.3-70b-versatile** on Groq.
@@ -496,16 +503,18 @@ def build_graph_from_ir(db, chat_id, synthesis_id, ir):
             node = KnowledgeNode(chat_id=chat_id, synthesis_id=synthesis_id,
                                  section=section, content=text)
             db.add(node)
-    # Create edges: each non-DECISION node → each DECISION node
-    for section, nodes in nodes_by_section.items():
-        relation = RELATION_MAP.get(section)
-        for src in nodes:
-            for dst in decision_nodes:
-                db.add(KnowledgeEdge(from_node_id=src.id, to_node_id=dst.id, relation=relation))
+    # §16.2 fix: edges are NO LONGER a blind cartesian product. A candidate edge is only
+    # created when the two nodes share real lexical evidence (token overlap above a floor);
+    # no evidence → no edge ("honest silence beats a fabricated edge").
+    for src in non_decision_nodes:
+        for dst in decision_nodes:
+            if _tokens(src.content) & _tokens(dst.content):      # shared-term evidence
+                db.add(KnowledgeEdge(from_node_id=src.id, to_node_id=dst.id,
+                                     relation=RELATION_MAP.get(src.section)))
     db.commit()
 ```
 
-**Edge logic:** FACT nodes SUPPORT decisions. CONFLICT nodes CONTRADICT decisions. ASSUMPTION nodes DEPEND_ON decisions. This creates a semantically meaningful graph.
+**Edge logic (§16.2 / §17.4):** FACT→SUPPORTS, CONFLICT→CONTRADICTS, ASSUMPTION→DEPENDS_ON — **but only when the nodes actually share terms.** This is what makes the *"Why this decision?"* trace meaningful: a decision lists only the evidence it is genuinely linked to, with the shared terms that justified each edge (was previously every node linked to every decision — semantically hollow).
 
 ---
 
@@ -523,8 +532,14 @@ A: bcrypt is a password hashing function with a configurable work factor. MD5/SH
 **Q4: What is the `reply_group_id` design pattern?**
 A: When one user message triggers 3 AI model calls, all responses share a UUID called `reply_group_id`. This groups them in the UI. When the user "accepts" one response, the backend deactivates all others in the same group via a bulk UPDATE. This ensures only one canonical answer per question.
 
-**Q5: Why SQLite and not PostgreSQL for the core backend?**
-A: SQLite requires zero setup — no server, no config, just a file. For an MVP/academic project it's ideal. The tradeoff is concurrent write limits (SQLite uses file-level locking). In production, the same SQLAlchemy ORM code works with PostgreSQL by just changing the `DATABASE_URL`.
+**Q5: SQLite or PostgreSQL — which does the backend use?**
+A: **Both, by design.** SQLite is the zero-config dev default; production opts into Postgres by setting `DATABASE_URL` (+ `RUN_MIGRATIONS_ON_STARTUP=0`). The SQLite-only `check_same_thread` flag and the WAL/FK PRAGMAs are guarded on the dialect, so one ORM serves both. The Postgres path is **validated end-to-end** (§10.7): a clean Alembic migrate cycle, `alembic check` zero schema-drift vs the models, and an app-engine ORM round-trip — it's exercised, not theoretical. SQLite's file-level write lock is exactly why prod uses Postgres.
+
+**Q11: How is the "confidence" on a synthesis computed, and why is that a big deal?**
+A: It's **measured inter-model agreement** (§10.3) — a deterministic Jaccard-clustering metric over the three models' IR — **not** the LLM's self-reported confidence, which is discarded. Showing a model's own "I'm 95% sure" as if it were measured is a research-integrity hazard (§11.4); measuring where independent models actually converge is honest and reproducible.
+
+**Q12: Why three specific models, and why one non-Llama?**
+A: An ensemble of near-identical Llamas agrees *lexically* regardless of truth, which inflates the agreement metric and floors Decision Readiness. Swapping a weak 8B Llama for OpenAI's open-weight `gpt-oss-20b` **decorrelates** the ensemble at the same model count and cost (§16.1), so agreement means something. A provider that fails just returns `None` and is skipped.
 
 **Q6: Why is MongoDB used for Temporal Cards and not SQLite?**
 A: Card schemas evolve — a "risk" card and an "architecture" card have different metadata structures. MongoDB's schema-less documents allow each card type to carry arbitrary fields without requiring ALTER TABLE migrations. The embedded `kgDiff` object would require a separate join table in SQL.

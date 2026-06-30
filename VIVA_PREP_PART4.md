@@ -4,13 +4,14 @@
 ### 11.1 User Sends a Chat Message (Core AI Pipeline)
 1. **Frontend**: React captures input, fires `useMutation` (`fetch` via `http.ts`) to `POST http://localhost:8000/chats/{id}/ask`.
 2. **Backend (8000)**: `classify_signal` scores the text. If noise, auto-reply and exit.
-3. **Extraction**: Calls 3 providers concurrently via `asyncio.gather` + `to_thread` (§2.5 async fix).
-   - Every provider is a live production endpoint; all mocks have been removed.
-   - Responses are tagged: GROQ::, NVIDIA::, MIXTRAL::
-   - Failed providers are silently dropped without crashing the pipeline (§6.1 fix).
-4. **Synthesis**: Groq Llama 3.3-70B merges extracted blocks into a canonical IR.
-5. **Storage (Atomic)**: Saves provider messages, synthesis row, and synthesis message in a single atomic database transaction (§3.2 fix) to prevent orphans. `knowledge_graph_builder` generates graph nodes/edges.
-6. **Card Trigger**: Satellite (8003) is pinged to generate new Temporal Card versions.
+3. **Extraction**: Calls the 3-model ensemble concurrently via `asyncio.gather` + `to_thread` (§2.1 async fix).
+   - Models: `groq:llama-3.3-70b-versatile`, `groq:openai/gpt-oss-20b`, `nvidia:meta/llama-3.1-70b-instruct`.
+   - Each block is stored under its **real** label (`groq:` / `nvidia:`) — no `GROQ::`/`MIXTRAL::` fiction.
+   - Failed providers return `None` and are skipped — never fed to synthesis (§6.1).
+4. **Measured agreement (§10.3)**: a deterministic Jaccard metric over the per-model IR → the persisted confidence (self-report discarded).
+5. **Synthesis + grounding**: `groq:llama-3.3-70b-versatile` merges into a canonical IR; each bullet is cited to source messages (§10.6); IR is structurally validated.
+6. **Storage (Atomic)**: provider messages + synthesis row + synthesis message in one atomic transaction (§3.2); `knowledge_graph_builder` writes **semantic** nodes/edges (§16.2).
+7. **Card Trigger**: Satellite (8003) is pinged to version Temporal Cards (per-{chat,category} lineage).
 
 ### 11.2 Generating a Temporal Card (Satellite Flow)
 1. **Frontend**: Request hits `POST http://localhost:8003/api/satellite/cards/:projectId/generate`.
@@ -27,7 +28,7 @@
          ▼                   ▼                     ▼
 ┌────────────────┐  ┌────────────────┐  ┌────────────────────┐
 │ FastAPI Core   │  │ Express Node   │  │ Socket.io Server   │
-│ SQLite (WAL)   │  │ MongoDB Atlas  │  │ File-based JSON    │
+│ SQLite / PG    │  │ MongoDB Atlas  │  │ File-based JSON    │
 └────────┬───────┘  └────────┬───────┘  └────────────────────┘
          │                   │                     :8001
          │ LLM Calls         │ LLM Calls    ┌────────────────┐
@@ -41,8 +42,14 @@
 ---
 
 ## 13. MASTER VIVA Q&A
-**Q: The Gemini model was previously mocked. What is the current status?**
-A: All mocks have been removed. The `ask_gemini` endpoint now redirects to **Groq Mixtral 8x7B**, providing a true 3-model live consensus (Groq Llama 3.3, NVIDIA Llama 3.1, and Groq Mixtral). This ensures high-quality IR blocks from three different high-parameter providers.
+**Q: What is the current extraction ensemble? (The old "Gemini→Mixtral" answer is obsolete.)**
+A: Three **genuinely heterogeneous** live models, each stored with its real label: `groq:llama-3.3-70b-versatile`, `groq:openai/gpt-oss-20b` (a non-Llama member), and `nvidia:meta/llama-3.1-70b-instruct`. There are no fictional "Gemini"/"HuggingFace" providers. The non-Llama member is deliberate — near-identical Llamas agree lexically regardless of truth, which inflated the agreement metric; `gpt-oss-20b` **decorrelates** the ensemble at the same cost (§16.1). Confidence shown to the user is the **measured** agreement across these three (§10.3), not any model's self-report.
+
+**Q: What are the flagship "intelligence" views? (§17)**
+A: **Disagreement Spotlight** (claims the ensemble didn't unanimously extract), **Devil's Advocate** + **Ask-Anyway** override, **Evolution Timeline** (content-hash knowledge deltas), **"Why this decision?"** edge-grounded trace, and **Decision Readiness** (per-decision verdict + cheapest resolve-path). All are read-only recomputations over already-persisted data — no extra model calls.
+
+**Q: Is the system production-database ready?**
+A: Yes. Alembic owns the schema (no `create_all` shadowing); the **Postgres path is validated end-to-end** (§10.7) — clean migrate cycle, `alembic check` zero drift, ORM round-trip. SQLite stays the zero-config dev default; prod sets `DATABASE_URL` + `RUN_MIGRATIONS_ON_STARTUP=0`. This unblocks pgvector-based hybrid RAG (§10.8) as the next step.
 
 **Q: Why the 8000-8007 port mapping?**
 A: To ensure a standardized, collision-free environment. It makes the system turnkey and predictable during deployment.
@@ -56,8 +63,8 @@ A:
 **Q: How did you fix the AI Pipeline latency?**
 A: Previously, the 3 extraction models were called serially, taking ~0.9s. By refactoring `ask_multi_model` to use `asyncio.gather` with `asyncio.to_thread` for the blocking HTTP calls, we achieved true parallel fan-out, reducing latency to ~0.33s.
 
-**Q: How does the Knowledge Graph avoid duplicates?**
-A: Currently, it stores all extractions. A future improvement would be a semantic deduplication layer using vector embeddings to merge near-identical nodes.
+**Q: How does the Knowledge Graph avoid duplicates / fabricated edges?**
+A: Two ways. (1) **Edges** are no longer a blind cartesian product — a candidate edge is created only when two nodes share real lexical evidence; no evidence → no edge (§16.2). (2) **Card → KG ingestion is idempotent** per `(chat, section, content)`, so committing the same card twice adds nothing (§16.4). Semantic node dedup via vector embeddings (pgvector) is the planned §10.8 step, now unblocked by the Postgres work.
 
 ---
 
@@ -72,7 +79,11 @@ A: Currently, it stores all extractions. A future improvement would be a semanti
 | UML API Port | 8005 |
 | Frontend Port | 8006 |
 | UML UI Port | 8007 |
-| Extraction Models | Groq Llama 3.3, NVIDIA Llama 3.1, Mixtral |
-| Synthesis Model | Groq Llama 3.3-70B |
-| Primary Database | SQLite + MongoDB Atlas |
+| Extraction Ensemble | `groq:llama-3.3-70b-versatile`, `groq:openai/gpt-oss-20b`, `nvidia:meta/llama-3.1-70b-instruct` |
+| Synthesis Model | `groq:llama-3.3-70b-versatile` |
+| Confidence | Measured inter-model agreement (§10.3), not self-reported |
+| Core Database | SQLite (dev) / **Postgres** (prod, validated §10.7) |
+| Other Stores | MongoDB (Satellite cards), file-based (Editor), JSON (SRS) |
+| Observability | Structured logs + request-id, Prometheus `/metrics`, Sentry (§10.5) |
+| Tests | Backend 110 · Satellite 20 · Frontend 20 (+ CI coverage gate) |
 | Real-time Protocol | Socket.io (WebSocket) |

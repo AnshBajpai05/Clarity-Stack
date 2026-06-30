@@ -3,6 +3,79 @@
 
 ---
 
+# 0. WHAT'S NEW — Current State (2026-06-30 currency update)
+
+> **Read this first.** The system has moved well past this guide's first draft. Where older
+> detail below conflicts with this section, **this section is correct.** These are the headline
+> capabilities an examiner is most likely to probe.
+
+## 0.1 The honest multi-model engine (corrects the old "Mixtral / Gemini" model list)
+The live extraction ensemble is **three genuinely different models**, each stored with its
+**real** label (no fictional "Gemini" / "HuggingFace"):
+- `groq:llama-3.3-70b-versatile`
+- `groq:openai/gpt-oss-20b` ← non-Llama member; **decorrelates** the ensemble (§16.1)
+- `nvidia:meta/llama-3.1-70b-instruct`
+
+The **synthesis merge** uses `groq:llama-3.3-70b-versatile`. Provider calls fan out
+**concurrently** (`asyncio.gather` + `asyncio.to_thread`) so the event loop never blocks.
+
+## 0.2 Measured confidence, not self-report (§10.3 / §11.4)
+The confidence shown in the UI is the **measured inter-model agreement** — a deterministic
+Jaccard-cluster lexical metric over the per-model IR — **not** the LLM's self-reported
+"I'm certain." The model's self-claim is discarded.
+
+## 0.3 Grounding + IR validation (§10.6)
+Every synthesized bullet is **cited back** to the source messages that support it (asymmetric
+token-coverage). An uncited bullet is flagged (hallucination signal). The IR is also
+**structurally validated** before it is persisted.
+
+## 0.4 The Knowledge Graph is real reasoning now (§16.2 / §17.4)
+KG edges are **semantically extracted** (SUPPORTS / CONTRADICTS / DEPENDS_ON …), not a blind
+cartesian product. The **"Why this decision?"** trace walks those edges to show only the
+evidence a decision is genuinely linked to, plus the shared terms that justified each link.
+
+## 0.5 Temporal Cards — "Commit to KG" actually works (§16.4)
+"Commit to KG" ingests a card's knowledge into the **Core Knowledge Graph** (the graph the UI
+reads) via `POST /chats/{id}/kg/ingest`, attached to the card's **source chat** — so it renders
+in the graph and survives re-sync. Card version lineage is scoped per **{chat, category}** (no
+more cross-chat conflation); repeat "Generate" no longer spawns duplicate versions. New UI:
+per-card **View in Graph**, **KG Pending / In KG** badges, and a bulk **Commit all to KG**.
+*(Card expiry is intentionally disabled — cards stay active; the old `expiresAt` countdown is gone.)*
+
+## 0.6 Five flagship "signal" views (§17)
+- **Disagreement Spotlight** — the claims the ensemble did *not* unanimously extract.
+- **Devil's Advocate** + **Ask-Anyway** override (a real question is never silently dropped).
+- **Evolution Timeline** — content-hash deltas track *knowledge* change, not UUID churn.
+- **"Why this decision?" trace** — edge-grounded decision explanation.
+- **Decision Readiness** — per-decision verdict + cheapest resolve-path.
+
+## 0.7 Platform hardening
+- **Persistence (§10.7):** Alembic is the single source of truth; the **Postgres path is
+  validated end-to-end** (clean migrate cycle, zero schema drift, ORM round-trip). SQLite stays
+  the dev default; prod sets `DATABASE_URL` + `RUN_MIGRATIONS_ON_STARTUP=0`.
+- **Observability (§10.5):** structured logs + request-id correlation, Prometheus `/metrics`,
+  Sentry traces; `/health` runs a real `SELECT 1`.
+- **Tests / CI (§10.4 / §10.10):** backend 110 + Satellite 20 + frontend 20 tests, CI coverage
+  gate (~79%), plus an eval harness with experiment tracking.
+- **Frontend honesty (§15):** demo-mode mock fixtures + dead controls removed — reads hit the
+  real API and surface real errors.
+
+## 0.8 Likely VIVA questions on the new material
+- **Q: How is "confidence" computed?** Measured inter-model agreement (deterministic Jaccard
+  clustering over the per-model IR), not the model's self-report — a research-integrity fix (§10.3).
+- **Q: Why replace an 8B Llama with `gpt-oss-20b`?** Near-homogeneous models agree lexically
+  regardless of truth, which *inflated* measured agreement. A non-Llama member decorrelates the
+  ensemble at the same model count and cost (§16.1).
+- **Q: How do you control hallucination?** IR structural validation + grounding — each bullet is
+  cited to source messages; uncited ⇒ flagged (§10.6).
+- **Q: Where does the KG live and how do cards reach it?** A Core relational KG
+  (`knowledge_nodes` / `knowledge_edges`), Postgres-ready; "Commit to KG" ingests card nodes via
+  `POST /chats/{id}/kg/ingest`, attached to the source chat (§16.4).
+- **Q: Is the system Postgres-ready?** Yes — Alembic-owned schema, validated end-to-end on
+  Postgres; SQLite is the dev default (§10.7).
+
+---
+
 # 1. COMPLETE PROJECT OVERVIEW
 
 ## 1.1 Project Objective
@@ -39,7 +112,7 @@ ClarityStack acts as a **Semantic Sieve** — it doesn't just store messages, it
 | Duplicate reasoning | Knowledge Graph detects semantic conflicts |
 | Unreadable SRS PDFs | 6-stage NLP pipeline auto-extracts actors, stories, ambiguities |
 | Fragmented team docs | Real-time collaborative editor with file-based persistence |
-| Single AI model hallucinations | Multi-model consensus (Groq + NVIDIA NIM + Mixtral) |
+| Single AI model hallucinations | Honest multi-model ensemble (Groq Llama-3.3 + Groq gpt-oss + NVIDIA Llama-3.1) with **measured** agreement + source grounding |
 
 
 ## 1.4 Existing System vs Proposed System
@@ -68,11 +141,13 @@ User uploads chat/PDF
         ↓
 [Core API] FastAPI (Python) — validates, classifies signal
         ↓
-[Multi-model Pipeline] Groq (Llama 3.3) + NVIDIA NIM (Llama 3.1) + Mixtral
+[Honest Ensemble — concurrent] groq:llama-3.3-70b + groq:gpt-oss-20b + nvidia:llama-3.1-70b
         ↓
-[Synthesis Engine] IR-structured merge via Groq Llama 3.3-70B
+[Measured Agreement] deterministic Jaccard-cluster confidence (NOT self-reported)
         ↓
-[Knowledge Graph] SQLite nodes/edges built from IR sections
+[Synthesis Engine] IR-structured merge via groq:llama-3.3-70b + grounding (cite to source)
+        ↓
+[Knowledge Graph] relational nodes/edges (SQLite dev / Postgres prod) — semantic edges
         ↓
 [Satellite] Node.js — Temporal Card versioned + stored in MongoDB
         ↓
@@ -85,12 +160,12 @@ User uploads chat/PDF
 2. `classify_signal()` scores the text → returns `"high"` (score ≥ 6)
 3. User message saved to SQLite with `signal_level="high"`
 4. `build_chat_context()` fetches last 10 relevant messages → injects as history block
-5. Full prompt sent to Groq (Llama-3.3-70B), NVIDIA (Llama-3.1-70B), and Mixtral (8x7B)
-6. Gemini call is redirected to Groq Mixtral 8x7B (Live model, not mocked)
-7. Three IR blocks collected, tagged with provider name, stored as `role="assistant"` messages
-8. `generate_and_store_synthesis()` calls Groq Llama-3.3-70B to merge three blocks
-9. Synthesis output is pruned/validated → stored as `role="synthesis"` message
-10. `build_graph_from_ir()` extracts nodes per section, creates edges to DECISION nodes
+5. Prompt fans out **concurrently** to the 3-model ensemble: `groq:llama-3.3-70b-versatile`, `groq:openai/gpt-oss-20b`, `nvidia:meta/llama-3.1-70b-instruct`
+6. Each IR block is stored as a `role="assistant"` message tagged with its **real** model label (`groq:` / `nvidia:`) — same `reply_group_id`
+7. **Measured agreement** is computed across the per-model IR (Jaccard clustering) → this becomes the surfaced confidence (self-reported confidence discarded)
+8. `synthesize_content()` calls `groq:llama-3.3-70b-versatile` to merge the blocks; the IR is structurally validated
+9. **Grounding** cites each synthesized bullet back to source messages; the synthesis is stored as a `role="synthesis"` message
+10. Semantic KnowledgeNodes + KnowledgeEdges are written to the Core KG (`knowledge_nodes` / `knowledge_edges`)
 11. Response returns `{ status: "ok", reply_group_id, synthesis_id }`
 
 ## 1.8 Data Lifecycle
@@ -112,7 +187,7 @@ Raw Text → Signal Classification → Context Assembly
 
 | Service | Runtime | Port | Database | Responsibility |
 |---|---|---|---|---|
-| Core API (Backend) | Python / FastAPI | 8000 | SQLite | Auth, Projects, Chats, Messages, KG, Synthesis |
+| Core API (Backend) | Python / FastAPI | 8000 | SQLite (dev) / **Postgres** (prod, validated) | Auth, Projects, Chats, Messages, KG, Synthesis |
 | SRS Service | Python / FastAPI | 8001 | Filesystem (JSON) | PDF ingestion + 6-stage NLP pipeline |
 | ThreatLens Service | Python / FastAPI | 8002 | ML Model (BERT) | AI Phishing Detection (BERT + Heuristics) — *out of scope this cycle* |
 | Satellite | Node.js / Express | 8003 | MongoDB Atlas | Temporal Cards, KG Snapshots, Delta, Mailer |
@@ -317,7 +392,7 @@ const useDocumentStore = create((set) => ({
 3. Backend returns `{ status: "ok", reply_group_id }`
 4. `queryClient.invalidateQueries` triggers message list refetch
 5. New messages appear: user message + 3 AI responses + 1 synthesis block
-6. Each AI response shows a provider badge (Groq / HF / Gemini)
+6. Each AI response shows its **honest** provider badge (`groq:` / `nvidia:`) — never a fictional vendor
 7. User can "accept" one AI response → PATCH `/messages/{id}/accept`
 8. Noise-filtered messages show with a grey badge, no AI processing
 
@@ -327,10 +402,10 @@ const useDocumentStore = create((set) => ({
 **Library**: `react-force-graph-2d` — canvas-based force-directed simulation.
 
 **Data flow:**
-1. GET `/projects/{projectId}/kg` → returns nodes + edges from SQLite
-2. Nodes colored by section type (FACT=blue, DECISION=green, CONFLICT=red)
-3. Edges labeled with relation (SUPPORTS, CONTRADICTS, REFINES)
-4. Click node → shows provenance (which chat message created it)
+1. GET `/api/reasoning/chat/{chatId}` (Core) → bucketed nodes (decision/supports/conflicts/…) + edges; the page expands per chat
+2. Nodes colored by section type (FACT=green, DECISION=violet, CONFLICT=red, OPTION=blue …)
+3. Edges labeled with the **semantic** relation (SUPPORTS, CONTRADICTS, DEPENDS_ON, REFINES)
+4. Card knowledge committed via "Commit to KG" appears here too (ingested into the same Core KG, §16.4)
 
 **Technical details:**
 - `useRef` holds the graph instance for imperative controls (zoom, center)
@@ -339,11 +414,12 @@ const useDocumentStore = create((set) => ({
 ### `TemporalCardsPage.tsx` (18KB)
 **Purpose**: Display version-chained AI-generated cards from Satellite service.
 
-- Fetches from `http://localhost:4000/api/satellite/cards/:projectId`
+- Fetches from the Satellite service at `:8003` (`/api/satellite/cards/:projectId`)
 - Groups cards by `category` (risk, decision, architecture, action, insight)
-- Shows `version` number and `previousCardId` chain linkage
-- `status` badge: active (green), superseded (grey), stale (yellow)
-- `expiresAt` countdown shown for active cards
+- Shows `version` number and `previousCardId` chain linkage; **lineage is scoped per {chat, category}** (§16.4)
+- `status` badge: active (green), superseded (grey)
+- **Commit to KG** (per-card + bulk "Commit all"), **View in Graph** deep-link, and **KG Pending / In KG** badges (§16.4)
+- *Card expiry is intentionally disabled — cards remain active; there is no `expiresAt` countdown.*
 
 ### `Login.tsx` / `Register.tsx`
 **Purpose**: Auth forms with Zod validation.
