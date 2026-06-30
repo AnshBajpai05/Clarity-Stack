@@ -4,7 +4,7 @@
 > roadmap doc only carries what is still pending. `existing_issues.md` remains the live risk register
 > (it still cross-references these as FIXED). `take_step_forward.md` now holds only 🟡 partial / ⏳ pending items.
 >
-> **Branch:** `UI_enhanced` · **Last updated:** 2026-06-28
+> **Branch:** `Clarity_Stack_V3` (current) · **Last updated:** 2026-06-30
 >
 > Status legend: ✅ **DONE** (shipped & verified in code).
 
@@ -234,4 +234,63 @@ Knocked out the cheap remaining §16 correctness/quality tails in one pass (grou
 - **§16.4** — Temporal Cards: `expireOldCards` no-op, "Commit to KG" dead-end, "always works" dup spawning. (Multi-part Satellite work — a real feature pass, not a tail.)
 - **§16.3 tail** — `fetchKGFromCore` N+1 serial fan-out + unbounded Mongo snapshot growth (perf/ops, not correctness).
 - **§11.5 drift** — stale pinned model ids in `MODELS`/legacy harness (gemma2-9b-it, NVIDIA gemma/mixtral); only the live ensemble was repointed.
+
+---
+
+## F. Test suite committed + CI gate + AI-eval harness (2026-06-30, branch `Clarity_Stack_V3`)
+
+> Turns the §16/§17 engine work from "verified once by hand" into a **committed,
+> CI-gated regression suite**, and stands up the **evaluation substrate** the audit
+> flagged as the single biggest gap (Addendum Tier-1 #1 Automated Testing, #5 AI
+> Evaluation; cross-refs `existing_issues.md §10.4`, §10.10, §11.5).
+> Commits: `11350d6` (suites), `c6d1e41` (CI), `4098b37` (eval).
+
+### F1. Scratchpad tests → committed regression suite [⭐⭐⭐⭐] (Addendum Tier-1 #1)
+- **Backend pytest** (`Backend/tests/`, in-memory SQLite, no network): new `test_kg_semantic_edges`
+  (§16.2/§17.4 — edges semantic not cross-product, metadata≠node, edge-grounded trace),
+  `test_decision_readiness` (§17.5 bands + biggest-lever-first resolve path),
+  `test_devils_advocate` (§17.2 parse + prompt build, no model call),
+  `test_providers_ensemble` (§16.1 non-Llama member, §16.7 ask raises not error-string).
+  Updated `test_ask_endpoint` / `test_synthesis_validators` to the new strict-conflict-gate
+  behavior (the §17.2 change made a bad conflict raise `ConflictGateError`, not the old
+  `synthesis_validation_failed`).
+- **Satellite node --test** (`Satellite/test/deltaEngine.test.js`, pure-fn, no Mongo): 7 tests
+  for the §16.3 content-hash diff (re-minted UUIDs for identical content don't inflate `+N`;
+  edges follow endpoint meaning; dupes collapse). Added the missing `npm test` script.
+- **Result:** 57 backend + 7 satellite green at commit time. The §17 flagships are now
+  regression-guarded, so they don't silently rot.
+
+### F2. CI regression gate [⭐⭐⭐⭐] (existing_issues §10.4 → 🟡 PARTIAL)
+- `.github/workflows/ci.yml` — two fast, network-free jobs: **backend** (pytest) +
+  **satellite** (`node --test`), on every push to `main`/`Clarity_Stack_**` and PRs to `main`.
+- **Minimal `Backend/requirements_ci.txt`** (fastapi/pydantic/sqlalchemy/jose/bcrypt/dotenv/
+  requests + pytest/httpx/email-validator) instead of `requirements_backend.txt`: the audit's
+  torch/transformers/google-* are **lazy in app code and never reached by the tests**, so CI
+  skips the multi-GB install. **Verified in a clean venv: 57 passed with only
+  `requirements_ci.txt`** (and `import main` loads zero heavy modules). Also sidesteps the
+  §10.4 UTF-16 `requirements_*.txt` tooling-hostility for the CI path.
+
+### F3. AI-evaluation harness [⭐⭐⭐⭐⭐] (existing_issues §10.10 → 🟡 PARTIAL; Addendum Tier-1 #5)
+- `Backend/eval/` — the eval substrate the honest §17 engine was missing:
+  - **scoring.py** — content-overlap precision/recall/F1, reusing the **same token model as
+    the KG edge builder** (`_tokens`/`_jaccard`, §10.3 parity) so "related" means one thing
+    system-wide. Greedy one-to-one bullet matching; micro-average pools bullets, not sections.
+  - **golden.py** — 10 hand-labeled cases (raw model output → expected canonical IR): preamble
+    noise, unknown headers, `None` placeholders, casing drift, lossless duplicates, metadata
+    sections, empty-IR. Labels encode the *contract*, not a snapshot.
+  - **harness.py** — OFFLINE runner scores the **real `prune_to_synthesis_ir` → `parse_ir_from_synthesis`
+    pipeline** (deterministic, no network) and prints a P/R/F1 table; ONLINE runner profiles the
+    live ensemble for latency (real) + cost (**only when priced — never fabricated**), opt-in,
+    needs API keys.
+- `Backend/tests/test_eval_harness.py` — the CI quality gate: golden micro-F1 ≥ 0.95
+  (**currently 1.00 — 27 bullets, 0 FP/0 FN**) + per-case checks + proof the scorer
+  **discriminates** (penalizes hallucinated *and* dropped bullets, paraphrase matching,
+  micro-average pooling) so the gate isn't theater.
+- **Result:** 77 backend + 7 satellite green; verified the whole suite + `python -m eval.harness`
+  run in the clean CI venv with no new deps.
+- ⚠ **Honest ceiling:** this ships the offline **quality** gate + a latency/cost profiler.
+  The remaining §10.10 work is **labeled `transcript → IR` pairs** so the *live ensemble's
+  extraction accuracy* (not just latency/cost) is scored — the golden set deliberately labels
+  raw output, not transcripts. Also still open: seeds/experiment tracking, golden sets for the
+  legacy 6-model harness, and the §11.5 stale legacy pins.
 
