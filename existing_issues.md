@@ -692,6 +692,7 @@ Real data, correct wiring, good error/empty/loading states: **ProjectCard**, **C
 
 ### §15 — Remediation log (2026-06-29, this session)
 > All items below applied to the working tree. Frontend `tsc --noEmit` passes clean; UI compiles/serves on :8006. Fixes are behavioral where a real path exists, and removals only where the control had no backing service.
+> **Committed 2026-06-30** as `8884e375` (the §15 cluster had been sitting uncommitted in the working tree). The per-item `### §15.x` headers above still read "OPEN" — they predate this log; this table is the source of truth.
 
 | Item | Status | What changed |
 |------|--------|--------------|
@@ -702,13 +703,13 @@ Real data, correct wiring, good error/empty/loading states: **ProjectCard**, **C
 | §15.5 | ✅ FIXED | ProjectSearch `onRetry` now actually re-runs the search. |
 | §15.6 | ✅ FIXED | `isOwnerOrPm` now derives from `currentUserRole` (owner **or** pm) → PMs see the inline Join-Requests panel. |
 | §15.7 | ✅ FIXED | Removed dead Owner field from the **project** edit modal; chat owner left intact (it persists — see corrected note above). |
-| §15.8 | ✅ FIXED | UML iframe URL now `VITE_UML_URL || http://${hostname}:8007`. |
+| §15.8 | ✅ FIXED | UML iframe URL now `VITE_UML_URL || http://${hostname}:8007`; (2026-06-30) `postMessage` now targets the UML app's own origin instead of `'*'` — no longer broadcasts SRS context to any frame. |
 | §15.9 | ✅ FIXED | Login now fetches `/api/auth/me` and stores `cs_nickname` (best-effort) → greetings populate without a Settings visit. |
 | §15.10 | ✅ FIXED | Remaining `127.0.0.1` references removed (SettingsPage logout + demo banners deleted with §15.1). |
 | §15.11 | ✅ FIXED | Deleted orphans `CardFilterBar.tsx`, `editor/App.jsx`, `editor/Login.jsx`; removed dead `ChatCard` handlers + imports and `TemporalCardsPage.handleRefresh`; `ProjectsPage` Discover button now uses SPA `navigate()`. (KnowledgeCard/CardEditModal kept — types are in use.) |
 | §15.12 | ✅ FIXED | MessagesPage: role derivation moved out of the 4s meta-poll into a once-per-chat effect; both poll intervals now skip while `document.hidden`. |
 | §15.13 | ✅ FIXED | CardsPage: pins persist to `localStorage` (`cs_pinned_cards`); fake "AI" avatar circles removed; "Generate Now" routes to the real per-project generator. |
-| §15.14 | ⚠️ ACCEPTED | Delta "Generate AI Card" stays project-level — Satellite exposes no delta-scoped generate endpoint. Left functional; revisit if a delta-scoped route is added. |
+| §15.14 | ✅ FIXED (2026-06-30) | Added Satellite `POST /cards/:projectId/generate/delta/:deltaId` (fetches the delta by id, project-scoped, 404/409 guards) + a `generateCardFromDeltaId` api fn; the per-delta "Generate AI Card" button now synthesizes from the **selected** delta, not the latest. |
 | §15.15 | ✅ FIXED | KG empty-state copy now matches reality ("ask questions… then Reload"); no phantom snapshot action referenced. |
 | §15.16 | ✅ FIXED | MessageBubble guards against double-`Z` timestamps; ProjectSettingsPanel fetches join-requests on mount so the badge pre-warns. |
 
