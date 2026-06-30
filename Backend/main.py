@@ -1791,6 +1791,98 @@ def get_reasoning(
     })
 
 
+# ─── KG ingestion (§16.4 Issue 2) ─────────────────────────────────────────────
+from typing import Optional, List
+
+
+class KGIngestNode(BaseModel):
+    id: Optional[str] = None          # card-local id, used only to wire this payload's edges
+    label: str
+    type: Optional[str] = None        # → KnowledgeNode.section (e.g. FACT/DECISION/CONFLICT)
+    confidence: Optional[float] = None
+
+
+class KGIngestEdge(BaseModel):
+    from_: str = Field(alias="from")
+    to: str
+    label: Optional[str] = None       # → KnowledgeEdge.relation
+
+    model_config = {"populate_by_name": True}
+
+
+class KGIngestPayload(BaseModel):
+    nodes: List[KGIngestNode] = []
+    edges: List[KGIngestEdge] = []
+    confidence: Optional[float] = None
+
+
+@app.post("/chats/{chat_id}/kg/ingest")
+def ingest_kg(
+    chat_id: str,
+    payload: KGIngestPayload,
+    db: Session = Depends(get_db),
+    current_user: dict = Depends(get_current_user),
+):
+    """§16.4 (Issue 2): land card-derived KG nodes/edges in the Core Postgres KG — the single
+    source of truth the graph view reads via /api/reasoning/chat/{chat_id}.
+
+    Before this, "Commit to KG" wrote into a Satellite Mongo KGSnapshot that had no live reader
+    and was overwritten by the next Core re-sync (dead-end + churn). Attaching to the card's
+    source chat means the nodes render under that chat and survive re-sync.
+
+    Idempotent per (chat, section, content): re-committing the same card does not duplicate
+    nodes; duplicate (from,to,relation) edges are skipped. Write access is enforced.
+    """
+    get_chat_or_403(db, chat_id, current_user["email"])  # project write-access gate
+    from models import KnowledgeNode, KnowledgeEdge
+
+    existing = db.query(KnowledgeNode).filter(KnowledgeNode.chat_id == chat_id).all()
+    by_key = {(n.section, n.content): n for n in existing}
+
+    id_map: dict = {}          # card-local node id → real KnowledgeNode.id
+    added_nodes = 0
+    for node in payload.nodes:
+        section = (node.type or "FACT").upper()
+        content = (node.label or "").strip()
+        if not content:
+            continue
+        found = by_key.get((section, content))
+        if found is None:
+            found = KnowledgeNode(
+                chat_id=chat_id,
+                section=section,
+                content=content,
+                confidence=node.confidence if node.confidence is not None else payload.confidence,
+            )
+            db.add(found)
+            db.flush()         # populate found.id for edge wiring
+            by_key[(section, content)] = found
+            added_nodes += 1
+        if node.id:
+            id_map[node.id] = found.id
+
+    added_edges = 0
+    for edge in payload.edges:
+        src = id_map.get(edge.from_)
+        dst = id_map.get(edge.to)
+        if not src or not dst:
+            continue          # edge referencing a node outside this payload — skip
+        relation = (edge.label or "SUPPORTS").upper()
+        dup = db.query(KnowledgeEdge).filter(
+            KnowledgeEdge.chat_id == chat_id,
+            KnowledgeEdge.from_node_id == src,
+            KnowledgeEdge.to_node_id == dst,
+            KnowledgeEdge.relation == relation,
+        ).first()
+        if dup:
+            continue
+        db.add(KnowledgeEdge(chat_id=chat_id, from_node_id=src, to_node_id=dst, relation=relation))
+        added_edges += 1
+
+    db.commit()
+    return {"chat_id": chat_id, "added_nodes": added_nodes, "added_edges": added_edges}
+
+
 @app.get("/chats/{chat_id}/decision-trace")
 def get_decision_trace_route(
     chat_id: str,

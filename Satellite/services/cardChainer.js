@@ -1,7 +1,6 @@
 // services/cardChainer.js — v4 Main orchestrator: runCardPipeline + all utilities
 // Uses: ModelRouter → CardDecomposer → CardSynthesizer → CardWriter
 const TemporalCard = require("../models/TemporalCard");
-const KGSnapshot = require("../models/KGSnapshot");
 const { ModelRouter } = require("./modelRouter");
 const { CardDecomposer } = require("./cardDecomposer");
 const { CardSynthesizer } = require("./cardSynthesizer");
@@ -32,6 +31,7 @@ async function runCardPipeline(message, existingCard = null, options = {}) {
     thresholdChanges = [],
     configChanges = null,
     projectId = null,
+    token = null,            // §16.4: needed to commit KG diffs into Core (authz'd)
   } = options;
 
   const decomposer = new CardDecomposer(modelRouter);
@@ -74,7 +74,7 @@ async function runCardPipeline(message, existingCard = null, options = {}) {
       fragment, synthesis, null, existingCard, "threshold_change", configChanges
     );
 
-    await handleKGSync(card);
+    await handleKGSync(card, token);
     return [card];
   }
 
@@ -105,7 +105,7 @@ async function runCardPipeline(message, existingCard = null, options = {}) {
         fragment, synthesis, enrichedMessage, lastCard, triggerType, configChanges
       );
 
-      await handleKGSync(card);
+      await handleKGSync(card, token);
 
       // Mark done before moving to next
       results.push(card);
@@ -130,21 +130,28 @@ async function runCardPipeline(message, existingCard = null, options = {}) {
 // KG SYNC — v4 Auto-flush logic
 // ═══════════════════════════════════════════════════════════════════════════════
 
-async function handleKGSync(card) {
+async function handleKGSync(card, token = null) {
   if (!card.kgDiff || !card.kgDiff.add) return;
   const confidence = card.kgDiff.confidence || 0;
+  const chatId = card.sourceChatIds?.[0];
 
   if (confidence >= KG_AUTO_FLUSH) {
-    // Auto-flush: apply to KG snapshot
+    // Auto-flush: commit straight into Core's KG (§16.4 Issue 2).
+    if (!token || !chatId) {
+      // No way to reach Core (no user token / no source chat) — leave the diff PENDING so the
+      // user can commit it manually via the "Commit to KG" button. Never silently lose it.
+      console.log(`📊 [KG] Auto-flush deferred (missing ${!token ? "token" : "source chat"}); left pending for manual commit.`);
+      return;
+    }
     try {
-      await applyKGDiff(card.projectId, card.kgDiff);
-      await TemporalCard.findByIdAndUpdate(card._id, { "kgDiff.flushed": true });
-      console.log(`📊 [KG] Auto-flushed diff (confidence: ${confidence.toFixed(2)})`);
+      const r = await pushKGToCore(chatId, card.kgDiff, token);
+      await TemporalCard.findByIdAndUpdate(card._id, { "kgDiff.flushed": true, kgUpdated: true });
+      console.log(`📊 [KG] Auto-flushed to Core (confidence: ${confidence.toFixed(2)}, +${r.added_nodes} nodes / +${r.added_edges} edges)`);
     } catch (err) {
       console.warn(`📊 [KG] Auto-flush failed: ${err.message}`);
     }
   } else if (confidence >= KG_SUGGEST) {
-    // Pending — leave for user review. UI shows "Update KG" button.
+    // Pending — leave for user review. UI shows "Commit to KG" button.
     console.log(`📊 [KG] Diff pending user review (confidence: ${confidence.toFixed(2)})`);
   } else {
     // Below threshold — discard
@@ -153,56 +160,37 @@ async function handleKGSync(card) {
   }
 }
 
-async function applyKGDiff(projectId, kgDiff) {
-  const kgSnapshot = await KGSnapshot.findOne({ projectId })
-    .sort({ snapshotAt: -1 })
-    .lean();
-
-  const existingNodes = kgSnapshot?.nodes || [];
-  const existingEdges = kgSnapshot?.edges || [];
-
-  const { v4: uuidv4 } = require("uuid");
-
-  // Add new nodes
-  const newNodes = [...existingNodes];
-  for (const node of kgDiff.add || []) {
-    newNodes.push({
-      nodeId: uuidv4(),
-      section: node.type?.toUpperCase() || "FACT",
-      content: node.label || "Unknown",
-      confidence: kgDiff.confidence || null,
-      chatId: "auto",
-      synthesisId: null,
-    });
+/**
+ * §16.4 (Issue 2): push a card's KG diff into Core's Postgres KG (the single source of truth
+ * the graph view reads), attached to the card's source chat. Replaces the old dead-end write
+ * into the Satellite KGSnapshot mirror — which nothing rendered and `takeSnapshot` overwrote.
+ * Core ingestion is idempotent per (chat, section, content), so repeat commits don't duplicate.
+ */
+async function pushKGToCore(chatId, kgDiff, token) {
+  if (!chatId || chatId === "auto" || chatId === "unknown") {
+    throw new Error("Card has no source chat to attach KG nodes to.");
+  }
+  if (!token) {
+    throw new Error("Auth token required to commit KG to Core.");
   }
 
-  // Remove nodes
-  const removeIds = new Set((kgDiff.remove || []).map((r) => r.id));
-  const filteredNodes = newNodes.filter((n) => !removeIds.has(n.nodeId));
+  const payload = {
+    nodes: (kgDiff.add || []).map((n) => ({
+      id: n.id,
+      label: n.label,
+      type: n.type,
+      confidence: kgDiff.confidence,
+    })),
+    edges: (kgDiff.edges || []).map((e) => ({ from: e.from, to: e.to, label: e.label })),
+    confidence: kgDiff.confidence || null,
+  };
 
-  // Add edges
-  const newEdges = [...existingEdges];
-  for (const edge of kgDiff.edges || []) {
-    newEdges.push({
-      edgeId: uuidv4(),
-      fromNodeId: edge.from,
-      toNodeId: edge.to,
-      relation: edge.label?.toUpperCase() || "SUPPORTS",
-      chatId: "auto",
-    });
-  }
-
-  // Save new snapshot
-  if ((kgDiff.add || []).length > 0 || (kgDiff.remove || []).length > 0) {
-    await KGSnapshot.create({
-      projectId,
-      nodes: filteredNodes,
-      edges: newEdges,
-      nodeCount: filteredNodes.length,
-      edgeCount: newEdges.length,
-      version: (kgSnapshot?.version || 0) + 1,
-    });
-  }
+  const res = await axios.post(
+    `${CORE_API}/chats/${chatId}/kg/ingest`,
+    payload,
+    { headers: { Authorization: `Bearer ${token}` }, timeout: 15000 }
+  );
+  return res.data; // { added_nodes, added_edges, chat_id }
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -270,15 +258,27 @@ async function generateCardFromChat(projectId, chatId, token, forcedLabel = null
     ? allMessages.filter((m) => new Date(m.created_at || m.createdAt) > sinceDate)
     : allMessages;
 
-  // Fallback: If no "new" messages are found, just take the last 5 messages
-  // This ensures the "Generate Card" button always works for the user.
-  if (messages.length === 0 && allMessages.length > 0) {
-    console.log(`[CardChainer] No new messages for chat ${chatId}, falling back to last 5.`);
-    messages = allMessages.slice(-5);
-  }
-
+  // No messages newer than the last card.
   if (messages.length === 0) {
-    throw new Error("This chat is empty. Send a message before generating a card.");
+    if (allMessages.length === 0) {
+      throw new Error("This chat is empty. Send a message before generating a card.");
+    }
+    if (lastCard) {
+      // §16.4-3: a card already exists and nothing new arrived. Re-running the pipeline on the
+      // same messages just spawns a near-duplicate version off identical input. Instead return the
+      // current active card(s) and signal "already up to date" — no churn of the version chain.
+      console.log(`[CardChainer] Chat ${chatId} already current — skipping regeneration (no new messages).`);
+      const existing = await TemporalCard.find({
+        projectId,
+        sourceChatIds: chatId,
+        status: "active",
+      }).sort({ version: -1 }).lean();
+      return { cards: existing, upToDate: true };
+    }
+    // First-ever card for an already-populated chat (e.g. imported history): seed from the last 5
+    // messages so the button works on import. Only on first run — never on repeat clicks.
+    console.log(`[CardChainer] No prior card for chat ${chatId}; seeding from last 5 messages.`);
+    messages = allMessages.slice(-5);
   }
 
   // Combine all messages into a single text block for decomposition
@@ -297,9 +297,10 @@ async function generateCardFromChat(projectId, chatId, token, forcedLabel = null
   const cards = await runCardPipeline(megaMessage, null, {
     projectId,
     triggerType: "new_message",
+    token,
   });
 
-  return cards;
+  return { cards, upToDate: false };
 }
 
 /**
@@ -338,6 +339,7 @@ async function generateCardByLabel(projectId, label, token) {
   const cards = await runCardPipeline(megaMessage, null, {
     projectId,
     triggerType: "new_message",
+    token,
   });
 
   return cards;
@@ -394,6 +396,7 @@ async function autoGenerateCards(projectId, token, force = false) {
     const cards = await runCardPipeline(megaMessage, null, {
       projectId,
       triggerType: "scheduled_update",
+      token,
     });
 
     generated.push(...cards);
@@ -496,13 +499,14 @@ async function generateCardFromDelta(projectId, delta) {
   return card;
 }
 
-async function updateKGFromCard(projectId, card) {
+async function updateKGFromCard(projectId, card, token) {
   if (card.kgDiff && card.kgDiff.add && card.kgDiff.add.length > 0) {
-    await applyKGDiff(projectId, card.kgDiff);
+    const chatId = card.sourceChatIds?.[0];
+    const r = await pushKGToCore(chatId, card.kgDiff, token);  // §16.4: commit into Core KG
     await TemporalCard.findByIdAndUpdate(card._id, { "kgDiff.flushed": true, kgUpdated: true });
-    return { added: card.kgDiff.add.length, removed: (card.kgDiff.remove || []).length };
+    return { added: r.added_nodes, addedEdges: r.added_edges };
   }
-  return { added: 0, removed: 0 };
+  return { added: 0, addedEdges: 0 };
 }
 
 function generateMermaidUML(snapshot) {

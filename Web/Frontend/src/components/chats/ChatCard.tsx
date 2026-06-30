@@ -1,31 +1,16 @@
 import {
   MessageSquare,
   Clock,
-  MoreVertical,
-  Star,
-  Archive,
-  Trash2,
   Brain,
   Loader2
 } from "lucide-react";
 
 import { Link } from "react-router-dom";
-import { Chat, deleteChat, togglePinChat, generateCardFromChat } from "@/lib/api";
-import { useState } from "react";
+import { Chat, generateCardFromChat } from "@/lib/api";
 import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useGenerationStore } from "@/store/generationStore";
-
-import {
-  DropdownMenu,
-  DropdownMenuTrigger,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuSeparator
-} from "@/components/ui/dropdown-menu";
-
-import { Button } from "@/components/ui/button";
 
 interface ChatCardProps {
   chat: Chat;
@@ -41,7 +26,7 @@ const sourceTypeColors: Record<string, string> = {
   user: "bg-neon-violet/20 text-neon-violet border-neon-violet/30"
 };
 
-export function ChatCard({ chat, onDeleted, onUpdated, projectId }: ChatCardProps) {
+export function ChatCard({ chat, projectId }: ChatCardProps) {
   const { toast } = useToast();
   const { setLoading, isGenerating } = useGenerationStore();
 
@@ -52,8 +37,17 @@ export function ChatCard({ chat, onDeleted, onUpdated, projectId }: ChatCardProp
     
     setLoading(chat.id, true, "Generating...");
     try {
-      const card = await generateCardFromChat(projectId, chat.id);
-      toast({ title: `🃏 Card generated: ${card.title}`, description: `Label: ${card.label} v${card.version}` });
+      const result = await generateCardFromChat(projectId, chat.id);
+      if (result.upToDate) {
+        toast({ title: "🃏 Already up to date", description: "No new messages since the last card." });
+      } else {
+        const first = result.cards?.[0];
+        const n = result.count ?? result.cards?.length ?? 0;
+        toast({
+          title: `🃏 ${n} card${n === 1 ? "" : "s"} generated`,
+          description: first ? `${first.title}${first.category ? ` · ${first.category}` : ""} v${first.version}` : undefined,
+        });
+      }
     } catch (err: any) {
       toast({ title: "Card generation failed", description: err.message, variant: "destructive" });
     } finally {
@@ -63,35 +57,6 @@ export function ChatCard({ chat, onDeleted, onUpdated, projectId }: ChatCardProp
 
   const sourceStyle =
     sourceTypeColors[chat.source_type] || sourceTypeColors.user;
-
-  const handleDelete = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    if (
-      !confirm(
-        `Delete chat "${chat.title || "Untitled"}"? This cannot be undone.`
-      )
-    ) {
-      return;
-    }
-
-    await deleteChat(chat.id);
-    onDeleted?.();
-  };
-
-  const handlePin = async (e: React.MouseEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-
-    await togglePinChat(chat.id, !chat.pinned);
-
-    toast({
-      title: chat.pinned ? "Chat unpinned" : "Chat pinned"
-    });
-
-    onUpdated?.();
-  };
 
   return (
     <Link

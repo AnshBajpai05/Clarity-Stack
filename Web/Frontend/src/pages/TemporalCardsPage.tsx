@@ -7,7 +7,6 @@ import {
   getExpiredCards,
   generateCardByLabel,
   autoGenerateCards,
-  refreshCard,
   applyKGUpdates,
   deleteTemporalCard,
   exportReadme,
@@ -132,27 +131,13 @@ export default function TemporalCardsPage() {
     }
   };
 
-  const handleRefresh = async (cardId: string) => {
-    if (!projectId) return;
-    setLoading(projectId, true, "Refreshing...");
-    try {
-      const card = await refreshCard(projectId, cardId);
-      toast({ title: `Refreshed: ${card.title}` });
-      loadCards();
-    } catch (err: any) {
-      toast({ title: "Refresh failed", description: err.message, variant: "destructive" });
-    } finally {
-      setLoading(projectId, false);
-    }
-  };
-
   const handleApplyKG = async (cardId: string) => {
     if (!projectId) return;
     const key = `kg-${cardId}`;
     setLoading(key, true, "Updating KG...");
     try {
       const result = await applyKGUpdates(projectId, cardId);
-      toast({ title: "KG Updated", description: `+${result.added} / -${result.removed} nodes` });
+      toast({ title: "KG Updated", description: `+${result.added} nodes / +${result.addedEdges} edges` });
       loadCards();
     } catch (err: any) {
       toast({ title: "KG update failed", description: err.message, variant: "destructive" });

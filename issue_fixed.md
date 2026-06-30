@@ -393,3 +393,73 @@ Knocked out the cheap remaining §16 correctness/quality tails in one pass (grou
 
 ---
 
+## I. §10.7 — Postgres path validated end-to-end (2026-06-30, branch `Clarity_Stack_V3`)
+
+> Closes existing_issues §4.2's open clause ("validate the Postgres path before launch") and lifts §10.7 from
+> 🟡 (groundwork only) to ✅. The code was already DB-agnostic after §C2 (`DATABASE_URL` read, SQLite-only
+> flags/PRAGMAs guarded on dialect, Alembic = single source of truth); what was missing was **proof on a real
+> Postgres**, not SQLite. Ran `docker-compose.postgres.yml` (`postgres:16-alpine`, host port 5433) and exercised
+> the full path with `Backend/venv` + `psycopg2-binary` already installed.
+
+### I1. Migrations run clean on Postgres [⭐⭐⭐] (existing_issues §4.2, §10.7)
+- **SQLite-ism audit first:** swept `Backend/**.py` for `json_extract`/`GROUP_CONCAT`/`strftime`/`PRAGMA`/
+  `ON CONFLICT`/`AUTOINCREMENT`/`rowid`/`||` in **SQL**. None — the only raw SQL is `db.execute(text("SELECT 1"))`
+  (portable health probe); the `strftime` hits are Python `time.strftime`, not SQL. Both migrations use only
+  dialect-agnostic types (`sa.String/Text/Boolean/DateTime(timezone=True)`, `sa.func.now()`, `sa.false()`).
+- **Full reversibility cycle on PG:** `alembic downgrade base` → only `alembic_version` remains → `alembic upgrade
+  head` rebuilds all 14 tables from empty. Both directions clean, transactional DDL.
+- **Zero drift:** `alembic check` against the Postgres-built schema → **"No new upgrade operations detected"** — the
+  migrations match the ORM models *exactly* on PostgreSQL (the strongest validation: schema == models, not just "runs").
+
+### I2. App engine (not just Alembic) talks to Postgres [⭐⭐⭐]
+- Smoke-tested `database.py`'s own engine with `DATABASE_URL=postgresql+psycopg2://…@localhost:5433/claritystack`:
+  dialect resolves to `postgresql`, `_IS_SQLITE=False` (SQLite `check_same_thread` + WAL/FK PRAGMA listener correctly
+  skipped), `SELECT 1` returns, and a full **ORM write→read→delete roundtrip** on a real `projects` row succeeds.
+- **Net:** the Postgres path is now exercised, not theoretical. SQLite stays the zero-config dev default; production
+  sets `DATABASE_URL` + `RUN_MIGRATIONS_ON_STARTUP=0` and runs `alembic upgrade head`. Unblocks §10.8 (pgvector RAG).
+
+---
+
+## J. §16.4 — Temporal Cards: real "Commit to KG" + no more duplicate versions (2026-06-30, branch `Clarity_Stack_V3`)
+
+> Full read-before-code analysis: [`temporal_cards_16_4_analysis.md`](./temporal_cards_16_4_analysis.md).
+> The audit's §16.4 had 4 sub-items; investigation corrected two of them: `expireOldCards` is **intentional**
+> (not a bug), and coarse-category chaining is a real-but-architectural pass deferred to its own cycle. The two
+> shipped here are the genuine, scoped wins.
+
+### J1. §16.4 — "Commit to KG" lands in the real KG (option A: Core ingestion) [⭐⭐⭐⭐]
+- **The dead-end:** `applyKGDiff` wrote card nodes into a Satellite Mongo `KGSnapshot` (`chatId:"auto"`) that
+  **no frontend surface reads** (`getKnowledgeGraph` et al. have zero callers) and that the next
+  `deltaEngine.takeSnapshot` **overwrites** from Core. `KnowledgeGraphPage` reads **Core** `/api/reasoning`.
+  So clicking "Commit to KG" changed nothing visible and churned the mirror (the §16.3 link).
+- **Fix (single source of truth):** new authz'd **`POST /chats/{chat_id}/kg/ingest`** (`Backend/main.py`)
+  inserts `KnowledgeNode`/`KnowledgeEdge` into Postgres, attached to the card's source chat — so card knowledge
+  shows in the graph the UI already reads and **survives re-sync**. Idempotent per `(chat, section, content)`;
+  duplicate edges + edges to nodes outside the payload are skipped (no orphan FK). `get_chat_or_403` enforces
+  write access (no tenancy leak).
+- **Satellite:** `applyKGDiff` (Mongo) → `pushKGToCore` (HTTP to Core, attached to `sourceChatIds[0]`); user
+  `token` threaded through `runCardPipeline` → `handleKGSync` and `updateKGFromCard`; auto-flush without a
+  token/source-chat is **deferred to pending** (never silently dropped); orphan `KGSnapshot` import removed.
+  `update-kg` route now passes the token (401 if absent).
+- **Frontend:** "Commit to KG" toast → `+N nodes / +M edges`.
+- **Tests:** `test_kg_ingest.py` (2: lands+renders+idempotent, tenancy-gated 404). Backend **110 green**,
+  Satellite **16 green**, frontend typecheck clean.
+
+### J2. §16.4 — "Generate Card" no longer spawns near-duplicate versions [⭐⭐⭐]
+- **The churn:** `generateCardFromChat` fell back to "last 5 messages" whenever nothing was newer than the last
+  card, so repeat clicks re-synthesized the same input into fresh **versions**.
+- **Fix:** when there are no new messages, split first-run from already-have-card. If a prior active card exists →
+  return it with `{ upToDate:true }`, **no regeneration**; only seed last-5 on the true first run. Route passes
+  `upToDate` through; `ChatCard.tsx` shows "Already up to date" (and a pre-existing toast bug — reading
+  `card.title`/`card.label` off a `{cards,count}` object → "undefined" — was fixed in the same edit).
+
+### J3. §16.4 — corrections to the audit (no code, by design)
+- **`expireOldCards` no-op is INTENTIONAL** (`"Expiry removed per user request"`). The audit's premises were
+  false: `TemporalCard` has **no `expiresAt` field** (the `generateCardFromDelta` write is a phantom mongoose
+  drops) and the frontend has **no card-expiry UI**. Re-enabling expiry would reverse a documented user decision —
+  left as-is. Vestigial "stale" messaging noted for optional later cleanup.
+- **Coarse-category chaining** (lineage keyed on `category`, conflating unrelated risks/decisions) is real but a
+  design change with model-quality implications — **deferred** to its own pass, recorded in `existing_issues.md §16.4`.
+
+---
+

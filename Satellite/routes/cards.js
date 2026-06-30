@@ -120,8 +120,8 @@ router.post("/:projectId/generate/chat/:chatId", requireAuth, rateLimit(15, 6000
       return res.status(401).json({ error: "Authorization token required" });
     }
 
-    const cards = await generateCardFromChat(projectId, chatId, token);
-    res.json({ cards, count: cards.length });
+    const { cards, upToDate } = await generateCardFromChat(projectId, chatId, token);
+    res.json({ cards, count: cards.length, upToDate });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -195,13 +195,18 @@ router.post("/:projectId/:cardId/refresh", requireAuth, async (req, res) => {
 router.post("/:projectId/:cardId/update-kg", requireAuth, async (req, res) => {
   try {
     const { projectId, cardId } = req.params;
+    const token = req.headers.authorization?.split(" ")[1];
+
+    if (!token) {
+      return res.status(401).json({ error: "Authorization token required" });
+    }
 
     const card = await TemporalCard.findById(cardId).lean();
     if (!card) {
       return res.status(404).json({ error: "Card not found" });
     }
 
-    const result = await updateKGFromCard(projectId, card);
+    const result = await updateKGFromCard(projectId, card, token);
     res.json({ message: "KG updated", ...result });
   } catch (err) {
     res.status(500).json({ error: err.message });

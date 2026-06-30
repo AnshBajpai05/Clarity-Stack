@@ -166,7 +166,7 @@ This document is the intended single source of truth for technical risk. Finding
 - **Recommended direction:** Run blocking calls in a thread pool (`asyncio.to_thread`) or use async TLS; bound concurrency (a `batch_semaphore` exists but the blocking call escapes its benefit).
 
 ### §4.2 — SQLite as the primary multi-user store
-- **Severity:** Medium / High (production) · **Status:** 🟡 PARTIAL (2026-06-28) — `Backend/database.py` now **reads `DATABASE_URL` from env** (default SQLite for dev) and makes the `check_same_thread` flag + WAL/FK/synchronous PRAGMAs **conditional on the SQLite dialect**, so the documented Postgres path is no longer dead code. **Still OPEN:** an actual Postgres deployment hasn't been validated. (`create_all` no longer shadows Alembic — §2.3 closed in Clarity_Stack_V3.) Default remains SQLite.
+- **Severity:** Medium / High (production) · **Status:** ✅ RESOLVED (2026-06-30) — `Backend/database.py` **reads `DATABASE_URL` from env** (default SQLite for dev) with `check_same_thread` + WAL/FK/synchronous PRAGMAs **conditional on the SQLite dialect**, and the Postgres path is now **validated end-to-end** (see `issue_fixed.md §I`): full Alembic `downgrade base → upgrade head` cycle clean on `postgres:16-alpine`, `alembic check` reports **zero drift** vs the ORM models, and the app engine does an ORM write/read roundtrip on PG. (`create_all` no longer shadows Alembic — §2.3 closed in Clarity_Stack_V3.) Default remains SQLite for dev; production sets `DATABASE_URL` + `RUN_MIGRATIONS_ON_STARTUP=0`.
 - **Evidence:** `Backend/database.py:8` hardcodes `sqlite:///./claritystack.db`; WAL is enabled (`:24`) but `DATABASE_URL` env is **never read** despite the migration comment (`:48-54`).
 - **Why it matters:** SQLite permits one writer at a time. The write-heavy "ask" flow plus presence/membership writes will serialize and lock under real concurrency. The documented Postgres path is non-functional because the code ignores the env var.
 - **Recommended direction:** Read `DATABASE_URL` from env (default SQLite for dev), make pragmas conditional on the SQLite dialect, and validate the Postgres path before launch.
@@ -361,7 +361,7 @@ This document is the intended single source of truth for technical risk. Finding
 
 ### §10.7 — Postgres migration (retire SQLite)
 - **Priority:** P2 (follows §4.2) · **Effort:** 3–5 d · **take §2.4**
-- **Status note:** `take_step_forward.md` marks this 🟡 — integrity was hardened (WAL/FK/single-engine, the old dual-`create_engine` bug is fixed) **but it is still SQLite**, and §4.2 here shows `DATABASE_URL` is never even read. Real migration is unstarted.
+- **Status note:** ✅ RESOLVED (2026-06-30, see `issue_fixed.md §I`). Integrity was hardened first (WAL/FK/single-engine; dual-`create_engine` bug fixed), then the Postgres path itself was **validated end-to-end** on `postgres:16-alpine` via `docker-compose.postgres.yml`: clean `downgrade base → upgrade head` cycle, `alembic check` **zero drift** vs ORM models, and an app-engine ORM roundtrip on PG. No SQLite-isms in raw SQL. SQLite stays the dev default; production opts into Postgres with `DATABASE_URL` + `RUN_MIGRATIONS_ON_STARTUP=0`. Unblocks §10.8 (pgvector RAG).
 
 ### §10.8 — Hybrid RAG / persistent memory
 - **Priority:** P3 · **Effort:** 2–4 wk · **take §5.2**
@@ -422,7 +422,7 @@ The roadmap's status overlay (branch `UI_enhanced`) is **accurate for the Core B
 | §2.1 JWT secret → ✅ DONE | True **only** for `Backend/auth.py` (fail-closed). Satellite (§1.1) and Editor (§1.5) still ship the `"HalaMadrid12345"` fallback / wrong env name. **Still Critical-open system-wide.** |
 | §2.2 IDOR → ✅ DONE | True for Core chat/project mutating routes. **But** the whole Satellite service (§1.3), the Backend synthesis routes (§5.7), and the Editor (§1.5) have no tenancy checks. **Still Critical-open outside the Core.** |
 | §2.3 Browser key leak → 🟡 PARTIAL | Confirmed: NVIDIA removed from `promptEngine.js`, but Groq/Gemini keys still inlined in `Dashboard.jsx` + `pureFrontendEngine.js` (§1.6). **Still Critical-open.** |
-| §2.4 SQLite → 🟡 PARTIAL | Confirmed: integrity hardened, dual-engine fixed; still SQLite and `DATABASE_URL` not read (§4.2). |
+| §2.4 SQLite → ✅ DONE | Integrity hardened + dual-engine fixed + `DATABASE_URL` read + **Postgres path validated end-to-end** (`alembic check` zero-drift on PG, app-engine ORM roundtrip — see §4.2 / `issue_fixed.md §I`). SQLite kept as dev default by choice. |
 | §6.1 Error-as-fact poisoning → ✅ DONE | Confirmed fixed: `providers.py:110` `_error_block` returns `None`; failed providers skipped. |
 | §6.12 Dual `create_engine` → ✅ DONE | Confirmed: single engine + WAL + FK + `synchronous=NORMAL` (`database.py`). |
 
@@ -734,8 +734,13 @@ Real data, correct wiring, good error/empty/loading states: **ProjectCard**, **C
 - **Why it matters:** Added/Removed reflect **identity, not content**: re-extracted identical facts read as churn; superseded knowledge is never "removed" so the **Removed column is ~always empty**; "+N additions" ≈ "asks happened," not evolution. Plus `fetchKGFromCore` does an **N+1 serial HTTP fan-out** (one `/api/reasoning` per chat) and every compute writes a new Mongo snapshot (unbounded). Direction: diff on normalized **content hash** keyed by (section, content); supersede instead of append.
 
 ### §16.4 — Temporal Cards: "temporal" is disabled, "Commit to KG" is a dead-end
-- **Severity:** High · **Status:** OPEN
+- **Severity:** High · **Status:** ✅ MOSTLY RESOLVED (2026-06-30, see `issue_fixed.md §J` + `temporal_cards_16_4_analysis.md`). "Commit to KG" + dup-version spawning fixed; expiry confirmed intentional; coarse chaining deferred.
 - **Evidence (`cardChainer.js`):** `expireOldCards` (`:350`) is a hard `return 0` no-op — nothing ever expires/goes `stale` despite `expiresAt` + the UI's expiry framing; `getExpiredCards` always `[]`. `applyKGDiff` (`:156`) writes card KG nodes into a **Satellite `KGSnapshot`** (`chatId:"auto"`), but the KG page reads **Core** `/api/reasoning` — so **"Commit to KG" never shows in the visualized graph** (and feeds §16.3 churn). `generateCardFromChat` "always works" fallback (`:275`) re-summarizes the last 5 messages when nothing's new ⇒ repeat clicks spawn near-dup versions. Chaining keys on **coarse category**, conflating unrelated risks/decisions into one lineage.
+- **Resolution:**
+  - **"Commit to KG" dead-end → FIXED (option A, Core ingestion).** New authz'd `POST /chats/{chat_id}/kg/ingest` (`Backend/main.py`) inserts `KnowledgeNode`/`KnowledgeEdge` into Core Postgres, attached to the card's source chat — so card knowledge renders in `KnowledgeGraphPage` (which reads Core) and survives `takeSnapshot` re-sync. Idempotent per `(chat, section, content)`. Satellite `applyKGDiff` → `pushKGToCore` (token threaded through pipeline + `update-kg` route). Tested: `test_kg_ingest.py`.
+  - **Dup-version spawning → FIXED.** `generateCardFromChat` no longer regenerates when a card exists and nothing is new (returns existing + `upToDate:true`); last-5 seed only on true first run. (Also fixed a pre-existing `ChatCard.tsx` "undefined" toast.)
+  - **`expireOldCards` no-op → NOT A BUG (intentional).** `"Expiry removed per user request"`; `TemporalCard` has no `expiresAt` field and there is no card-expiry UI — the audit's premises were false. Left as-is (re-enabling would reverse a user decision). Optional vestigial "stale" messaging cleanup noted.
+  - **Coarse-category chaining → DEFERRED.** Real, but a design change with model-quality implications; own pass.
 
 ### §16.5 — Synthesis IR gate can 503 a valid answer on an English-phrasing technicality
 - **Severity:** Medium (reliability cliff) · **Status:** ADDRESSED (§17.2, 2026-06-29)
