@@ -578,23 +578,30 @@ This is a feature-rich, ambitious **prototype/academic** system. The product sur
 
 ## 📋 Final Senior Review Scorecard
 
-| Area                 | Rating     | Biggest Gap                         |
-| -------------------- | ---------- | ----------------------------------- |
-| **Documentation**    | **9.9/10** | Very little to improve              |
-| **Architecture**     | **9.5/10** | Event-driven communication          |
-| **Backend**          | **9.4/10** | Automated testing                   |
-| **Database**         | **9.4/10** | Search & indexing                   |
-| **Security**         | **9.4/10** | MFA, audit logs                     |
-| **Frontend**         | **9.2/10** | E2E tests                           |
-| **AI Pipeline**      | **9.0/10** | Evaluation framework                |
-| **Production Readiness** | **8.0/10** | Operations rather than architecture |
-| **DevOps**           | **6.8/10** | CI/CD, containers, deployments      |
-| **Observability**    | **6.8/10** | Metrics, tracing, dashboards        |
+> **Re-rated 2026-06-30.** The original review predated the §15 UI-honesty cleanup, the
+> validated end-to-end Postgres path, the observability stack (Prometheus + Grafana + Tempo
+> tracing + structured logging with cross-service `X-Request-ID` correlation), CI with a
+> coverage gate ([.github/workflows/ci.yml](.github/workflows/ci.yml)), the reproducible
+> [`Backend/eval`](Backend/eval/) harness, and the frontend test infra (vitest + typecheck +
+> Playwright). Almost all movement is the previously-weak **operational** areas catching up.
+> Overall: **8.6 → 9.2 / 10**.
+
+| Area                 | Rating     | Δ        | Biggest Gap (remaining)                                       |
+| -------------------- | ---------- | -------- | ------------------------------------------------------------- |
+| **Documentation**    | **9.9/10** | —        | Very little to improve                                        |
+| **Architecture**     | **9.5/10** | —        | Event-driven comms / job queue (§10.9)                        |
+| **Backend**          | **9.5/10** | ▲ 0.1    | `main.py` module split (§6.1); testing gap now closed (110 tests + coverage gate) |
+| **Database**         | **9.5/10** | ▲ 0.1    | Hybrid RAG / pgvector search (§10.8); Postgres path validated |
+| **Security**         | **9.4/10** | —        | MFA, audit logs                                               |
+| **Frontend**         | **9.2/10** | —        | UI/UX visual polish & token consistency (see [FRONTEND_REMARK](Web/Frontend/FRONTEND_REMARK.md)) — functional honesty + tests up, visual debt newly surfaced |
+| **AI Pipeline**      | **9.4/10** | ▲ 0.4    | Prompt versioning, cost analysis, fallback policies (eval harness now exists) |
+| **Production Readiness** | **8.7/10** | ▲ 0.7 | Deploy/CD & scaling (queue, Redis)                            |
+| **DevOps**           | **8.3/10** | ▲ 1.5    | CD/deploys, image scanning, Dependabot (CI + compose + coverage gate landed) |
+| **Observability**    | **8.7/10** | ▲ 1.9    | Alerting + dashboard breadth (metrics/traces/correlated logs landed) |
+| **Overall**          | **9.2/10** | ▲ 0.6    | Operations maturity, not architecture                         |
 
 ### The Encouraging Part
-Notice where almost all of the low scores are: DevOps, Observability, AI evaluation, and Operational maturity. 
-
-Those are **not** foundational architecture flaws. They are the kinds of capabilities teams typically add as a system moves from a solid MVP to a production service. There are no fundamental issues like "wrong database," "poor separation of concerns," or "unmaintainable architecture." The remaining work is largely about making the system easier to operate, measure, and evolve at scale. That is a much better position to be in than having to redesign the core architecture.
+The original low scores were all **operational** — DevOps, Observability, AI evaluation, production maturity — never foundational architecture. Since that review those gaps have largely closed: a real observability stack (metrics + traces + correlated structured logs), CI with a coverage gate, the validated Postgres path, and a reproducible eval harness. What's left — CD/deploys, MFA + audit logs, pgvector search, an event/queue layer, and (newly surfaced) frontend UI/UX polish — is **additive, not a redesign**. There were never fundamental issues like "wrong database," "poor separation of concerns," or "unmaintainable architecture." The core architecture was never in question; the system has simply moved from a solid MVP toward a production service.
 
 ---
 
