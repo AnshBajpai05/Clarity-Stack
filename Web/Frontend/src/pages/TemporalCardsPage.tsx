@@ -4,7 +4,6 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import {
   getTemporalCards,
   getCardsByLabel,
-  getExpiredCards,
   generateCardByLabel,
   autoGenerateCards,
   applyKGUpdates,
@@ -146,6 +145,33 @@ export default function TemporalCardsPage() {
     }
   };
 
+  // §16.4: every card with a real unflushed KG diff (mirrors the per-card "KG Pending" badge).
+  const pendingKGCards = cards.filter(
+    (c) => !c.kgUpdated && ((c.kgDiff?.add?.length ?? 0) > 0)
+  );
+
+  // Bulk "Commit all to KG": flush every pending card into Core's KG in one action.
+  const handleCommitAllKG = async () => {
+    if (!projectId || pendingKGCards.length === 0) return;
+    setLoading("commit-all-kg", true, "Committing all to KG...");
+    let nodes = 0, edges = 0, failed = 0;
+    for (const c of pendingKGCards) {
+      try {
+        const r = await applyKGUpdates(projectId, c._id);
+        nodes += r.added ?? 0;
+        edges += r.addedEdges ?? 0;
+      } catch {
+        failed += 1;
+      }
+    }
+    toast({
+      title: "KG updated",
+      description: `${pendingKGCards.length - failed}/${pendingKGCards.length} cards committed · +${nodes} nodes / +${edges} edges${failed ? ` · ${failed} failed` : ""}`,
+    });
+    loadCards();
+    setLoading("commit-all-kg", false);
+  };
+
   const handleDeleteCard = async (cardId: string) => {
     if (!window.confirm("Are you sure you want to delete this card? This action cannot be undone.")) {
       return;
@@ -232,6 +258,24 @@ export default function TemporalCardsPage() {
               )}
               {projectId && isGenerating(projectId) ? getStatus(projectId) : "Auto-Generate"}
             </Button>
+
+            {pendingKGCards.length > 0 && (
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={handleCommitAllKG}
+                disabled={isGenerating("commit-all-kg")}
+                className="h-9 border-neon-violet/30 hover:border-neon-violet text-neon-violet bg-neon-violet/5"
+                title="Commit every card with a pending KG update into the Knowledge Graph"
+              >
+                {isGenerating("commit-all-kg") ? (
+                  <LoadingSpinner size="sm" className="mr-2" />
+                ) : (
+                  <Brain className="w-3.5 h-3.5 mr-2" />
+                )}
+                Commit all to KG ({pendingKGCards.length})
+              </Button>
+            )}
 
             <div className="h-5 w-px bg-border/50 mx-1" />
 
