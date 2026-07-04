@@ -78,7 +78,9 @@ export function CreateChatModal({ isOpen, onClose, onSubmit, isLoading }: Create
       />
       
       {/* Modal */}
-      <div className="relative glass-panel p-6 w-full max-w-md animate-scale-in shadow-2xl">
+      {/* max-h + scroll: 6 fields overflow short viewports; without this the submit
+          button is unreachable on ≤800px-tall screens */}
+      <div className="relative glass-panel p-6 w-full max-w-md animate-scale-in shadow-2xl max-h-[85vh] overflow-y-auto">
         <div className="flex items-center justify-between mb-6">
           <h2 className="text-xl font-semibold gradient-text">Create New Chat</h2>
           <Button variant="ghost" size="icon" onClick={onClose}>

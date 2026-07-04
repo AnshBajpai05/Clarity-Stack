@@ -1,6 +1,7 @@
-import { NavLink, useLocation } from 'react-router-dom';
-import { FolderKanban, Layers, Settings, Sparkles, Globe, FileSearch, Edit3, GitMerge, UserPlus } from 'lucide-react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { FolderKanban, Layers, Settings, Sparkles, Globe, FileSearch, Edit3, GitMerge, UserPlus, LogOut } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { logout, getCurrentUserEmail } from '@/lib/api';
 
 const navItems = [
   { to: '/projects', icon: FolderKanban, label: 'Projects' },
@@ -15,6 +16,13 @@ const navItems = [
 
 export function Sidebar() {
   const location = useLocation();
+  const navigate = useNavigate();
+  const email = getCurrentUserEmail();
+
+  const handleLogout = async () => {
+    await logout();
+    navigate('/login', { replace: true });
+  };
 
   return (
     <aside
@@ -66,7 +74,7 @@ export function Sidebar() {
       </nav>
 
       {/* Footer */}
-      <div className="p-4 border-t border-border/20">
+      <div className="p-4 border-t border-border/20 space-y-2">
         <div className="glass-panel p-4 rounded-xl">
           <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
             Turn messy chats into structured knowledge.
@@ -77,6 +85,14 @@ export function Sidebar() {
             <div className="w-2 h-2 rounded-full bg-neon-peach animate-pulse" style={{ animationDelay: '0.4s' }} />
           </div>
         </div>
+        <button
+          onClick={handleLogout}
+          className="w-full flex items-center gap-3 px-4 py-2.5 rounded-xl text-muted-foreground hover:text-destructive hover:bg-destructive/10 border border-transparent hover:border-destructive/25 transition-[color,background-color,border-color] duration-normal ease-smooth"
+          title={email ? `Log out ${email}` : 'Log out'}
+        >
+          <LogOut className="w-[18px] h-[18px]" />
+          <span className="font-medium text-[13px]">Logout</span>
+        </button>
       </div>
     </aside>
   );

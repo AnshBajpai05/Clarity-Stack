@@ -42,7 +42,9 @@ export function CreateProjectModal({ isOpen, onClose, onSubmit, isLoading }: Pro
 
   return (
     <Dialog open={isOpen} onOpenChange={onClose}>
-      <DialogContent className="glass-panel border-neon-cyan/30 max-w-2xl">
+      {/* max-h + scroll: on short screens (≤800px) the form is taller than the viewport
+          and the submit button was unreachable — the dialog itself must scroll */}
+      <DialogContent className="glass-panel border-neon-cyan/30 max-w-2xl max-h-[85vh] overflow-y-auto">
         <DialogHeader>
           <DialogTitle className="gradient-text">Create New Project</DialogTitle>
         </DialogHeader>

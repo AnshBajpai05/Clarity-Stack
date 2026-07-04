@@ -5,6 +5,38 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/**
+ * Copy text to the clipboard without ever throwing.
+ * navigator.clipboard.writeText rejects when permission is denied (headless
+ * browsers, some corporate policies, non-focused documents) — an uncaught
+ * rejection here surfaced as a page error on every Copy button. Falls back to
+ * the legacy execCommand path. Returns whether a copy method succeeded.
+ */
+export async function copyText(text: string): Promise<boolean> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch {
+      // fall through to execCommand
+    }
+  }
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = text;
+    ta.style.position = "fixed";
+    ta.style.opacity = "0";
+    document.body.appendChild(ta);
+    ta.focus();
+    ta.select();
+    const ok = document.execCommand("copy");
+    document.body.removeChild(ta);
+    return ok;
+  } catch {
+    return false;
+  }
+}
+
 export function hexToHSL(hex: string) {
   let r = 0, g = 0, b = 0;
   if (hex.length === 4) {

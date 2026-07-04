@@ -1,6 +1,7 @@
 import { FolderKanban, ChevronRight, Clock, Copy, Check } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { Project } from '@/lib/api';
+import { copyText } from '@/lib/utils';
 import { formatDistanceToNow } from "date-fns";
 import { useState } from 'react';
 
@@ -11,12 +12,12 @@ interface ProjectCardProps {
 export function ProjectCard({ project }: ProjectCardProps) {
   const [copied, setCopied] = useState(false);
 
-  const handleCopy = (e: React.MouseEvent) => {
+  const handleCopy = async (e: React.MouseEvent) => {
     e.preventDefault();
     e.stopPropagation();
-    navigator.clipboard.writeText(project.id);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    const ok = await copyText(project.id);
+    setCopied(ok);
+    if (ok) setTimeout(() => setCopied(false), 2000);
   };
 
   return (

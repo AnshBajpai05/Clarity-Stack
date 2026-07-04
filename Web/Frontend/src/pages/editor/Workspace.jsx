@@ -26,8 +26,10 @@ function Workspace() {
         const fetchWorkspaceMeta = async () => {
             const baseUrl = import.meta.env.VITE_EDITOR_BACKEND_URL || `http://${window.location.hostname}:8004`;
             try {
+                // §5.4: auth via httpOnly cookie — same as Dashboard.jsx (the old
+                // Bearer-`token` reference here was undefined and crashed the page)
                 const res = await fetch(`${baseUrl}/workspace/${id}`, {
-                    headers: { Authorization: `Bearer ${token}` },
+                    credentials: "include",
                 });
                 if (res.ok) {
                     const data = await res.json();
@@ -44,20 +46,19 @@ function Workspace() {
             }
         };
         fetchWorkspaceMeta();
-    }, [id, token, currentUserEmail]);
+    }, [id, currentUserEmail]);
 
     const fetchActivityLogs = useCallback(async () => {
-        if (!token) return;
         try {
             const baseUrl = import.meta.env.VITE_EDITOR_BACKEND_URL || `http://${window.location.hostname}:8004`;
             const res = await fetch(`${baseUrl}/activity/${id}`, {
-                headers: { Authorization: `Bearer ${token}` },
+                credentials: "include",
             });
             if (res.ok) setActivityLogs(await res.json());
         } catch (err) {
             console.error("Failed to fetch activity logs", err);
         }
-    }, [id, token]);
+    }, [id]);
 
     useEffect(() => {
         if (showActivityPanel) fetchActivityLogs();
@@ -105,12 +106,12 @@ function Workspace() {
 
     // ── Activity logging ─────────────────────────────────────────────────────
     const logActivity = async (action, content, cursorPosition = 0) => {
-        if (!token) return;
         try {
             const baseUrl = import.meta.env.VITE_EDITOR_BACKEND_URL || `http://${window.location.hostname}:8004`;
             await fetch(`${baseUrl}/activity`, {
                 method: "POST",
-                headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+                credentials: "include",
+                headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ workspace_id: id, action, content_preview: content.slice(-30), cursor_position: cursorPosition }),
             });
         } catch (err) { /* silent */ }
@@ -151,13 +152,18 @@ function Workspace() {
     };
 
     // ── Clipboard helpers ────────────────────────────────────────────────────
+    const execCommandCopy = (text) => {
+        const ta = document.createElement("textarea");
+        ta.value = text; ta.style.position = "fixed";
+        document.body.appendChild(ta); ta.select();
+        document.execCommand("copy"); document.body.removeChild(ta);
+    };
     const copyToClipboard = (text) => {
-        if (navigator.clipboard) { navigator.clipboard.writeText(text); }
-        else {
-            const ta = document.createElement("textarea");
-            ta.value = text; ta.style.position = "fixed";
-            document.body.appendChild(ta); ta.select();
-            document.execCommand("copy"); document.body.removeChild(ta);
+        if (navigator.clipboard) {
+            // writeText rejects when clipboard permission is denied — route to fallback
+            navigator.clipboard.writeText(text).catch(() => execCommandCopy(text));
+        } else {
+            execCommandCopy(text);
         }
     };
 
@@ -169,6 +175,7 @@ function Workspace() {
             const baseUrl = import.meta.env.VITE_EDITOR_BACKEND_URL || `http://${window.location.hostname}:8004`;
             const res = await fetch(`${baseUrl}/snapshot`, {
                 method: "POST",
+                credentials: "include",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ content, workspace_id: id }),
             });
@@ -186,6 +193,7 @@ function Workspace() {
             const baseUrl = import.meta.env.VITE_EDITOR_BACKEND_URL || `http://${window.location.hostname}:8004`;
             const res = await fetch(`${baseUrl}/snapshot`, {
                 method: "POST",
+                credentials: "include",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({ content: section.content, workspace_id: id }),
             });
@@ -199,7 +207,25 @@ function Workspace() {
     };
 
     const handleGenerateUML = async (type) => {
-        toast.info(`Generating ${type} diagram...`);
+        const content = sections.map((s) => `=== ${s.title} ===\n${s.content}`).join("\n\n").trim();
+        if (!content || content.replace(/===.*===/g, "").trim().length < 10) {
+            toast.error("Write some content in the sections first — the diagram is generated from it.");
+            return;
+        }
+        toast.info(`Generating ${type} diagram…`);
+        try {
+            const { mermaid } = await generateUML(content, type);
+            // Deliver as a .mmd download (same pattern as the cards-page exports)
+            const blob = new Blob([mermaid], { type: "text/plain" });
+            const url = window.URL.createObjectURL(blob);
+            const a = document.createElement("a");
+            a.href = url; a.download = `${type}-diagram.mmd`;
+            document.body.appendChild(a); a.click();
+            window.URL.revokeObjectURL(url); document.body.removeChild(a);
+            toast.success(`${type} diagram generated — .mmd file downloaded (paste into mermaid.live to view).`);
+        } catch (err) {
+            toast.error(`Diagram generation failed: ${err.message}`);
+        }
     };
 
     // ── Helpers ───────────────────────────────────────────────────────────────

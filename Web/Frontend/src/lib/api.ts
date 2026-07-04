@@ -258,6 +258,16 @@ export function getCurrentUserEmail(): string | null {
   return getSafeStorage("cs_email");
 }
 
+/** Log out: revoke the session server-side (clears httpOnly cookies) and drop local identity. */
+export async function logout(): Promise<void> {
+  try {
+    await api("/api/auth/logout", { method: "POST" });
+  } catch {
+    // Even if the server call fails, fall through — cookies may already be expired.
+  }
+  try { localStorage.removeItem("cs_email"); } catch { /* storage may be unavailable */ }
+}
+
 
 // 🚨 ADD THIS — Delete Chat
 export async function deleteChat(chatId: string): Promise<void> {
@@ -505,7 +515,7 @@ export async function getDecisionReadiness(chatId: string): Promise<{ decisions:
 
 /* ===================== SATELLITE SERVICE ===================== */
 
-async function fetchSatellite<T>(endpoint: string, options?: RequestInit): Promise<T> {
+async function fetchSatellite<T>(endpoint: string, options?: RequestInit, isRetry = false): Promise<T> {
   // §1.7 Delegate to api() for Core auth endpoints; use direct fetch for Satellite.
   // On 401, we attempt a silent refresh via api() for consistency.
   const { getCookie } = await import("./http");
@@ -522,14 +532,16 @@ async function fetchSatellite<T>(endpoint: string, options?: RequestInit): Promi
   });
 
   if (!response.ok) {
-    // §1.7 Silent Refresh: on 401, trigger a refresh via the core api() and retry.
-    if (response.status === 401) {
+    // §1.7 Silent Refresh: on 401, trigger a refresh via the core api() and retry ONCE.
+    // A second 401 means the token is fine but the route rejected it — retrying forever
+    // just spins the UI (stuck-spinner bug when Satellite ignored cookie auth).
+    if (response.status === 401 && !isRetry) {
       try {
         const { api } = await import("./http");
         // This triggers the silent refresh in http.ts
         await api("/api/auth/refresh", { method: "POST" });
         // Retry Satellite request after refresh
-        return fetchSatellite<T>(endpoint, options);
+        return fetchSatellite<T>(endpoint, options, true);
       } catch {
         window.location.href = "/login";
         throw new Error("Session expired. Please log in again.");

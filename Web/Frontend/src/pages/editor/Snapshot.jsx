@@ -45,7 +45,9 @@ function Snapshot() {
     const copyContent = () => {
         if (snapshot) {
             if (navigator.clipboard) {
-                navigator.clipboard.writeText(snapshot.content);
+                // writeText rejects when clipboard permission is denied — route to fallback
+                navigator.clipboard.writeText(snapshot.content)
+                    .catch(() => fallbackCopyTextToClipboard(snapshot.content));
             } else {
                 fallbackCopyTextToClipboard(snapshot.content);
             }
