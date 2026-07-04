@@ -350,6 +350,16 @@ function parseSemanticGraph(rawOutput, diagramType) {
 // Call Groq LLM with model fallback chain
 // ─────────────────────────────────────────────────────────────
 
+// Hard client-side deadline per LLM attempt — without it, a hung backend/provider
+// leaves the generate dial spinning forever (fetch has no default timeout).
+const LLM_FETCH_TIMEOUT_MS = 150000;
+
+function fetchWithTimeout(url, options = {}, ms = LLM_FETCH_TIMEOUT_MS) {
+    const ctrl = new AbortController();
+    const timer = setTimeout(() => ctrl.abort(new Error(`LLM request timed out after ${ms / 1000}s`)), ms);
+    return fetch(url, { ...options, signal: ctrl.signal }).finally(() => clearTimeout(timer));
+}
+
 async function callNvidiaLLM(systemPrompt, userMessage) {
     let lastError = 'No models tried';
 
@@ -357,7 +367,7 @@ async function callNvidiaLLM(systemPrompt, userMessage) {
         console.log(`[PromptEngine] → Trying model via proxy: ${model}`);
         try {
             // Route through FastAPI backend to avoid browser CORS blocks
-            const res = await fetch(`${BACKEND_URL}/api/llm`, {
+            const res = await fetchWithTimeout(`${BACKEND_URL}/api/llm`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -385,7 +395,7 @@ async function callNvidiaLLM(systemPrompt, userMessage) {
 
             if (res.status === 400) {
                 // Retry without response_format for models that don’t support json_object
-                const res2 = await fetch(`${BACKEND_URL}/api/llm`, {
+                const res2 = await fetchWithTimeout(`${BACKEND_URL}/api/llm`, {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({

@@ -114,7 +114,57 @@ import random
 def _nvidia_keys() -> list[str]:
     """All configured NVIDIA keys, in priority order (NVIDIA_API_KEY, then _2, _3…)."""
     names = ["NVIDIA_API_KEY", "NVIDIA_API_KEY_2", "NVIDIA_API_KEY_3"]
-    return [k for k in (os.getenv(n) for n in names) if k]
+    return [k.strip() for k in (os.getenv(n) for n in names) if k and k.strip()]
+
+
+# ── NVIDIA circuit breaker ────────────────────────────────────────────────────
+# On some networks integrate.api.nvidia.com accepts the TCP connect but never
+# answers the HTTP request, so every key burns the full read timeout serially
+# and the UI spinner looks frozen for minutes. After one full-chain failure we
+# skip NVIDIA entirely for a cooldown window and go straight to the HF fallback.
+_NVIDIA_COOLDOWN_S = 300
+_nvidia_down_until = 0.0
+
+# Direct-call read timeout per key (connect stays snappy). 120s made a dead
+# provider cost 2+ minutes per key; anything healthy answers well within 45s.
+_NVIDIA_TIMEOUT = httpx.Timeout(45.0, connect=8.0)
+
+# ── HuggingFace router fallback (§ stuck-dial fix) ───────────────────────────
+# Same OpenAI-compatible surface Satellite already uses successfully; mapped
+# model names because HF uses org/repo ids, not NVIDIA's catalog names.
+HF_TOKEN = os.getenv("HF_TOKEN")
+HF_API_URL = "https://router.huggingface.co/v1/chat/completions"
+_HF_MODEL_MAP = {
+    "meta/llama-3.3-70b-instruct": "meta-llama/Llama-3.3-70B-Instruct",
+    "meta/llama-3.1-70b-instruct": "meta-llama/Llama-3.3-70B-Instruct",
+}
+_HF_DEFAULT_MODEL = "meta-llama/Llama-3.3-70B-Instruct"
+
+
+async def _llm_via_hf(payload: dict) -> dict | None:
+    """Fallback: HuggingFace router (OpenAI-shaped response, returned as-is).
+    Returns None when no HF_TOKEN configured or the call fails."""
+    if not HF_TOKEN:
+        return None
+    body = {
+        "model": _HF_MODEL_MAP.get(payload.get("model"), _HF_DEFAULT_MODEL),
+        "messages": payload.get("messages"),
+        "temperature": payload.get("temperature", 0.2),
+        "max_tokens": payload.get("max_tokens"),
+    }
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=8.0)) as client:
+            resp = await client.post(
+                HF_API_URL, json=body,
+                headers={"Authorization": f"Bearer {HF_TOKEN}"},
+            )
+        if resp.is_success:
+            logger.info("[llm] HF router fallback succeeded")
+            return resp.json()
+        logger.warning(f"[llm] HF fallback returned {resp.status_code}: {resp.text[:200]}")
+    except Exception as e:
+        logger.warning(f"[llm] HF fallback failed: {e}")
+    return None
 
 
 # ─── §10.2: route through the central Clarity LLM gateway when configured ───────
@@ -176,38 +226,53 @@ async def proxy_llm(payload: dict, request: Request):
     a random key is tried first to spread quota, and on a 429 / transport error the
     request fails over to the remaining keys before giving up.
     """
+    global _nvidia_down_until
+
     gw = await _llm_via_gateway(payload, request_id=request.headers.get("x-request-id"))
     if gw is not None:
         return gw
 
     url = "https://integrate.api.nvidia.com/v1/chat/completions"
     keys = _nvidia_keys()
-    if not keys:
-        raise HTTPException(status_code=500, detail="No NVIDIA_API_KEY configured on server")
+    if not keys and not HF_TOKEN:
+        raise HTTPException(status_code=500, detail="No NVIDIA_API_KEY or HF_TOKEN configured on server")
 
-    order = random.sample(keys, len(keys))  # randomize start → spreads load across keys
     last_detail = "unknown error"
 
-    async with httpx.AsyncClient() as client:
-        for key in order:
-            headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
-            try:
-                resp = await client.post(url, json=payload, headers=headers, timeout=120.0)
-            except Exception as e:
-                last_detail = str(e)
-                continue  # transport error → try the next key
+    if keys and time.time() >= _nvidia_down_until:
+        order = random.sample(keys, len(keys))  # randomize start → spreads load across keys
+        async with httpx.AsyncClient(timeout=_NVIDIA_TIMEOUT) as client:
+            for key in order:
+                headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+                try:
+                    resp = await client.post(url, json=payload, headers=headers)
+                except Exception as e:
+                    last_detail = f"{type(e).__name__}: {e}" if str(e) else type(e).__name__
+                    continue  # transport error → try the next key
 
-            if resp.status_code == 429:
-                last_detail = "429 rate-limited"
-                continue  # this key is throttled → fail over to the next one
+                if resp.status_code == 429:
+                    last_detail = "429 rate-limited"
+                    continue  # this key is throttled → fail over to the next one
 
-            if not resp.is_success:
-                # A real upstream error (bad request, etc.) — surface it, don't burn other keys.
-                raise HTTPException(status_code=resp.status_code, detail=resp.text[:500])
+                if not resp.is_success:
+                    # A real upstream error (bad request, etc.) — surface it, don't burn other keys.
+                    raise HTTPException(status_code=resp.status_code, detail=resp.text[:500])
 
-            return resp.json()
+                _nvidia_down_until = 0.0  # provider healthy again
+                return resp.json()
 
-    raise HTTPException(status_code=502, detail=f"All NVIDIA keys exhausted: {last_detail}")
+        # Every key failed at the transport/429 level → open the breaker so the
+        # next request doesn't re-pay the full serial timeout chain.
+        _nvidia_down_until = time.time() + _NVIDIA_COOLDOWN_S
+        logger.warning(f"[llm] NVIDIA chain exhausted ({last_detail}); breaker open {_NVIDIA_COOLDOWN_S}s")
+    elif keys:
+        last_detail = "NVIDIA breaker open (provider unresponsive recently)"
+
+    hf = await _llm_via_hf(payload)
+    if hf is not None:
+        return hf
+
+    raise HTTPException(status_code=502, detail=f"All LLM providers failed: {last_detail}")
 
 # ---------- Chunk Search Proxy (Stub or Real) ----------
 @app.post("/api/document/{doc_id}/chunks/search")
