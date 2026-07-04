@@ -416,7 +416,11 @@ async function callNvidiaLLM(systemPrompt, userMessage) {
                 }
             }
 
-            lastError = `${model} HTTP ${res.status}`;
+            // Prefer the backend's detail — it already ran the full key-rotation +
+            // HF + Groq failover, so its message says WHY everything failed.
+            let detail = '';
+            try { detail = JSON.parse(errText)?.detail || ''; } catch { /* not JSON */ }
+            lastError = detail || `${model} HTTP ${res.status}`;
 
         } catch (err) {
             lastError = err.message;
@@ -424,7 +428,9 @@ async function callNvidiaLLM(systemPrompt, userMessage) {
         }
     }
 
-    throw new Error(`All NVIDIA models failed. Last error: ${lastError}`);
+    throw new Error(/providers/i.test(lastError)
+        ? lastError
+        : `AI generation failed (${lastError}). The providers may be rate-limited — please try again in a few minutes.`);
 }
 
 

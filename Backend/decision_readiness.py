@@ -122,6 +122,8 @@ def compute_readiness(db: Session, chat_id: str) -> list:
             "decision_id": d["decision_id"],
             "synthesis_id": d.get("synthesis_id"),
             "decision": d["decision"],
+            # §18.1: >1 when near-duplicate phrasings of this decision were merged.
+            "n_variants": d.get("n_variants", 1),
             **scored,
         })
     # Least-ready first — that's where attention is needed.

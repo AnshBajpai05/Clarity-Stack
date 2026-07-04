@@ -15,6 +15,53 @@ import { extractGraphWithGroq, getJointShapeForCategory, parseDocumentViaBackend
 
 const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:8005';
 
+/* ── Toolbar primitives ─────────────────────────────────────────────────────
+   Module-level ON PURPOSE: when these were declared inside Dashboard, every
+   render minted a new component type, so React remounted every toolbar button on
+   any state change and clicks landing mid-re-render were silently dropped. */
+/* Color-coding by purpose so same-role buttons read as a group:
+   action (AI/layout) = indigo, export = green, danger (destructive) = red. */
+const TBTN_VARIANTS = {
+    action: { light: '#4f46e5', dark: '#818cf8' },
+    export: { light: '#16a34a', dark: '#34d399' },
+    danger: { light: '#dc2626', dark: '#f87171' },
+};
+
+const TBtn = ({ onClick, title, active, disabled, theme, variant, children }) => {
+    const { T, isDark } = theme;
+    const vc = TBTN_VARIANTS[variant];
+    const tint = vc ? (isDark ? vc.dark : vc.light) : null;
+    return (
+        <button
+            onClick={onClick}
+            title={title}
+            disabled={disabled}
+            style={{
+                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
+                gap: '3px', padding: '5px 9px', borderRadius: '7px',
+                cursor: disabled ? 'not-allowed' : 'pointer',
+                opacity: disabled ? 0.45 : 1,
+                fontSize: '11px', fontWeight: '600', fontFamily: 'Inter, sans-serif',
+                border: active
+                    ? '1.5px solid ' + T.accent
+                    : '1.5px solid ' + (tint ? tint + '66' : T.border),
+                background: active
+                    ? (isDark ? '#1e2040' : '#eff6ff')
+                    : (isDark ? '#1c2033' : T.surface),
+                color: active ? T.accent : (tint || T.text),
+                transition: 'all 0.15s',
+                whiteSpace: 'nowrap',
+            }}
+        >
+            {children}
+        </button>
+    );
+};
+
+const Sep = ({ theme }) => (
+    <div style={{ width: '1px', height: '20px', background: theme.T.border, margin: '0 2px', flexShrink: 0 }} />
+);
+
 
 /* ═══════════════════════════════════════════════════════════════════════════
    JSON helpers
@@ -267,8 +314,42 @@ const callAI = async (prompt) => {
         }
         console.warn('[LLM] skipping ' + model + ': ' + lastMsg);
     }
-    throw new Error('AI generation failed via proxy: ' + lastMsg);
+    // Backend detail already explains the full provider failover outcome.
+    throw new Error(/providers/i.test(lastMsg)
+        ? lastMsg
+        : 'AI generation failed (' + lastMsg + '). The providers may be rate-limited — please try again in a few minutes.');
 };
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   Bring-your-own-LLM starter prompt — shown when the workspace is empty.
+   Any LLM (ChatGPT, Gemini, Claude…) fed this prompt returns a JSON that the
+   ⬆ Import button ingests into the node panel (same schema the AI path uses).
+═══════════════════════════════════════════════════════════════════════════ */
+const BYO_LLM_PROMPT = `Generate a UML diagram description for the project below.
+
+Project name: <YOUR PROJECT NAME>
+Diagram type: <use case | activity | data flow>
+Specification / requirements:
+<PASTE YOUR SPEC, USER STORIES, OR A SHORT DESCRIPTION HERE>
+
+Respond with ONLY raw JSON (no markdown fences, no commentary) in EXACTLY this schema:
+{
+  "nodes": [
+    { "id": "a1", "label": "Customer", "category": "actor", "desc": "one-line reason this exists" },
+    { "id": "u1", "label": "Place Order", "category": "use_case", "desc": "..." },
+    { "id": "s1", "label": "Order System", "category": "system", "desc": "the system boundary" }
+  ],
+  "connections": [
+    { "id": "e1", "from": "a1", "to": "u1", "label": "places" }
+  ]
+}
+
+Rules:
+- "category" must be one of: actor | use_case | system | action | decision | start | end | process | data_store | external
+- use case diagrams: actors + use_cases + exactly one system node
+- activity diagrams: exactly one start, actions/decisions in the middle, at least one end
+- every connection's "from"/"to" must match a node "id"; ids are short unique strings
+- 5-15 nodes; labels under 5 words; "desc" is one sentence`;
 
 /* ═══════════════════════════════════════════════════════════════════════════
    Dashboard component
@@ -810,6 +891,170 @@ const Dashboard = () => {
         }
     }, []);
 
+    /* Auto-Connect — draw EVERY AI-suggested edge whose endpoints are on the canvas
+       (same per-instruction path as clicking each card, batched). */
+    const handleAutoConnect = useCallback(() => {
+        const canvas = canvasRef.current;
+        if (!canvas) return;
+        if (!aiInstructions || aiInstructions.length === 0) {
+            setDebugInfo('No AI connection suggestions yet — Generate a diagram first, or drag between nodes to connect manually.');
+            return;
+        }
+        const added = [];
+        aiInstructions.forEach((instr) => {
+            if (connectedEdgeIds.has(instr.id)) return;
+            if (canvas.drawConnection(instr.from, instr.to, instr.label, instr.id)) {
+                added.push(instr.id);
+            }
+        });
+        if (added.length > 0) {
+            setConnectedEdgeIds(prev => {
+                const next = new Set(prev);
+                added.forEach(id => next.add(id));
+                return next;
+            });
+        }
+        const skipped = aiInstructions.length - added.length - [...connectedEdgeIds].length;
+        setDebugInfo(`Auto-Connect: ${added.length} edge(s) drawn.` +
+            (skipped > 0 ? ` ${skipped} skipped (place both endpoint nodes first).` : ''));
+    }, [aiInstructions, connectedEdgeIds]);
+
+    /* Ask for an export file name — editable prompt, remembered across downloads
+       (repeat saves under the same name get the browser's own "name (1).png"
+       numbering, which is the expected behavior). Returns null on cancel. */
+    const lastExportName = useRef('diagram');
+    const askExportName = useCallback((ext) => {
+        let name = window.prompt(`Save ${ext.toUpperCase()} as:`, lastExportName.current);
+        if (name === null) return null;
+        name = name.trim()
+            .replace(new RegExp('\\.' + ext + '$', 'i'), '')  // typed extension → dropped
+            .replace(/[\\/:*?"<>|]/g, '')                        // path-illegal chars
+            .trim();
+        if (!name) name = 'diagram';
+        lastExportName.current = name;
+        return name;
+    }, []);
+
+    /* ── Import JSON: our exported graph OR the BYO-LLM simple schema ────── */
+    const importInputRef = useRef(null);
+    const [importModalOpen, setImportModalOpen] = useState(false);
+    const [pasteText, setPasteText] = useState('');
+    const [importErr, setImportErr] = useState(null);
+
+    /* LLM responses often arrive wrapped in ```json fences or with prose around
+       the object — strip that before parsing. */
+    const parseLooseJson = (text) => {
+        let t = String(text).trim();
+        const fence = t.match(/```(?:json)?\s*([\s\S]*?)```/i);
+        if (fence) t = fence[1].trim();
+        if (!t.startsWith('{')) {
+            const s = t.indexOf('{'), e = t.lastIndexOf('}');
+            if (s >= 0 && e > s) t = t.slice(s, e + 1);
+        }
+        return JSON.parse(t);
+    };
+
+    /* Shared ingestion for file + paste. Returns null on success, error string on failure. */
+    const ingestImportedJson = (json) => {
+        try {
+
+            // Full JointJS graph (what "JSON" export produces) → straight to canvas
+            if (Array.isArray(json.cells)) {
+                if (canvasRef.current) canvasRef.current.loadGraph(json);
+                const elIds = json.cells.filter(c => !/Link/i.test(c.type || '')).map(c => c.id);
+                const lnIds = json.cells.filter(c => /Link/i.test(c.type || '')).map(c => c.id);
+                setPlacedNodeIds(new Set(elIds));
+                setConnectedEdgeIds(new Set(lnIds));
+                setError(null);
+                setDebugInfo(`Imported diagram: ${elIds.length} shapes, ${lnIds.length} connections.`);
+                return null;
+            }
+
+            // Simple schema (BYO-LLM prompt output) → node panel, then Place All + Auto-Connect
+            const nodes = json.nodes || json.entities;
+            if (Array.isArray(nodes) && nodes.length > 0) {
+                const CAT_JOINT = {
+                    actor: 'uml.Actor', use_case: 'uml.UseCase', action: 'uml.ActionState',
+                    process: 'dfd.Process', system: 'uml.SystemBoundary', decision: 'uml.DecisionNode',
+                    start: 'uml.StartNode', end: 'uml.EndState',
+                    data_store: 'dfd.DataStore', external: 'dfd.ExternalEntity',
+                };
+                const aiN = nodes.map((n, i) => {
+                    const cat = String(n.category || 'use_case').toLowerCase();
+                    return {
+                        id: String(n.id || 'n' + i),
+                        label: String(n.label || n.name || 'Node ' + i),
+                        category: cat,
+                        fullDescription: n.desc || n.description || n.label || '',
+                        jointType: CAT_JOINT[cat] || 'uml.UseCase',
+                    };
+                });
+                const conns = json.connections || json.edges || [];
+                const nodeIds = new Set(aiN.map(n => n.id));
+                const labelOf = {};
+                aiN.forEach(n => { labelOf[n.id] = n.label; });
+                const aiI = conns.map((c, i) => {
+                    const from = String(c.from || c.source || '');
+                    const to = String(c.to || c.target || '');
+                    return {
+                        id: String(c.id || 'e' + i),
+                        from, to,
+                        label: c.label || '',
+                        text: `${labelOf[from] || from} → ${c.label || 'links to'} → ${labelOf[to] || to}`,
+                    };
+                }).filter(c => nodeIds.has(c.from) && nodeIds.has(c.to));
+
+                setAiNodes(aiN);
+                setAiInstructions(aiI);
+                setPlacedNodeIds(new Set());
+                setConnectedEdgeIds(new Set());
+                localStorage.setItem('uml_hiloop_nodes', JSON.stringify(aiN));
+                localStorage.setItem('uml_hiloop_instr', JSON.stringify(aiI));
+                setError(null);
+                setDebugInfo(`Imported ${aiN.length} nodes + ${aiI.length} connections — click "Place All", then "Auto-Connect".`);
+                return null;
+            }
+
+            return 'Unrecognized JSON — expected our exported diagram, or {"nodes":[...],"connections":[...]} (use the Copy Prompt starter).';
+        } catch (err) {
+            return 'Import failed: ' + err.message;
+        }
+    };
+
+    const handleImportFile = async (e) => {
+        const file = e.target.files && e.target.files[0];
+        e.target.value = '';
+        if (!file) return;
+        let msg;
+        try {
+            msg = ingestImportedJson(parseLooseJson(await file.text()));
+        } catch (err) {
+            msg = 'Import failed: ' + err.message;
+        }
+        setImportErr(msg);
+        if (!msg) { setImportModalOpen(false); setPasteText(''); }
+    };
+
+    const handleImportPaste = () => {
+        let msg;
+        try {
+            msg = ingestImportedJson(parseLooseJson(pasteText));
+        } catch (err) {
+            msg = 'Could not parse that as JSON: ' + err.message;
+        }
+        setImportErr(msg);
+        if (!msg) { setImportModalOpen(false); setPasteText(''); }
+    };
+
+    const copyLlmPrompt = async () => {
+        try {
+            await navigator.clipboard.writeText(BYO_LLM_PROMPT);
+            setDebugInfo('Starter prompt copied — paste it into any LLM, fill the <placeholders>, then Import ⬆ the JSON it returns.');
+        } catch {
+            window.prompt('Clipboard blocked — copy the prompt manually:', BYO_LLM_PROMPT);
+        }
+    };
+
     /* Drop All — proper UML use case layout */
     const handleDropAll = useCallback(() => {
         const canvas = canvasRef.current;
@@ -1075,33 +1320,13 @@ const Dashboard = () => {
         setSelectedShape(function(prev) { return prev ? { ...prev, width: w, height: h } : null; });
     };
 
-    /* ── Inline toolbar button ───────────────────────────────────────────── */
-    const TBtn = ({ onClick, title, active, children }) => (
-        <button
-            onClick={onClick}
-            title={title}
-            style={{
-                display: 'inline-flex', alignItems: 'center', justifyContent: 'center',
-                gap: '3px', padding: '5px 9px', borderRadius: '7px', cursor: 'pointer',
-                fontSize: '11px', fontWeight: '600', fontFamily: 'Inter, sans-serif',
-                border: active
-                    ? '1.5px solid ' + T.accent
-                    : '1.5px solid ' + T.border,
-                background: active
-                    ? (isDark ? '#1e2040' : '#eff6ff')
-                    : (isDark ? '#1c2033' : T.surface),
-                color: active ? T.accent : T.text,
-                transition: 'all 0.15s',
-                whiteSpace: 'nowrap',
-            }}
-        >
-            {children}
-        </button>
-    );
-
-    const Sep = () => (
-        <div style={{ width: '1px', height: '20px', background: T.border, margin: '0 2px', flexShrink: 0 }} />
-    );
+    /* ── Inline toolbar button ───────────────────────────────────────────────
+       NOTE: TBtn/Sep are module-level components (defined below the Dashboard).
+       They were previously declared INSIDE Dashboard, which makes React see a brand
+       new component type on every render — every toolbar button unmounted and
+       remounted on any state change (like selecting a shape), so clicks that landed
+       around a re-render were silently swallowed ("buttons randomly don't work"). */
+    const tbtnTheme = { T, isDark };
 
     /* ── Render ──────────────────────────────────────────────────────────── */
     return (
@@ -1273,69 +1498,103 @@ const Dashboard = () => {
                         </span>
                     </div>
 
-                    <Sep />
+                    <Sep theme={tbtnTheme} />
 
                     {/* Undo / Redo */}
-                    <TBtn title="Undo (Ctrl+Z)" onClick={() => canvasRef.current && canvasRef.current.undo()}>↩ Undo</TBtn>
-                    <TBtn title="Redo (Ctrl+Y)" onClick={() => canvasRef.current && canvasRef.current.redo()}>↪ Redo</TBtn>
+                    <TBtn theme={tbtnTheme} title="Undo (Ctrl+Z)" onClick={() => canvasRef.current && canvasRef.current.undo()}>↩ Undo</TBtn>
+                    <TBtn theme={tbtnTheme} title="Redo (Ctrl+Y)" onClick={() => canvasRef.current && canvasRef.current.redo()}>↪ Redo</TBtn>
 
-                    <Sep />
+                    <Sep theme={tbtnTheme} />
 
                     {/* Zoom */}
-                    <TBtn title="Zoom Out" onClick={() => canvasRef.current && canvasRef.current.zoomOut()}>−</TBtn>
+                    <TBtn theme={tbtnTheme} title="Zoom Out" onClick={() => canvasRef.current && canvasRef.current.zoomOut()}>−</TBtn>
                     <span style={{ fontSize: '12px', fontWeight: '700', color: T.text, minWidth: '42px', textAlign: 'center' }}>
                         {zoom}%
                     </span>
-                    <TBtn title="Zoom In" onClick={() => canvasRef.current && canvasRef.current.zoomIn()}>+</TBtn>
-                    <TBtn title="Fit diagram to viewport" onClick={() => canvasRef.current && canvasRef.current.fitContent()}>⊡ Fit</TBtn>
-                    <TBtn title="Reset zoom to 100%" onClick={() => canvasRef.current && canvasRef.current.resetZoom()}>1:1</TBtn>
+                    <TBtn theme={tbtnTheme} title="Zoom In" onClick={() => canvasRef.current && canvasRef.current.zoomIn()}>+</TBtn>
+                    <TBtn theme={tbtnTheme} title="Fit diagram to viewport" onClick={() => canvasRef.current && canvasRef.current.fitContent()}>⊡ Fit</TBtn>
+                    <TBtn theme={tbtnTheme} title="Reset zoom to 100%" onClick={() => canvasRef.current && canvasRef.current.resetZoom()}>1:1</TBtn>
 
-                    <Sep />
+                    <Sep theme={tbtnTheme} />
                     
-                    <TBtn title="Auto-align nodes to prevent overlap" onClick={() => canvasRef.current && canvasRef.current.autoLayout()}>
+                    <TBtn theme={tbtnTheme} variant="action" title="Auto-align nodes to prevent overlap" onClick={() => canvasRef.current && canvasRef.current.autoLayout()}>
                         Auto-Align
                     </TBtn>
+                    <TBtn theme={tbtnTheme} variant="action" title="Draw all AI-suggested connections between placed nodes" onClick={handleAutoConnect}>
+                        ⛓ Auto-Connect
+                    </TBtn>
+                    <TBtn theme={tbtnTheme} variant="action" title="Check the diagram for UML issues (disconnected nodes, actors inside the boundary, missing start/end…)" onClick={() => {
+                        if (canvasRef.current) setDebugInfo(canvasRef.current.getLintReport().join('\n'));
+                    }}>
+                        ✔ Check
+                    </TBtn>
 
-                    <Sep />
+                    <Sep theme={tbtnTheme} />
 
                     {/* History Toggle */}
-                    <TBtn title="View Previous Diagrams" active={showHistory} onClick={() => setShowHistory(!showHistory)}>
+                    <TBtn theme={tbtnTheme} title="View Previous Diagrams" active={showHistory} onClick={() => setShowHistory(!showHistory)}>
                         🕰 History
                     </TBtn>
 
                     {/* Insights Toggle */}
-                    <TBtn title="View SRS Insights" active={showInsights} onClick={() => setShowInsights(!showInsights)}>
+                    <TBtn theme={tbtnTheme} title="View SRS Insights" active={showInsights} onClick={() => setShowInsights(!showInsights)}>
                         💡 Insights
                     </TBtn>
 
-                    <Sep />
+                    <Sep theme={tbtnTheme} />
 
                     {/* Dark mode */}
-                    <TBtn title="Toggle Dark Mode" active={isDark} onClick={() => setIsDark(!isDark)}>
+                    <TBtn theme={tbtnTheme} title="Toggle Dark Mode" active={isDark} onClick={() => setIsDark(!isDark)}>
                         {isDark ? '☀ Light' : '◐ Dark'}
                     </TBtn>
 
-                    <Sep />
+                    <Sep theme={tbtnTheme} />
 
                     {/* Download options */}
-                    <TBtn title="Download as PNG" onClick={() => canvasRef.current && canvasRef.current.exportPNG()}>
+                    <TBtn theme={tbtnTheme} variant="export" title="Download as PNG" onClick={() => {
+                        if (!canvasRef.current) return;
+                        const n = askExportName('png');
+                        if (n !== null) canvasRef.current.exportPNG(n);
+                    }}>
                         <Image size={13} /> PNG
                     </TBtn>
-                    <TBtn title="Download as SVG" onClick={() => canvasRef.current && canvasRef.current.exportSVG()}>
+                    <TBtn theme={tbtnTheme} variant="export" title="Download as SVG" onClick={() => {
+                        if (!canvasRef.current) return;
+                        const n = askExportName('svg');
+                        if (n !== null) canvasRef.current.exportSVG(n);
+                    }}>
                         <FileText size={13} /> SVG
                     </TBtn>
-                    <TBtn title="Download as JSON" onClick={() => canvasRef.current && canvasRef.current.exportJSON()}>
+                    <TBtn theme={tbtnTheme} variant="export" title="Download as JSON" onClick={() => {
+                        if (!canvasRef.current) return;
+                        const n = askExportName('json');
+                        if (n !== null) canvasRef.current.exportJSON(n);
+                    }}>
                         <FileJson size={13} /> JSON
                     </TBtn>
+                    <input
+                        type="file"
+                        ref={importInputRef}
+                        style={{ display: 'none' }}
+                        accept=".json,application/json"
+                        onChange={handleImportFile}
+                    />
 
-                    <Sep />
+                    <Sep theme={tbtnTheme} />
 
-                    {/* Delete / Clear */}
-                    <TBtn title="Delete selected shape" onClick={() => canvasRef.current && canvasRef.current.deleteSelected()}>
+                    {/* Delete / Clear — disabled until a shape is selected, so the button
+                        visibly explains itself instead of silently doing nothing */}
+                    <TBtn
+                        theme={tbtnTheme}
+                        variant="danger"
+                        title={selectedShape ? "Delete selected shape" : "Select a shape first, then Delete"}
+                        disabled={!selectedShape}
+                        onClick={() => canvasRef.current && canvasRef.current.deleteSelected()}
+                    >
                         <Trash2 size={13} /> Delete
                     </TBtn>
                     {/* Reset Canvas */}
-                    <TBtn title="Reset canvas (keep sidebar nodes)" onClick={() => {
+                    <TBtn theme={tbtnTheme} variant="danger" title="Reset canvas (keep sidebar nodes)" onClick={() => {
                         if (window.confirm('Clear canvas? Extracted nodes will stay in the sidebar.')) {
                             if (canvasRef.current) canvasRef.current.clearAll();
                             setPlacedNodeIds(new Set());
@@ -1347,7 +1606,7 @@ const Dashboard = () => {
                     </TBtn>
 
                     {/* Clear All */}
-                    <TBtn title="Wipe everything and start fresh" onClick={() => {
+                    <TBtn theme={tbtnTheme} variant="danger" title="Wipe everything and start fresh" onClick={() => {
                         if (window.confirm('Wipe everything? This will clear the sidebar and all AI progress.')) {
                             if (canvasRef.current) canvasRef.current.clearAll();
                             setAiNodes([]);
@@ -1378,6 +1637,44 @@ const Dashboard = () => {
                     zIndex: 10,
                 }}>
                     <div style={{ maxWidth: '1200px', margin: '0 auto' }}>
+                        {/* Bring-your-own-LLM starter — only while the workspace is empty */}
+                        {aiNodes.length === 0 && !loading && (
+                            <div style={{
+                                display: 'flex', alignItems: 'center', gap: '10px',
+                                padding: '8px 12px', borderRadius: '8px', marginBottom: '10px',
+                                border: '1.5px dashed ' + T.border, background: T.surfaceAlt,
+                            }}>
+                                <span style={{ fontSize: '11px', color: T.textMuted, flex: 1, lineHeight: 1.5 }}>
+                                    🤖 <b>Don't have things ready?</b> Copy this starter prompt into any LLM (ChatGPT, Gemini, Claude…),
+                                    fill in <b>&lt;your project name&gt;</b> and <b>&lt;your specification&gt;</b> — it returns a JSON
+                                    you can <b>⬆ Import</b> here.
+                                </span>
+                                <button
+                                    onClick={copyLlmPrompt}
+                                    style={{
+                                        flexShrink: 0, padding: '6px 12px', borderRadius: '8px',
+                                        border: '1.5px solid ' + T.accent, background: 'transparent',
+                                        color: T.accent, fontSize: '11px', fontWeight: '700',
+                                        cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+                                    }}
+                                >
+                                    📋 Copy Prompt
+                                </button>
+                                <button
+                                    onClick={() => { setImportErr(null); setImportModalOpen(true); }}
+                                    title="Import a diagram JSON — paste your LLM's response, or choose a file"
+                                    style={{
+                                        flexShrink: 0, padding: '6px 12px', borderRadius: '8px',
+                                        border: 'none', background: T.accent,
+                                        color: '#ffffff', fontSize: '11px', fontWeight: '700',
+                                        cursor: 'pointer', fontFamily: 'Inter, sans-serif',
+                                    }}
+                                >
+                                    ⬆ Import
+                                </button>
+                            </div>
+                        )}
+
                         {error && (
                             <div style={{
                                 padding: '8px 12px', borderRadius: '8px',
@@ -1386,6 +1683,29 @@ const Dashboard = () => {
                                 marginBottom: '10px',
                             }}>
                                 <strong>Error:</strong> {error}
+                            </div>
+                        )}
+
+                        {/* Status line — setDebugInfo was previously written but never
+                            rendered, so Auto-Connect/import feedback vanished silently. */}
+                        {debugInfo && (
+                            <div style={{
+                                padding: '8px 12px', borderRadius: '8px',
+                                background: isDark ? '#1e2040' : '#eff6ff',
+                                border: '1px solid ' + T.accent,
+                                color: T.accent, fontSize: '11px', lineHeight: '1.5',
+                                marginBottom: '10px',
+                                display: 'flex', alignItems: 'center', gap: '8px',
+                            }}>
+                                <span style={{ flex: 1, whiteSpace: 'pre-line' }}>{debugInfo}</span>
+                                <button
+                                    onClick={() => setDebugInfo(null)}
+                                    title="Dismiss"
+                                    style={{
+                                        background: 'none', border: 'none', cursor: 'pointer',
+                                        color: T.accent, fontSize: '13px', lineHeight: 1, padding: '0 2px',
+                                    }}
+                                >✕</button>
                             </div>
                         )}
 
@@ -1819,6 +2139,78 @@ const Dashboard = () => {
                         </div>
                     )}
 
+                    {/* ── Import modal: paste an LLM response, or pick a file ── */}
+                    {importModalOpen && (
+                        <div style={{
+                            position: 'absolute', inset: 0, zIndex: 200,
+                            background: 'rgba(0,0,0,0.45)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        }} onClick={() => setImportModalOpen(false)}>
+                            <div onClick={(e) => e.stopPropagation()} style={{
+                                width: 'min(640px, 90%)', background: T.surface,
+                                border: '1px solid ' + T.border, borderRadius: '14px',
+                                boxShadow: '0 20px 60px rgba(0,0,0,0.35)', padding: '18px',
+                                fontFamily: 'Inter, sans-serif',
+                            }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '10px' }}>
+                                    <span style={{ fontWeight: '700', fontSize: '14px', color: T.accent }}>⬆ Import Diagram</span>
+                                    <button onClick={() => setImportModalOpen(false)} style={{ background: 'none', border: 'none', cursor: 'pointer', color: T.textMuted }}>
+                                        <XCircle size={17} />
+                                    </button>
+                                </div>
+
+                                <p style={{ margin: '0 0 8px', fontSize: '11px', color: T.textMuted, lineHeight: 1.5 }}>
+                                    Paste the JSON your LLM returned (code fences are fine — we strip them), or pick a saved
+                                    <b> .json</b> file. Use <b>📋 Copy Prompt</b> on the main screen to get the starter prompt.
+                                </p>
+
+                                <textarea
+                                    value={pasteText}
+                                    onChange={(e) => setPasteText(e.target.value)}
+                                    placeholder={'Paste your LLM response here…\n\n{\n  "nodes": [ … ],\n  "connections": [ … ]\n}'}
+                                    spellCheck={false}
+                                    style={{
+                                        width: '100%', boxSizing: 'border-box', height: '220px', resize: 'vertical',
+                                        padding: '10px', borderRadius: '10px',
+                                        border: '1.5px dashed ' + T.border, background: T.inputBg, color: T.text,
+                                        fontSize: '12px', fontFamily: 'monospace', outline: 'none', lineHeight: 1.5,
+                                    }}
+                                />
+
+                                {importErr && (
+                                    <div style={{
+                                        marginTop: '8px', padding: '7px 10px', borderRadius: '8px',
+                                        background: T.errBg, border: '1px solid ' + T.errBorder,
+                                        color: T.errText, fontSize: '11px',
+                                    }}>
+                                        {importErr}
+                                    </div>
+                                )}
+
+                                <div style={{ display: 'flex', gap: '8px', marginTop: '12px' }}>
+                                    <button onClick={() => importInputRef.current && importInputRef.current.click()} style={{
+                                        flex: 1, padding: '9px', borderRadius: '9px',
+                                        background: 'transparent', border: '1.5px solid ' + T.border,
+                                        color: T.text, fontSize: '12px', fontWeight: '600', cursor: 'pointer',
+                                        fontFamily: 'Inter, sans-serif',
+                                    }}>
+                                        📁 Import File…
+                                    </button>
+                                    <button onClick={handleImportPaste} disabled={!pasteText.trim()} style={{
+                                        flex: 1, padding: '9px', borderRadius: '9px',
+                                        background: pasteText.trim() ? T.accent : T.border,
+                                        border: 'none', color: '#ffffff',
+                                        fontSize: '12px', fontWeight: '700',
+                                        cursor: pasteText.trim() ? 'pointer' : 'not-allowed',
+                                        fontFamily: 'Inter, sans-serif',
+                                    }}>
+                                        📋 Import Pasted JSON
+                                    </button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+
                     {/* ── Properties Panel (appears when shape selected) ── */}
                     {selectedShape && (
                         <div style={{
@@ -1844,6 +2236,81 @@ const Dashboard = () => {
                                 </button>
                             </div>
 
+                            {selectedShape.kind === 'link' ? (<>
+                                {/* ── Edge editor ── */}
+                                <div style={{
+                                    fontSize: '11px', fontWeight: '600', color: T.badgeText,
+                                    background: T.badgeBg, border: '1px solid ' + T.badgeBorder,
+                                    padding: '3px 8px', borderRadius: '6px', display: 'inline-block', marginBottom: '12px',
+                                }}>
+                                    Connection
+                                </div>
+
+                                <div style={{ marginBottom: '10px' }}>
+                                    <label style={{ fontSize: '11px', fontWeight: '600', color: T.textMuted, display: 'block', marginBottom: '4px' }}>Label</label>
+                                    <input
+                                        type="text"
+                                        value={editLabel}
+                                        onChange={(e) => setEditLabel(e.target.value)}
+                                        onBlur={() => canvasRef.current && canvasRef.current.updateLinkLabel(selectedShape.id, editLabel)}
+                                        onKeyDown={(e) => { if (e.key === 'Enter') e.target.blur(); }}
+                                        placeholder="e.g. places, «include»…"
+                                        style={{
+                                            width: '100%', boxSizing: 'border-box', padding: '6px 8px', borderRadius: '7px',
+                                            border: '1px solid ' + T.border, background: T.inputBg, color: T.text,
+                                            fontSize: '12px', fontFamily: 'Inter, sans-serif', outline: 'none',
+                                        }} />
+                                </div>
+
+                                <div style={{ marginBottom: '10px' }}>
+                                    <label style={{ fontSize: '11px', fontWeight: '600', color: T.textMuted, display: 'block', marginBottom: '4px' }}>Edge Type</label>
+                                    <select
+                                        defaultValue=""
+                                        onChange={(e) => {
+                                            if (!canvasRef.current || !e.target.value) return;
+                                            const stereo = canvasRef.current.setLinkStyle(selectedShape.id, e.target.value);
+                                            if (stereo !== null && stereo !== undefined) setEditLabel(stereo);
+                                        }}
+                                        style={{
+                                            width: '100%', boxSizing: 'border-box', padding: '6px 8px', borderRadius: '7px',
+                                            border: '1px solid ' + T.border, background: T.inputBg, color: T.text,
+                                            fontSize: '12px', fontFamily: 'Inter, sans-serif', outline: 'none', cursor: 'pointer',
+                                        }}>
+                                        <option value="" disabled>Change type…</option>
+                                        <option value="arrow">Arrow (directed)</option>
+                                        <option value="association">Association (plain line)</option>
+                                        <option value="include">«include» (dashed)</option>
+                                        <option value="extend">«extend» (dashed)</option>
+                                        <option value="generalization">Generalization (hollow head)</option>
+                                    </select>
+                                </div>
+
+                                <button onClick={() => canvasRef.current && canvasRef.current.reverseLink(selectedShape.id)} style={{
+                                    width: '100%', padding: '8px', borderRadius: '8px', marginBottom: '8px',
+                                    background: 'transparent', border: '1px solid ' + T.border,
+                                    color: T.text, fontSize: '12px', fontWeight: '600', cursor: 'pointer',
+                                    fontFamily: 'Inter, sans-serif',
+                                }}>
+                                    ⇄ Reverse Direction
+                                </button>
+
+                                <button onClick={() => {
+                                    if (canvasRef.current) {
+                                        canvasRef.current.deleteSelected();
+                                        setSelectedShape(null);
+                                    }
+                                }} style={{
+                                    width: '100%', padding: '8px', borderRadius: '8px',
+                                    background: isDark ? '#450a0a' : '#fef2f2',
+                                    border: '1px solid ' + (isDark ? '#991b1b' : '#fecaca'),
+                                    color: isDark ? '#fca5a5' : '#b91c1c',
+                                    fontSize: '12px', fontWeight: '600', cursor: 'pointer',
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                                    fontFamily: 'Inter, sans-serif',
+                                }}>
+                                    <Trash2 size={14} /> Delete Connection
+                                </button>
+                            </>) : (<>
                             {/* Type badge */}
                             <div style={{
                                 fontSize: '11px', fontWeight: '600', color: T.badgeText,
@@ -1951,6 +2418,7 @@ const Dashboard = () => {
                             }}>
                                 <Trash2 size={14} /> Delete Shape
                             </button>
+                            </>)}
                         </div>
                     )}
 

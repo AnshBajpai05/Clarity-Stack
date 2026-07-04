@@ -110,6 +110,7 @@ def get_decision_trace(db: Session, chat_id: str):
     justified each link, so the trace is auditable rather than asserted.
     """
     from knowledge_graph_builder import _tokens
+    from claim_similarity import claim_tokens, same_claim, cluster_texts
 
     nodes = {n.id: n for n in db.query(KnowledgeNode).filter(KnowledgeNode.chat_id == chat_id).all()}
     edges = db.query(KnowledgeEdge).filter(KnowledgeEdge.chat_id == chat_id).all()
@@ -145,4 +146,35 @@ def get_decision_trace(db: Session, chat_id: str):
             "links": links,
             "n_links": len(links),
         })
-    return out
+
+    # ── §18.1 read-time dedupe (covers data stored BEFORE write-time dedupe) ──────
+    # The ensemble stored each model's PHRASING of the same decision as its own node,
+    # so the cockpit repeated one decision (and its whole resolve-path) 3x. Cluster
+    # near-duplicate decisions; keep the shortest phrasing as canonical; union their
+    # links, dropping links that are themselves near-duplicates within a relation.
+    clusters = cluster_texts([t["decision"] for t in out])
+    merged = []
+    for idx in clusters:
+        members = [out[i] for i in idx]
+        canon = min(members, key=lambda t: len(t["decision"]))
+        kept_links, kept_toks = [], []   # kept_toks: [(relation, token_set)]
+        for t in members:
+            for l in t["links"]:
+                lt = claim_tokens(l["content"])
+                if any(rel == l["relation"] and same_claim(lt, ts) for rel, ts in kept_toks):
+                    continue
+                kept_toks.append((l["relation"], lt))
+                kept_links.append(l)
+        kept_links.sort(key=lambda l: (-len(l["shared_terms"]), l["section"]))
+        # Agreement: best measured value across the merged variants (all same synthesis
+        # run in practice; max is the honest choice when one variant lacks a value).
+        confs = [t["confidence"] for t in members if t["confidence"] is not None]
+        merged.append({
+            **canon,
+            "confidence": max(confs) if confs else None,
+            "links": kept_links,
+            "n_links": len(kept_links),
+            "n_variants": len(members),
+            "variant_ids": [t["decision_id"] for t in members],
+        })
+    return merged

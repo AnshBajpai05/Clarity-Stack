@@ -13,6 +13,8 @@
 
 import React, { useEffect, useRef, useImperativeHandle, forwardRef, useCallback } from 'react';
 import * as joint from 'jointjs';
+import dagre from 'dagre';
+import graphlib from 'graphlib';
 import 'jointjs/dist/joint.css';
 import { SHAPE_MAP, DEFAULT_SIZES, CELL_NAMESPACE } from '../joint-logic/customShapes';
 
@@ -198,17 +200,23 @@ const makeLinkTools = () =>
     new joint.dia.ToolsView({
         name: 'link-tools',
         tools: [
-            new joint.linkTools.Vertices({ snapRadius: 20 }),
+            // vertexAdding:false — the default adds an invisible full-path hit band
+            // that swallows every click on the line, so link:pointerdown never fired
+            // and links could not be selected (the edge Properties panel depends on
+            // it). Existing vertices stay draggable.
+            new joint.linkTools.Vertices({ snapRadius: 20, vertexAdding: false }),
             new joint.linkTools.SourceArrowhead(),
             new joint.linkTools.TargetArrowhead(),
-            new joint.linkTools.Remove({ distance: '50%' }),
+            // 25% — at 50% the ✕ sat exactly on the label midpoint, so "select the
+            // edge" clicks deleted it instead.
+            new joint.linkTools.Remove({ distance: '25%' }),
         ],
     });
 
 /* ═══════════════════════════════════════════════════════════════════════════
    DiagramCanvas component
 ═══════════════════════════════════════════════════════════════════════════ */
-const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGrid, onZoomChange, onSelectionChange, onPositionUpdate, onHoverNode, onCellRemoved }, ref) {
+const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGrid, onZoomChange, onSelectionChange, onPositionUpdate, onHoverNode, onCellAdded, onCellRemoved }, ref) {
     const wrapperRef  = useRef(null);
     const paperRef    = useRef(null);
     const graphRef    = useRef(null);
@@ -408,7 +416,17 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
         });
 
         graph.on('remove', function(cell) {
+            // Drop the cell from the position store, or the next position
+            // broadcast resurrects the deleted id in Dashboard's placedNodeIds
+            // (which is rebuilt from the store's keys) and the sidebar card
+            // never becomes available to place again.
+            delete positionStore.current[cell.id];
+            if (onPositionUpdate) onPositionUpdate({ ...positionStore.current });
             if (onCellRemoved) onCellRemoved(cell.id);
+        });
+
+        graph.on('add', function(cell) {
+            if (onCellAdded) onCellAdded(cell.id, cell.isLink() ? 'link' : 'element');
         });
 
         /* ── Selection tracking ─────────────────────────────────────────── */
@@ -420,6 +438,18 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
                 var lbl = cv.model.attr('label/text') || cv.model.get('type').split('.')[1] || '';
                 onSelectionChange({ id: cv.model.id, type: cv.model.get('type'), width: sz.width, height: sz.height, x: ps.x, y: ps.y, label: lbl });
             }
+        });
+
+        /* Keep the Properties panel live: selection info was only emitted on
+           pointerdown, so programmatic moves/resizes (Auto-Align, drag, resize
+           tool) left the panel showing stale x/y/width/height. */
+        graph.on('change:position change:size', function(cell) {
+            if (cell !== selectedRef.current || !onSelectionChange) return;
+            if (cell.isLink && cell.isLink()) return;
+            var sz = cell.get('size');
+            var ps = cell.get('position');
+            var lbl = cell.attr('label/text') || cell.get('type').split('.')[1] || '';
+            onSelectionChange({ id: cell.id, type: cell.get('type'), width: sz.width, height: sz.height, x: ps.x, y: ps.y, label: lbl });
         });
 
         /* Real-time position tracking for HITL sidebars */
@@ -436,7 +466,12 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
         paper.on('element:pointerup', reportPositions);
         paper.on('link:pointerdown', function(lv) {
             selectedRef.current = lv.model;
-            if (onSelectionChange) onSelectionChange(null);
+            if (onSelectionChange) {
+                var lbls = lv.model.labels() || [];
+                var lbl = '';
+                if (lbls[0] && lbls[0].attrs && lbls[0].attrs.text) lbl = lbls[0].attrs.text.text || '';
+                onSelectionChange({ kind: 'link', id: lv.model.id, label: lbl });
+            }
         });
         paper.on('blank:pointerdown', function() {
             selectedRef.current = null;
@@ -790,6 +825,43 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
                     cx = (wrapperRef.current.offsetWidth / 2 - t.tx) / sc;
                     cy = (wrapperRef.current.offsetHeight / 2 - t.ty) / sc;
                 }
+                /* UML use-case relationship types — spawned floating in the viewport
+                   center; the user drags the endpoints onto shapes to connect. */
+                var UC_REL = {
+                    'ucrel.Association':    { dash: '0',   marker: 'none',   label: null },
+                    'ucrel.Include':        { dash: '6 4', marker: 'open',   label: '«include»' },
+                    'ucrel.Extend':         { dash: '6 4', marker: 'open',   label: '«extend»' },
+                    'ucrel.Generalization': { dash: '0',   marker: 'hollow', label: null },
+                    'dfd.Flow':             { dash: '0',   marker: 'arrow',  label: 'data' },
+                };
+                if (UC_REL[type]) {
+                    var rel = UC_REL[type];
+                    // Small jitter so consecutive clicks don't stack links exactly
+                    // on top of each other in the viewport center.
+                    cx += (Math.random() - 0.5) * 120;
+                    cy += (Math.random() - 0.5) * 120;
+                    var lineColor = darkMode ? '#94a3b8' : '#6b7280';
+                    var marker =
+                        rel.marker === 'none'   ? { type: 'none' } :
+                        rel.marker === 'arrow'  ? { type: 'arrow', size: 10 } :
+                        rel.marker === 'hollow' // generalization: hollow triangle
+                            ? { type: 'path', d: 'M 16 -8 0 0 16 8 Z', fill: darkMode ? '#0d0f17' : '#ffffff', stroke: lineColor, 'stroke-width': 1.5 }
+                            : { type: 'path', d: 'M 12 -6 0 0 12 6', fill: 'none', stroke: lineColor, 'stroke-width': 1.5 };
+                    graph.addCell(new joint.shapes.standard.Link({
+                        id,
+                        source: { x: cx - 90, y: cy },
+                        target: { x: cx + 90, y: cy },
+                        attrs: { line: { stroke: lineColor, strokeWidth: 1.5, strokeDasharray: rel.dash, targetMarker: marker } },
+                        labels: rel.label ? [{
+                            position: 0.5,
+                            attrs: {
+                                text: { text: rel.label, fontSize: 10, fill: lineColor, fontStyle: 'italic' },
+                                rect: { fill: darkMode ? '#0d0f17' : '#ffffff', stroke: 'none' },
+                            },
+                        }] : [],
+                    }));
+                    return;
+                }
                 if (type === 'standard.Link') {
                     graph.addCell(new joint.shapes.standard.Link({
                         id,
@@ -812,6 +884,9 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
                     return;
                 }
                 var defSize = DEFAULT_SIZES[type] || { width: 160, height: 60 };
+                // Jitter like the link presets, so repeated clicks don't stack shapes.
+                cx += (Math.random() - 0.5) * 120;
+                cy += (Math.random() - 0.5) * 120;
                 var pos = { x: cx - defSize.width / 2, y: cy - defSize.height / 2 };
                 var defLabel = type.split('.')[1] || type;
                 var el = buildElement({ id, type, position: pos, attrs: { label: { text: defLabel } } });
@@ -929,12 +1004,17 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
                 p.translate(0, 0);
                 if (onZoomChange) onZoomChange(100);
             },
-            exportPNG: function() {
+            exportPNG: function(filename) {
+                var name = filename || 'diagram';
                 var p = paperRef.current;
                 if (!p) return;
                 p.hideTools();
                 var svg = p.svg;
-                var bbox = p.getContentBBox();
+                // getContentArea() = LOCAL (unscaled) coords — correct for a viewBox.
+                // getContentBBox() is in client coords, so any zoom != 100% produced a
+                // wrong/huge viewBox and the export silently never fired (img.onload
+                // never ran and there was no onerror).
+                var bbox = p.getContentArea();
                 var PAD = 40;
                 var cloned = svg.cloneNode(true);
                 cloned.setAttribute('width', bbox.width + PAD * 2);
@@ -943,9 +1023,11 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
                 var serializer = new XMLSerializer();
                 var svgStr = serializer.serializeToString(cloned);
                 var canvas = document.createElement('canvas');
-                var scale = 2;
-                canvas.width  = (bbox.width + PAD * 2) * scale;
-                canvas.height = (bbox.height + PAD * 2) * scale;
+                // 2x for crispness, but cap the longest side so a sprawling diagram
+                // can't allocate an impossible canvas (which fails silently).
+                var scale = Math.min(2, 8000 / Math.max(bbox.width + PAD * 2, bbox.height + PAD * 2, 1));
+                canvas.width  = Math.max(1, Math.round((bbox.width + PAD * 2) * scale));
+                canvas.height = Math.max(1, Math.round((bbox.height + PAD * 2) * scale));
                 var ctx = canvas.getContext('2d');
                 ctx.fillStyle = darkMode ? '#0f172a' : '#ffffff';
                 ctx.fillRect(0, 0, canvas.width, canvas.height);
@@ -956,19 +1038,29 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
                     ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
                     URL.revokeObjectURL(url);
                     var link = document.createElement('a');
-                    link.download = 'diagram.png';
+                    link.download = name + '.png';
                     link.href = canvas.toDataURL('image/png');
                     link.click();
+                };
+                img.onerror = function() {
+                    URL.revokeObjectURL(url);
+                    console.error('[exportPNG] SVG rasterization failed — falling back to SVG download');
+                    var link = document.createElement('a');
+                    link.download = name + '.svg';
+                    link.href = URL.createObjectURL(blob);
+                    link.click();
+                    URL.revokeObjectURL(link.href);
                 };
                 img.src = url;
                 p.showTools();
             },
-            exportSVG: function() {
+            exportSVG: function(filename) {
+                var name = filename || 'diagram';
                 var p = paperRef.current;
                 if (!p) return;
                 p.hideTools();
                 var svg = p.svg;
-                var bbox = p.getContentBBox();
+                var bbox = p.getContentArea();   // local coords (see exportPNG note)
                 var PAD = 40;
                 var cloned = svg.cloneNode(true);
                 cloned.setAttribute('width', bbox.width + PAD * 2);
@@ -984,19 +1076,20 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
                 var svgStr = serializer.serializeToString(cloned);
                 var blob = new Blob([svgStr], { type: 'image/svg+xml;charset=utf-8' });
                 var link = document.createElement('a');
-                link.download = 'diagram.svg';
+                link.download = name + '.svg';
                 link.href = URL.createObjectURL(blob);
                 link.click();
                 URL.revokeObjectURL(link.href);
                 p.showTools();
             },
-            exportJSON: function() {
+            exportJSON: function(filename) {
+                var name = filename || 'diagram';
                 var g = graphRef.current;
                 if (!g) return;
                 var json = JSON.stringify(g.toJSON(), null, 2);
                 var blob = new Blob([json], { type: 'application/json' });
                 var link = document.createElement('a');
-                link.download = 'diagram.json';
+                link.download = name + '.json';
                 link.href = URL.createObjectURL(blob);
                 link.click();
                 URL.revokeObjectURL(link.href);
@@ -1075,35 +1168,91 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
                 return true;
             },
 
-            /* Auto-align all elements to prevent overlap */
+            /* Auto-align: PROPER layered layout (dagre via joint.layout.DirectedGraph).
+             * The old implementation flowed nodes left-to-right in rows, ignoring the
+             * edges entirely — flows stayed tangled and link labels piled on top of
+             * nodes. Dagre ranks nodes along the edge direction, spreads siblings, and
+             * routes link vertices, which is what "Auto-Align" promises.
+             * SystemBoundary containers are excluded from ranking (they are overlays,
+             * not flow nodes) and re-fitted around their content afterwards. */
             autoLayout: function() {
                 var graph = graphRef.current;
                 if (!graph) return;
-                var elements = graph.getElements();
-                if (elements.length === 0) return;
+                var all = graph.getElements();
+                if (all.length === 0) return;
 
-                var startX = 100, startY = 100;
-                var paddingX = 120, paddingY = 80;
-                var currentX = startX, currentY = startY;
-                var maxRowHeight = 0;
-                var maxWidth = wrapperRef.current ? wrapperRef.current.offsetWidth - 300 : 1000;
+                var boundaries = all.filter(function(el) { return el.get('type') === 'uml.SystemBoundary'; });
+                var flowEls = all.filter(function(el) { return el.get('type') !== 'uml.SystemBoundary'; });
+                if (flowEls.length === 0) return;
 
-                elements.forEach(function(el) {
-                    var size = el.size();
-                    if (currentX + size.width > maxWidth) {
-                        currentX = startX;
-                        currentY += maxRowHeight + paddingY;
-                        maxRowHeight = 0;
-                    }
-                    el.position(currentX, currentY);
-                    
-                    // Update store
-                    positionStore.current[el.id] = { x: currentX, y: currentY, w: size.width, h: size.height };
+                // A single boundary always adopts the WHOLE flow: Auto-Align promises
+                // "boundary around all of it", and re-fitting around only the nodes
+                // that happened to sit inside pre-layout left the rest of the diagram
+                // hanging outside. Actors stay out per UML (the system boundary
+                // encloses the system's behavior; actors stand outside it).
+                // With multiple boundaries (nested subsystem boxes) each keeps the
+                // members it geometrically contained, falling back to the whole flow
+                // when it was empty.
+                var wholeFlow = flowEls.filter(function(el) { return el.get('type') !== 'uml.Actor'; });
+                var boundaryMembers = boundaries.map(function(b) {
+                    if (boundaries.length === 1) return { el: b, members: wholeFlow };
+                    var bb = b.getBBox();
+                    var contained = flowEls.filter(function(el) { return bb.containsRect(el.getBBox()); });
+                    return {
+                        el: b,
+                        members: contained.length > 0 ? contained : wholeFlow,
+                    };
+                });
 
-                    currentX += size.width + paddingX;
-                    maxRowHeight = Math.max(maxRowHeight, size.height);
+                var flowIds = {};
+                flowEls.forEach(function(el) { flowIds[el.id] = true; });
+                var flowLinks = graph.getLinks().filter(function(l) {
+                    var s = l.get('source') || {}, t = l.get('target') || {};
+                    return flowIds[s.id] && flowIds[t.id];
+                });
+
+                joint.layout.DirectedGraph.layout(flowEls.concat(flowLinks), {
+                    dagre: dagre,
+                    graphlib: graphlib,
+                    rankDir: 'TB',       // flows read top-to-bottom (start → end)
+                    ranker: 'network-simplex',
+                    rankSep: 90,
+                    nodeSep: 70,
+                    edgeSep: 40,
+                    marginX: 80,
+                    marginY: 80,
+                    setVertices: true,   // dagre routes the links around nodes
+                    setLabels: true,     // and spaces the link labels along them
+                });
+
+                // Re-fit each boundary around the members it contained before.
+                boundaryMembers.forEach(function(bm) {
+                    if (bm.members.length === 0) return;
+                    var bb = null;
+                    bm.members.forEach(function(el) {
+                        var r = el.getBBox();
+                        bb = bb ? bb.union(r) : r;
+                    });
+                    var PAD = 40, TITLE = 30;
+                    bm.el.position(bb.x - PAD, bb.y - PAD - TITLE);
+                    bm.el.resize(bb.width + PAD * 2, bb.height + PAD * 2 + TITLE);
+                    bm.el.toBack();
+                });
+
+                // Sync the position store + bring the result into view.
+                all.forEach(function(el) {
+                    var pos = el.position(), size = el.size();
+                    positionStore.current[el.id] = { x: pos.x, y: pos.y, w: size.width, h: size.height };
                 });
                 if (onPositionUpdate) onPositionUpdate({ ...positionStore.current });
+
+                var p = paperRef.current;
+                var wrapper = wrapperRef.current;
+                if (p && wrapper) {
+                    var pad = Math.min(wrapper.offsetWidth, wrapper.offsetHeight) * 0.06;
+                    p.scaleContentToFit({ padding: Math.max(40, pad), maxScale: 1.4, minScale: 0.1 });
+                    if (onZoomChange) onZoomChange(Math.round(p.scale().sx * 100));
+                }
             },
 
 
@@ -1162,6 +1311,125 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
 
             getPlacedIds: function() {
                 return new Set(Object.keys(positionStore.current));
+            },
+
+            /* ── Edge editing ─────────────────────────────────────────────── */
+            updateLinkLabel: function(id, text) {
+                var g = graphRef.current; if (!g) return;
+                var link = g.getCell(id);
+                if (!link || !link.isLink()) return;
+                if (text) {
+                    link.labels([{
+                        position: 0.5,
+                        attrs: {
+                            text: { text: text, fontSize: 10, fill: darkMode ? '#c7d2fe' : '#6366f1', fontWeight: '700' },
+                            rect: { fill: darkMode ? '#0d0f17' : '#ffffff', stroke: 'none' },
+                        },
+                    }]);
+                } else {
+                    link.labels([]);
+                }
+            },
+
+            /* Change a link's relationship style. Returns the stereotype label it
+               applied ('«include»' / '«extend»'), or null when the style has none. */
+            setLinkStyle: function(id, styleKey) {
+                var g = graphRef.current; if (!g) return null;
+                var link = g.getCell(id);
+                if (!link || !link.isLink()) return null;
+                var lineColor = darkMode ? '#94a3b8' : '#6b7280';
+                var openArrow   = { type: 'path', d: 'M 12 -6 0 0 12 6', fill: 'none', stroke: lineColor, 'stroke-width': 1.5 };
+                var hollowTri   = { type: 'path', d: 'M 16 -8 0 0 16 8 Z', fill: darkMode ? '#0d0f17' : '#ffffff', stroke: lineColor, 'stroke-width': 1.5 };
+                var STYLES = {
+                    arrow:          { dash: '0',   marker: { type: 'arrow', size: 10 }, stereo: null },
+                    association:    { dash: '0',   marker: { type: 'none' },            stereo: null },
+                    include:        { dash: '6 4', marker: openArrow,                   stereo: '«include»' },
+                    extend:         { dash: '6 4', marker: openArrow,                   stereo: '«extend»' },
+                    generalization: { dash: '0',   marker: hollowTri,                   stereo: null },
+                };
+                var s = STYLES[styleKey];
+                if (!s) return null;
+                link.attr('line/stroke', lineColor);
+                link.attr('line/strokeDasharray', s.dash);
+                link.attr('line/targetMarker', s.marker);
+                // Stereotype styles own the label; switching away from one clears it
+                // only if the label still IS a stereotype (user text is preserved).
+                var lbls = link.labels() || [];
+                var cur = (lbls[0] && lbls[0].attrs && lbls[0].attrs.text && lbls[0].attrs.text.text) || '';
+                if (s.stereo) {
+                    this.updateLinkLabel(id, s.stereo);
+                    return s.stereo;
+                }
+                if (/^«.+»$/.test(cur)) {
+                    this.updateLinkLabel(id, '');
+                    return '';
+                }
+                return null;
+            },
+
+            reverseLink: function(id) {
+                var g = graphRef.current; if (!g) return;
+                var link = g.getCell(id);
+                if (!link || !link.isLink()) return;
+                var src = link.get('source'), tgt = link.get('target');
+                link.set({ source: tgt, target: src });
+            },
+
+            /* ── UML lint: cheap structural checks over the current graph ──── */
+            getLintReport: function() {
+                var g = graphRef.current; if (!g) return [];
+                var els = g.getElements();
+                var links = g.getLinks();
+                if (els.length === 0) return ['Canvas is empty — place some nodes first.'];
+                var issues = [];
+                var nameOf = function(el) { return el.attr('label/text') || (el.get('type') || '').split('.')[1] || 'shape'; };
+                var typeOf = function(el) { return el.get('type'); };
+                var boundaries = els.filter(function(e) { return typeOf(e) === 'uml.SystemBoundary'; });
+
+                var deg = {};
+                links.forEach(function(l) {
+                    var s = (l.get('source') || {}).id, t = (l.get('target') || {}).id;
+                    if (s) deg[s] = (deg[s] || 0) + 1;
+                    if (t) deg[t] = (deg[t] || 0) + 1;
+                });
+
+                els.forEach(function(el) {
+                    if (typeOf(el) === 'uml.SystemBoundary') return;
+                    if (!deg[el.id]) issues.push('⚠ "' + nameOf(el) + '" is not connected to anything.');
+                });
+
+                els.filter(function(e) { return typeOf(e) === 'uml.Actor'; }).forEach(function(a) {
+                    boundaries.forEach(function(b) {
+                        if (b.getBBox().containsRect(a.getBBox())) {
+                            issues.push('⚠ Actor "' + nameOf(a) + '" is inside the system boundary — actors belong outside.');
+                        }
+                    });
+                });
+
+                var actorIds = {};
+                els.forEach(function(e) { if (typeOf(e) === 'uml.Actor') actorIds[e.id] = true; });
+                if (Object.keys(actorIds).length > 0) {
+                    els.filter(function(e) { return typeOf(e) === 'uml.UseCase'; }).forEach(function(uc) {
+                        var touches = links.some(function(l) {
+                            var s = (l.get('source') || {}).id, t = (l.get('target') || {}).id;
+                            return (s === uc.id && actorIds[t]) || (t === uc.id && actorIds[s]);
+                        });
+                        if (!touches) issues.push('ℹ Use case "' + nameOf(uc) + '" has no actor association.');
+                    });
+                }
+
+                els.filter(function(e) { return typeOf(e) === 'uml.DecisionNode'; }).forEach(function(d) {
+                    var out = links.filter(function(l) { return (l.get('source') || {}).id === d.id; }).length;
+                    if (out < 2) issues.push('⚠ Decision "' + nameOf(d) + '" has ' + out + ' outgoing branch(es) — a decision needs at least 2.');
+                });
+
+                var hasActivity = els.some(function(e) { return /uml\.(ActionState|StartNode|EndState|DecisionNode)/.test(typeOf(e)); });
+                if (hasActivity) {
+                    if (!els.some(function(e) { return typeOf(e) === 'uml.StartNode'; })) issues.push('⚠ Activity flow has no Start node.');
+                    if (!els.some(function(e) { return typeOf(e) === 'uml.EndState'; }))  issues.push('⚠ Activity flow has no End state.');
+                }
+
+                return issues.length ? issues : ['✅ No issues found — diagram looks clean.'];
             },
         };
     });

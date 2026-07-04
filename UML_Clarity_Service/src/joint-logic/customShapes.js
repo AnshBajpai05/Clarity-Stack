@@ -66,7 +66,12 @@ const UmlUseCase = joint.shapes.standard.Ellipse.define('uml.UseCase', {
     },
 });
 
-/* uml.SystemBoundary — dashed rectangle, not a link source */
+/* uml.SystemBoundary — dashed rectangle, not a link source.
+   Drag handles: the visible border is 2px and the body must stay click-through
+   (shapes inside have to remain selectable), so grabbing the boundary itself was
+   pixel-hunting. Two invisible handles fix that: `hit` — a 24px-wide transparent
+   stroke along the border — and `titleBand` — a strip across the top behind the
+   label. Both show a move cursor; the interior still passes clicks through. */
 const UmlSystemBoundary = joint.shapes.standard.Rectangle.define('uml.SystemBoundary', {
     size: { width: 420, height: 320 },
     attrs: {
@@ -75,11 +80,29 @@ const UmlSystemBoundary = joint.shapes.standard.Rectangle.define('uml.SystemBoun
             strokeWidth: 2, strokeDasharray: '8 4', rx: 4, ry: 4,
             pointerEvents: 'stroke',
         },
+        titleBand: {
+            refWidth: '100%', height: 30,
+            fill: 'rgba(0,0,0,0)', stroke: 'none',
+            pointerEvents: 'all', cursor: 'move',
+        },
+        hit: {
+            refWidth: '100%', refHeight: '100%',
+            fill: 'none', stroke: 'rgba(0,0,0,0)', strokeWidth: 24,
+            pointerEvents: 'stroke', cursor: 'move',
+        },
         label: {
             text: 'System', fill: '#1d4ed8', fontSize: 14, fontWeight: 'bold',
             textVerticalAnchor: 'top', refY: 8, fontFamily: 'Inter, sans-serif',
+            pointerEvents: 'none',
         },
     },
+}, {
+    markup: [
+        { tagName: 'rect', selector: 'body' },
+        { tagName: 'rect', selector: 'titleBand' },
+        { tagName: 'rect', selector: 'hit' },
+        { tagName: 'text', selector: 'label' },
+    ],
 });
 
 /* ═══════════════════════════════════════════════════════════════════════════
@@ -138,6 +161,15 @@ const UmlDecisionNode = joint.shapes.standard.Polygon.define('uml.DecisionNode',
             fill: '#fffbeb', stroke: '#d97706', strokeWidth: 2, magnet: 'true',
         },
         label: { text: '?', fill: '#92400e', fontSize: 11, fontWeight: '600', fontFamily: 'Inter, sans-serif' },
+    },
+});
+
+/* uml.ForkBar — fork/join synchronization bar (parallel flows split or merge) */
+const UmlForkBar = joint.shapes.standard.Rectangle.define('uml.ForkBar', {
+    size: { width: 140, height: 12 },
+    attrs: {
+        body:  { fill: '#111827', stroke: '#111827', strokeWidth: 1, rx: 3, ry: 3, magnet: 'true' },
+        label: { display: 'none' },
     },
 });
 
@@ -212,7 +244,11 @@ const UmlNote = joint.dia.Element.define(
                 fill: '#fefce8', stroke: '#ca8a04', strokeWidth: 1.5, magnet: 'passive',
             },
             dogear: {
-                refPoints: '170 0 170 10 180 10',
+                // Fixed 10px corner fold pinned to the top-right. (refPoints here
+                // normalized the tiny triangle to its OWN bbox and stretched it to
+                // the full element size — a giant fold across the whole note.)
+                points: '0,0 0,10 10,10',
+                refX: '100%', refX2: -10,
                 fill: '#fef08a', stroke: '#ca8a04', strokeWidth: 1.5,
             },
             label: {
@@ -285,6 +321,7 @@ export const SHAPE_MAP = {
     'uml.EndState':       UmlEndState,
     'uml.ActionState':    UmlActionState,
     'uml.DecisionNode':   UmlDecisionNode,
+    'uml.ForkBar':        UmlForkBar,
     'dfd.Process':        DfdProcess,
     'dfd.DataStore':      DfdDataStore,
     'dfd.ExternalEntity': DfdExternalEntity,
@@ -303,6 +340,7 @@ export const DEFAULT_SIZES = {
     'uml.EndState':       { width: 36,  height: 36  },
     'uml.ActionState':    { width: 160, height: 50  },
     'uml.DecisionNode':   { width: 100, height: 60  },
+    'uml.ForkBar':        { width: 140, height: 12  },
     'dfd.Process':        { width: 120, height: 80  },
     'dfd.DataStore':      { width: 160, height: 50  },
     'dfd.ExternalEntity': { width: 120, height: 60  },
@@ -338,6 +376,7 @@ export const CELL_NAMESPACE = (() => {
         EndState:       UmlEndState,
         ActionState:    UmlActionState,
         DecisionNode:   UmlDecisionNode,
+        ForkBar:        UmlForkBar,
         Note:           UmlNote,
         Constraint:     UmlConstraint,
     });

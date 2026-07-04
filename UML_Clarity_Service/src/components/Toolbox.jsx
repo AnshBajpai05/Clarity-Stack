@@ -44,6 +44,43 @@ const SHAPE_GROUPS = [
                     </svg>
                 ),
             },
+            {
+                type: 'ucrel.Association', label: 'Association',
+                icon: (dark) => (
+                    <svg viewBox="0 0 80 20" fill="none" style={{ width: 60, height: 18 }}>
+                        <line x1="4" y1="10" x2="76" y2="10" stroke={dark ? '#8891b4' : '#6b7280'} strokeWidth="2" />
+                    </svg>
+                ),
+            },
+            {
+                type: 'ucrel.Include', label: '«include»',
+                icon: (dark) => (
+                    <svg viewBox="0 0 80 24" fill="none" style={{ width: 60, height: 20 }}>
+                        <text x="36" y="8" textAnchor="middle" fontSize="8" fontStyle="italic" fill={dark ? '#8891b4' : '#6b7280'} fontFamily="sans-serif">«include»</text>
+                        <line x1="4" y1="17" x2="64" y2="17" stroke={dark ? '#8891b4' : '#6b7280'} strokeWidth="2" strokeDasharray="5 3" />
+                        <path d="M64,12 76,17 64,22" stroke={dark ? '#8891b4' : '#6b7280'} strokeWidth="2" fill="none" />
+                    </svg>
+                ),
+            },
+            {
+                type: 'ucrel.Extend', label: '«extend»',
+                icon: (dark) => (
+                    <svg viewBox="0 0 80 24" fill="none" style={{ width: 60, height: 20 }}>
+                        <text x="36" y="8" textAnchor="middle" fontSize="8" fontStyle="italic" fill={dark ? '#8891b4' : '#6b7280'} fontFamily="sans-serif">«extend»</text>
+                        <line x1="4" y1="17" x2="64" y2="17" stroke={dark ? '#8891b4' : '#6b7280'} strokeWidth="2" strokeDasharray="5 3" />
+                        <path d="M64,12 76,17 64,22" stroke={dark ? '#8891b4' : '#6b7280'} strokeWidth="2" fill="none" />
+                    </svg>
+                ),
+            },
+            {
+                type: 'ucrel.Generalization', label: 'Generalization',
+                icon: (dark) => (
+                    <svg viewBox="0 0 80 20" fill="none" style={{ width: 60, height: 18 }}>
+                        <line x1="4" y1="10" x2="62" y2="10" stroke={dark ? '#8891b4' : '#6b7280'} strokeWidth="2" />
+                        <polygon points="62,4 78,10 62,16" fill={dark ? '#161925' : 'white'} stroke={dark ? '#8891b4' : '#6b7280'} strokeWidth="2" />
+                    </svg>
+                ),
+            },
         ],
     },
     {
@@ -88,6 +125,27 @@ const SHAPE_GROUPS = [
                     </svg>
                 ),
             },
+            {
+                type: 'uml.ForkBar', label: 'Fork / Join',
+                icon: (dark) => (
+                    <svg viewBox="0 0 80 30" fill="none" style={{ width: 60, height: 24 }}>
+                        <line x1="40" y1="0" x2="40" y2="10" stroke={dark ? '#8891b4' : '#6b7280'} strokeWidth="1.5" />
+                        <rect x="8" y="11" width="64" height="8" rx="2" fill={dark ? '#34d399' : '#111827'} />
+                        <line x1="24" y1="19" x2="24" y2="30" stroke={dark ? '#8891b4' : '#6b7280'} strokeWidth="1.5" />
+                        <line x1="56" y1="19" x2="56" y2="30" stroke={dark ? '#8891b4' : '#6b7280'} strokeWidth="1.5" />
+                    </svg>
+                ),
+            },
+            {
+                type: 'uml.Constraint', label: 'Guard / Constraint',
+                icon: (dark) => (
+                    <svg viewBox="0 0 80 26" fill="none" style={{ width: 60, height: 22 }}>
+                        <rect x="2" y="2" width="76" height="22" rx="11"
+                            fill={dark ? 'rgba(52,211,153,0.08)' : '#eff6ff'} stroke={dark ? '#34d399' : '#2563eb'} strokeWidth="1.5" strokeDasharray="4 3" />
+                        <text x="40" y="17" textAnchor="middle" fontSize="9" fontStyle="italic" fill={dark ? '#6ee7b7' : '#1e3a5f'} fontFamily="sans-serif">[guard]</text>
+                    </svg>
+                ),
+            },
         ],
     },
     {
@@ -126,6 +184,16 @@ const SHAPE_GROUPS = [
                     </svg>
                 ),
             },
+            {
+                type: 'dfd.Flow', label: 'Data Flow',
+                icon: (dark) => (
+                    <svg viewBox="0 0 80 24" fill="none" style={{ width: 60, height: 20 }}>
+                        <text x="36" y="8" textAnchor="middle" fontSize="8" fontStyle="italic" fill={dark ? '#fbbf24' : '#ca8a04'} fontFamily="sans-serif">data</text>
+                        <line x1="4" y1="17" x2="64" y2="17" stroke={dark ? '#fbbf24' : '#ca8a04'} strokeWidth="2" />
+                        <polygon points="64,12 78,17 64,22" fill={dark ? '#fbbf24' : '#ca8a04'} />
+                    </svg>
+                ),
+            },
         ],
     },
     {
@@ -158,6 +226,27 @@ const SHAPE_GROUPS = [
                     <svg viewBox="0 0 80 20" fill="none" style={{ width: 60, height: 18 }}>
                         <path d="M4,15 C30,0 40,25 64,10" stroke={dark ? '#8891b4' : '#6b7280'} strokeWidth="2" fill="none" />
                         <polygon points="64,5 78,10 64,15" fill={dark ? '#8891b4' : '#6b7280'} />
+                    </svg>
+                ),
+            },
+            {
+                type: 'uml.Note', label: 'Note',
+                icon: (dark) => (
+                    <svg viewBox="0 0 64 40" fill="none" style={{ width: 52, height: 32 }}>
+                        <polygon points="2,2 52,2 62,12 62,38 2,38"
+                            fill={dark ? 'rgba(251,191,36,0.08)' : '#fefce8'} stroke={dark ? '#fbbf24' : '#ca8a04'} strokeWidth="1.5" />
+                        <polygon points="52,2 52,12 62,12" fill={dark ? 'rgba(251,191,36,0.25)' : '#fef08a'} stroke={dark ? '#fbbf24' : '#ca8a04'} strokeWidth="1.5" />
+                        <text x="30" y="25" textAnchor="middle" fontSize="8" fill={dark ? '#fde68a' : '#713f12'} fontFamily="sans-serif">Note</text>
+                    </svg>
+                ),
+            },
+            {
+                type: 'standard.TextBlock', label: 'Text',
+                icon: (dark) => (
+                    <svg viewBox="0 0 80 30" fill="none" style={{ width: 60, height: 24 }}>
+                        <rect x="2" y="2" width="76" height="26" rx="4"
+                            fill="transparent" stroke={dark ? '#8891b4' : '#94a3b8'} strokeWidth="1" strokeDasharray="4 3" />
+                        <text x="40" y="20" textAnchor="middle" fontSize="9" fontStyle="italic" fill={dark ? '#8891b4' : '#64748b'} fontFamily="sans-serif">Text…</text>
                     </svg>
                 ),
             },

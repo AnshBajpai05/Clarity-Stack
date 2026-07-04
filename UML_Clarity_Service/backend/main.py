@@ -167,6 +167,39 @@ async def _llm_via_hf(payload: dict) -> dict | None:
     return None
 
 
+# Last-resort fallback: Groq's OpenAI-compatible API. Separate free tier from HF's
+# router credits (which deplete monthly), so the diagram generator keeps working when
+# both NVIDIA (unreachable networks) and HF (402 credits) are out.
+GROQ_API_KEY = os.getenv("GROQ_API_KEY")
+GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
+_GROQ_DEFAULT_MODEL = "llama-3.3-70b-versatile"
+
+
+async def _llm_via_groq(payload: dict) -> dict | None:
+    """Fallback: Groq (OpenAI-shaped response, returned as-is)."""
+    if not GROQ_API_KEY:
+        return None
+    body = {
+        "model": _GROQ_DEFAULT_MODEL,
+        "messages": payload.get("messages"),
+        "temperature": payload.get("temperature", 0.2),
+        "max_tokens": payload.get("max_tokens"),
+    }
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(60.0, connect=8.0)) as client:
+            resp = await client.post(
+                GROQ_API_URL, json=body,
+                headers={"Authorization": f"Bearer {GROQ_API_KEY}"},
+            )
+        if resp.is_success:
+            logger.info("[llm] Groq fallback succeeded")
+            return resp.json()
+        logger.warning(f"[llm] Groq fallback returned {resp.status_code}: {resp.text[:200]}")
+    except Exception as e:
+        logger.warning(f"[llm] Groq fallback failed: {e}")
+    return None
+
+
 # ─── §10.2: route through the central Clarity LLM gateway when configured ───────
 # Prefer the shared gateway (one cache / breaker / budget / stats across services).
 # If it is not configured or is unreachable, fall back to the direct NVIDIA path
@@ -254,9 +287,17 @@ async def proxy_llm(payload: dict, request: Request):
                     last_detail = "429 rate-limited"
                     continue  # this key is throttled → fail over to the next one
 
-                if not resp.is_success:
-                    # A real upstream error (bad request, etc.) — surface it, don't burn other keys.
+                if resp.status_code in (400, 404, 413, 422):
+                    # Payload-shaped errors fail identically on every key — surface now.
                     raise HTTPException(status_code=resp.status_code, detail=resp.text[:500])
+
+                if not resp.is_success:
+                    # 401/403 (bad or exhausted key) and 5xx (provider hiccup) are
+                    # per-key/per-moment failures: the next key — or the HF/Groq
+                    # fallbacks below — may still succeed. Keep going.
+                    last_detail = f"NVIDIA {resp.status_code}: {resp.text[:200]}"
+                    logger.warning(f"[llm] key failed with {resp.status_code}; trying next key")
+                    continue
 
                 _nvidia_down_until = 0.0  # provider healthy again
                 return resp.json()
@@ -272,7 +313,18 @@ async def proxy_llm(payload: dict, request: Request):
     if hf is not None:
         return hf
 
-    raise HTTPException(status_code=502, detail=f"All LLM providers failed: {last_detail}")
+    groq = await _llm_via_groq(payload)
+    if groq is not None:
+        return groq
+
+    raise HTTPException(
+        status_code=502,
+        detail=(
+            "All AI providers are exhausted right now — most likely the free-tier "
+            "limits are used up or the providers are down. Please try again in a "
+            f"few minutes. (last error: {last_detail})"
+        ),
+    )
 
 # ---------- Chunk Search Proxy (Stub or Real) ----------
 @app.post("/api/document/{doc_id}/chunks/search")

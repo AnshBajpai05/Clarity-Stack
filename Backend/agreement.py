@@ -32,11 +32,15 @@ Honesty constraints baked in:
     never an overclaim.
 """
 
-import re
 from typing import Dict, List, Optional
 
+# §18.1: claim matching now lives in claim_similarity (stemmed tokens +
+# max(Jaccard, containment)). Raw-token Jaccard@0.5 read paraphrases of the SAME claim
+# ("gradual improvements" vs "gradually improving") as different claims, so ensembles
+# reported near-zero agreement and every claim showed as a contested lone claim.
+from claim_similarity import SIM_THRESHOLD, claim_tokens, single_link_clusters
+
 # --- thresholds (tunable; documented constants, not magic numbers) ---
-SIM_THRESHOLD = 0.5     # Jaccard >= this => two bullets are "the same claim"
 HIGH_LEVEL = 0.66       # overall score >= => "high"
 MEDIUM_LEVEL = 0.33     # overall score >= => "medium"
 
@@ -48,24 +52,7 @@ COMPARABLE_SECTIONS = [
 
 # Small, fixed stopword set so token overlap reflects content, not grammar. Kept
 # intentionally tiny and explicit (no NLTK download) for determinism.
-_STOPWORDS = {
-    "the", "a", "an", "and", "or", "but", "to", "of", "in", "on", "for", "with",
-    "is", "are", "be", "as", "at", "by", "it", "this", "that", "will", "should",
-    "must", "can", "may", "from", "into", "via", "using", "use", "used",
-}
-_WORD = re.compile(r"[a-z0-9]+")
-
-
-def _tokens(text: str) -> set:
-    """Content tokens of a bullet: lowercased alphanumerics, stopwords/1-char dropped."""
-    return {t for t in _WORD.findall(text.lower()) if len(t) > 1 and t not in _STOPWORDS}
-
-
-def _jaccard(a: set, b: set) -> float:
-    if not a or not b:
-        return 0.0
-    union = len(a | b)
-    return len(a & b) / union if union else 0.0
+# (Tokenizing/stemming/matching now live in claim_similarity — single seam, §18.1.)
 
 
 def _parse_sections(block: str) -> Dict[str, List[str]]:
@@ -92,29 +79,31 @@ def _parse_sections(block: str) -> Dict[str, List[str]]:
     return sections
 
 
-def _cluster_section(per_model_bullets: Dict[str, List[str]]) -> List[set]:
-    """Greedy cross-model clustering of one section's bullets.
-
-    Returns a list of clusters; each cluster is the SET of distinct model labels
-    that contributed a matching claim. Iteration is over sorted model labels for
-    determinism (greedy clustering is order-sensitive).
-    """
-    clusters: List[dict] = []  # {"models": set, "token_sets": [set, ...]}
+def _flatten_section(per_model_bullets: Dict[str, List[str]]) -> List[tuple]:
+    """(model, bullet, tokens) triples in deterministic sorted-model order,
+    skipping bullets with no content tokens."""
+    flat = []
     for model in sorted(per_model_bullets):
         for bullet in per_model_bullets[model]:
-            tok = _tokens(bullet)
-            if not tok:
-                continue
-            placed = False
-            for c in clusters:
-                if any(_jaccard(tok, ts) >= SIM_THRESHOLD for ts in c["token_sets"]):
-                    c["models"].add(model)
-                    c["token_sets"].append(tok)
-                    placed = True
-                    break
-            if not placed:
-                clusters.append({"models": {model}, "token_sets": [tok]})
-    return [c["models"] for c in clusters]
+            tok = claim_tokens(bullet)
+            if tok:
+                flat.append((model, bullet, tok))
+    return flat
+
+
+def _cluster_section(per_model_bullets: Dict[str, List[str]]) -> List[set]:
+    """Cross-model clustering of one section's bullets (single-link union-find —
+    §18.1: the old greedy first-fit pass was order-sensitive and stranded a
+    paraphrase whenever its bridge claim arrived later).
+
+    Returns a list of clusters; each cluster is the SET of distinct model labels
+    that contributed a matching claim.
+    """
+    flat = _flatten_section(per_model_bullets)
+    return [
+        {flat[i][0] for i in idx}
+        for idx in single_link_clusters([t[2] for t in flat])
+    ]
 
 
 def _level(score: Optional[float], n_models: int) -> str:
@@ -141,7 +130,7 @@ def compute_agreement(provider_blocks: Dict[str, str]) -> dict:
           "n_models": int,
           "score": float in [0,1] or None,   # None when undefined
           "level": "high"|"medium"|"low"|"single_model"|"no_data",
-          "method": "lexical_jaccard@0.5",
+          "method": "lexical_stem_jaccard_overlap@0.5",
           "per_section": {SECTION: {"score": float, "clusters": int, "claims": int}},
         }
     """
@@ -153,7 +142,7 @@ def compute_agreement(provider_blocks: Dict[str, str]) -> dict:
             "n_models": n_models,
             "score": None,
             "level": _level(None, n_models),
-            "method": f"lexical_jaccard@{SIM_THRESHOLD}",
+            "method": f"lexical_stem_jaccard_overlap@{SIM_THRESHOLD}",
             "per_section": {},
         }
 
@@ -185,7 +174,7 @@ def compute_agreement(provider_blocks: Dict[str, str]) -> dict:
         "n_models": n_models,
         "score": overall,
         "level": _level(overall, n_models),
-        "method": f"lexical_jaccard@{SIM_THRESHOLD}",
+        "method": f"lexical_stem_jaccard_overlap@{SIM_THRESHOLD}",
         "per_section": per_section,
     }
 
@@ -197,23 +186,15 @@ def _cluster_section_detailed(per_model_bullets: Dict[str, List[str]]) -> List[d
     *which* models said *what*. Same greedy Jaccard@SIM_THRESHOLD clustering, same
     deterministic sorted-model iteration as the scoring path.
     """
-    clusters: List[dict] = []  # {"models": set, "token_sets": [set], "texts": [(model, text)]}
-    for model in sorted(per_model_bullets):
-        for bullet in per_model_bullets[model]:
-            tok = _tokens(bullet)
-            if not tok:
-                continue
-            placed = False
-            for c in clusters:
-                if any(_jaccard(tok, ts) >= SIM_THRESHOLD for ts in c["token_sets"]):
-                    c["models"].add(model)
-                    c["token_sets"].append(tok)
-                    c["texts"].append((model, bullet))
-                    placed = True
-                    break
-            if not placed:
-                clusters.append({"models": {model}, "token_sets": [tok], "texts": [(model, bullet)]})
-    return clusters
+    flat = _flatten_section(per_model_bullets)
+    return [
+        {
+            "models": {flat[i][0] for i in idx},
+            "token_sets": [flat[i][2] for i in idx],
+            "texts": [(flat[i][0], flat[i][1]) for i in idx],
+        }
+        for idx in single_link_clusters([t[2] for t in flat])
+    ]
 
 
 def analyze_claims(provider_blocks: Dict[str, str]) -> List[dict]:

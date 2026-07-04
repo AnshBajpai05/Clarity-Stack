@@ -90,11 +90,19 @@ def build_graph_from_ir(db: Session, chat_id: str, synthesis_id: str, ir: Dict[s
     no ensemble). It populates the previously-always-None `confidence` column with a
     real, observed number instead of a self-reported guess.
     """
+    from claim_similarity import dedupe_texts
+
     nodes_by_section = {}
 
     for section, bullets in ir.items():
         if section in KG_EXCLUDED_SECTIONS:
             continue  # §16.2 tail: SUMMARY/CONFIDENCE are metadata, not knowledge nodes
+        # §18.1: the ensemble merge keeps every model's PHRASING of the same claim
+        # ("adopt a gradual improvement approach" / "continue the current workflow with
+        # gradual improvements" / …). Materializing each phrasing as its own node made
+        # the cockpit render the same decision panel N times and double-counted friction
+        # in readiness. Keep ONE node per near-duplicate cluster (shortest phrasing).
+        bullets = [bullets[i] for i in dedupe_texts(list(bullets))]
         for text in bullets:
             node = KnowledgeNode(
                 id=gen_id(),
