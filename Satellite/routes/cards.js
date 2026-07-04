@@ -16,7 +16,7 @@ const {
   getCardHistory,
   getExpiredCards,
 } = require("../services/cardChainer");
-const { requireAuth, requireProjectAccess, requireCardAccess } = require("../middleware/auth");
+const { requireAuth, requireProjectAccess, requireCardAccess, extractToken } = require("../middleware/auth");
 const { rateLimit } = require("../middleware/rateLimit");
 
 const router = express.Router();
@@ -137,7 +137,7 @@ router.post("/:projectId/generate/delta/:deltaId", requireAuth, rateLimit(15, 60
 router.post("/:projectId/generate/chat/:chatId", requireAuth, rateLimit(15, 60000, "cards-generate-chat"), async (req, res) => {
   try {
     const { projectId, chatId } = req.params;
-    const token = req.headers.authorization?.split(" ")[1];
+    const token = extractToken(req);
 
     if (!token) {
       return res.status(401).json({ error: "Authorization token required" });
@@ -155,7 +155,7 @@ router.post("/:projectId/generate/chat/:chatId", requireAuth, rateLimit(15, 6000
 router.post("/:projectId/generate/label/:label", requireAuth, rateLimit(15, 60000, "cards-generate-label"), async (req, res) => {
   try {
     const { projectId, label } = req.params;
-    const token = req.headers.authorization?.split(" ")[1];
+    const token = extractToken(req);
 
     const validLabels = [
       "risk", "decision", "architecture", "action", "insight",
@@ -182,7 +182,7 @@ router.post("/:projectId/auto-generate", requireAuth, rateLimit(10, 60000, "card
   try {
     const { projectId } = req.params;
     const { force } = req.body;
-    const token = req.headers.authorization?.split(" ")[1];
+    const token = extractToken(req);
 
     if (!token) {
       return res.status(401).json({ error: "Authorization token required" });
@@ -200,7 +200,7 @@ router.post("/:projectId/auto-generate", requireAuth, rateLimit(10, 60000, "card
 router.post("/:projectId/:cardId/refresh", requireAuth, async (req, res) => {
   try {
     const { projectId, cardId } = req.params;
-    const token = req.headers.authorization?.split(" ")[1];
+    const token = extractToken(req);
 
     if (!token) {
       return res.status(401).json({ error: "Authorization token required" });
@@ -218,7 +218,7 @@ router.post("/:projectId/:cardId/refresh", requireAuth, async (req, res) => {
 router.post("/:projectId/:cardId/update-kg", requireAuth, async (req, res) => {
   try {
     const { projectId, cardId } = req.params;
-    const token = req.headers.authorization?.split(" ")[1];
+    const token = extractToken(req);
 
     if (!token) {
       return res.status(401).json({ error: "Authorization token required" });

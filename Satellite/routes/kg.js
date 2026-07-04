@@ -2,7 +2,7 @@
 const express = require("express");
 const KGSnapshot = require("../models/KGSnapshot");
 const { takeSnapshot } = require("../services/deltaEngine");
-const { requireAuth, requireProjectAccess } = require("../middleware/auth");
+const { requireAuth, requireProjectAccess, extractToken } = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -22,9 +22,8 @@ router.get("/:projectId", requireAuth, async (req, res) => {
       console.log("🔌 DB disconnected, attempting Live-Fetch for KG...");
       const { fetchKGFromCore } = require("../services/deltaEngine");
       
-      const authHeader = req.headers.authorization;
-      if (authHeader) {
-        const token = authHeader.split(" ")[1];
+      const token = extractToken(req);
+      if (token) {
         const liveData = await fetchKGFromCore(projectId, token);
         return res.json({
           nodes: liveData.nodes,
@@ -55,10 +54,9 @@ router.get("/:projectId", requireAuth, async (req, res) => {
 
     if (!snapshot) {
       const { fetchKGFromCore } = require("../services/deltaEngine");
-      const authHeader = req.headers.authorization;
-      
-      if (authHeader) {
-        const token = authHeader.split(" ")[1];
+      const token = extractToken(req);
+
+      if (token) {
         try {
           const liveData = await fetchKGFromCore(projectId, token);
           return res.json({
@@ -93,7 +91,7 @@ router.get("/:projectId", requireAuth, async (req, res) => {
 router.post("/:projectId/snapshot", requireAuth, async (req, res) => {
   try {
     const { projectId } = req.params;
-    const token = req.headers.authorization.split(" ")[1];
+    const token = extractToken(req);
 
     const { getConnectionStatus } = require("../config/db");
     if (!getConnectionStatus()) {

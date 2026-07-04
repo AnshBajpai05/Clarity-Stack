@@ -2,7 +2,7 @@
 const express = require("express");
 const KGSnapshot = require("../models/KGSnapshot");
 const { generateREADME, generateMermaidUML, generatePPTSlides } = require("../services/cardChainer");
-const { requireAuth, requireProjectAccess } = require("../middleware/auth");
+const { requireAuth, requireProjectAccess, extractToken } = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -16,7 +16,7 @@ router.param("projectId", requireProjectAccess);
 router.get("/:projectId/readme", requireAuth, async (req, res) => {
   try {
     const { projectId } = req.params;
-    const token = req.headers.authorization.split(" ")[1];
+    const token = extractToken(req);
 
     const readme = await generateREADME(projectId, token);
     res.send({ content: readme });

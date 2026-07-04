@@ -14,6 +14,24 @@ if (!JWT_SECRET) {
 }
 
 /**
+ * Extract the caller's access token the same way requireAuth resolves it:
+ * Authorization: Bearer header first, then the httpOnly access_token cookie
+ * (§5.4 browser clients send cookies only — routes that forward the token to
+ * Core must NOT read req.headers.authorization directly or they break for
+ * every cookie-authed browser session).
+ */
+function extractToken(req) {
+  const header = req.headers.authorization;
+  if (header && header.startsWith("Bearer ")) {
+    return header.split(" ")[1];
+  }
+  if (req.cookies && req.cookies.access_token) {
+    return req.cookies.access_token;
+  }
+  return null;
+}
+
+/**
  * Express middleware: validates Bearer token from the core backend.
  * Attaches `req.user = { email, role }` on success.
  */
@@ -237,4 +255,4 @@ async function requireCardAccess(req, res, next, cardId) {
   }
 }
 
-module.exports = { requireAuth, optionalAuth, requirePM, requireProjectAccess, requireCardAccess };
+module.exports = { requireAuth, optionalAuth, requirePM, requireProjectAccess, requireCardAccess, extractToken };

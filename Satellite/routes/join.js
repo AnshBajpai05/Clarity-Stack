@@ -1,7 +1,7 @@
 // routes/join.js — SMTP Join Request Flow
 const express = require("express");
 const { sendJoinRequestEmail } = require("../services/mailer");
-const { requireAuth } = require("../middleware/auth");
+const { requireAuth, extractToken } = require("../middleware/auth");
 const axios = require("axios");
 
 const CORE_API = process.env.CORE_API_URL || "http://127.0.0.1:8000";
@@ -14,7 +14,7 @@ const router = express.Router();
 router.post("/:projectId/email", requireAuth, async (req, res) => {
   try {
     const { projectId } = req.params;
-    const token = req.headers.authorization.split(" ")[1];
+    const token = extractToken(req);
 
     // 1. Fetch project info from Core API to get PM email
     let project;

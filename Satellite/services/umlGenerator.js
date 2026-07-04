@@ -41,6 +41,10 @@ RULES:
                      .replace(/```/g, "")
                      .trim();
 
+      // LLMs frequently emit `A -->|label|> B` — the trailing `>` after the
+      // closing pipe is invalid Mermaid and makes the client renderer throw.
+      result = result.replace(/\|>(?=\s|$)/gm, "|");
+
       return result;
     } catch (err) {
       console.error("[UMLGenerator] Generation failed:", err.message);

@@ -2,7 +2,7 @@
 const express = require("express");
 const GraphDelta = require("../models/GraphDelta");
 const { computeDelta } = require("../services/deltaEngine");
-const { requireAuth, requireProjectAccess } = require("../middleware/auth");
+const { requireAuth, requireProjectAccess, extractToken } = require("../middleware/auth");
 
 const router = express.Router();
 
@@ -34,7 +34,7 @@ router.get("/:projectId", requireAuth, async (req, res) => {
 router.post("/:projectId/compute", requireAuth, async (req, res) => {
   try {
     const { projectId } = req.params;
-    const token = req.headers.authorization.split(" ")[1];
+    const token = extractToken(req);
 
     const delta = await computeDelta(projectId, token);
     res.json(delta);
