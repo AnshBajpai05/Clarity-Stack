@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Globe, Heart, Send, Activity, Info } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { Input } from "@/components/ui/input";
+import { GlareCard } from "@/components/ui/glare-card";
 
 export default function DiscoveryPage() {
   const { toast } = useToast();
@@ -118,6 +119,7 @@ export default function DiscoveryPage() {
               <Globe className="w-6 h-6 text-background" />
             </div>
             <div>
+              <span className="section-number block mb-1">02 ~ network</span>
               <h1 className="text-2xl font-display font-bold gradient-text tracking-tight">Discovery Hub</h1>
               <p className="text-muted-foreground leading-relaxed">Find projects, follow updates, and request access</p>
             </div>
@@ -146,7 +148,8 @@ export default function DiscoveryPage() {
                 {feed.map((item, idx) => {
                   const proj = publicProjects.find(p => p.id === item.projectId);
                   return (
-                    <div key={item._id} className={`glass-panel-hover p-5 rounded-xl transition-all animate-fade-in-up stagger-${(idx % 5) + 1}`}>
+                    <GlareCard key={item._id} containerClassName={`w-full aspect-auto animate-fade-in-up stagger-${(idx % 5) + 1}`} className="bg-card/90">
+                    <div className="p-5 h-full">
                       <div className="flex justify-between items-center mb-3">
                         <h4 className="font-display font-semibold text-foreground">
                           {proj ? proj.name : `Project ${item.projectId.substring(0,8)}`}
@@ -171,6 +174,7 @@ export default function DiscoveryPage() {
                         </div>
                       )}
                     </div>
+                    </GlareCard>
                   );
                 })}
               </div>

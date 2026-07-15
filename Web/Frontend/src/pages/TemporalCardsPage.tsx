@@ -16,6 +16,7 @@ import {
 } from "@/lib/api";
 import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { Button } from "@/components/ui/button";
+import { GlareCard } from "@/components/ui/glare-card";
 import {
   Layers, FileCode, FileImage, Presentation,
   RefreshCw, Clock, GitBranch, Brain, Zap,
@@ -347,10 +348,14 @@ export default function TemporalCardsPage() {
               const versionChain = isExpanded ? getVersionChain(card) : [];
 
               return (
-                <div
+                <GlareCard
                   key={card._id}
+                  containerClassName={`w-full aspect-auto animate-fade-in-up stagger-${(index % 5) + 1}`}
+                  className="bg-card/90"
+                >
+                <div
                   onClick={() => setExpandedCard(expandedCard === card._id ? null : card._id)}
-                  className={`group glass-panel-hover overflow-hidden flex flex-col cursor-pointer animate-fade-in-up stagger-${(index % 5) + 1}`}
+                  className="group overflow-hidden flex flex-col cursor-pointer h-full"
                 >
                   {/* Card Badge Top-Bar */}
                   <div className="px-5 py-3 bg-muted/20 border-b border-border/30 flex justify-between items-center">
@@ -479,6 +484,7 @@ export default function TemporalCardsPage() {
                     </div>
                   )}
                 </div>
+                </GlareCard>
               );
             })}
           </div>

@@ -6,6 +6,7 @@ import { LoadingSpinner } from "@/components/shared/LoadingSpinner";
 import { Button } from "@/components/ui/button";
 import { Activity, Plus, Minus, Zap, RefreshCcw, FileText } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { GlareCard } from "@/components/ui/glare-card";
 
 export default function DeltaTimelinePage() {
   const { projectId } = useParams();
@@ -72,6 +73,7 @@ export default function DeltaTimelinePage() {
               <Activity className="w-6 h-6 text-background" />
             </div>
             <div>
+              <span className="section-number block mb-1">04 ~ evolution</span>
               <h1 className="text-2xl font-display font-bold gradient-text tracking-tight">Graph Delta Engine</h1>
               <p className="text-muted-foreground leading-relaxed">Track knowledge evolution over time (3-day windows)</p>
             </div>
@@ -111,7 +113,11 @@ export default function DeltaTimelinePage() {
                   {/* Timeline Node */}
                   <div className={`absolute -left-[41px] w-5 h-5 rounded-full border-4 border-background ${isLatest ? 'bg-neon-cyan' : 'bg-muted-foreground'}`}></div>
                   
-                  <div className={`glass-panel-hover p-5 rounded-xl transition-all ${isLatest ? 'border-neon-cyan/30 shadow-[0_0_20px_rgba(6,182,212,0.15)]' : 'border-border'}`}>
+                  <GlareCard
+                    containerClassName={`w-full aspect-auto ${isLatest ? 'shadow-[0_0_20px_rgba(6,182,212,0.15)]' : ''}`}
+                    className="bg-card/90"
+                  >
+                  <div className="p-5 h-full">
                     <div className="flex justify-between items-start mb-4">
                       <div>
                         <div className="flex items-center gap-2 mb-1">
@@ -193,6 +199,7 @@ export default function DeltaTimelinePage() {
                       </div>
                     )}
                   </div>
+                  </GlareCard>
                 </div>
               );
             })}

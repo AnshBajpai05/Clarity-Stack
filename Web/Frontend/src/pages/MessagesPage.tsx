@@ -404,6 +404,7 @@ export default function MessagesPage() {
               </div>
 
               <div>
+                <span className="section-number block mb-1">05 ~ conversation</span>
                 <h1 className="text-2xl font-display font-bold gradient-text tracking-tight">Chat Messages</h1>
                 <p className="text-sm text-muted-foreground leading-relaxed">
                   Messages are immutable and preserved as ground truth.

@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { Project } from '@/lib/api';
 import { formatDistanceToNow } from "date-fns";
 import { useState } from 'react';
+import { GlareCard } from '@/components/ui/glare-card';
 
 interface ProjectCardProps {
   project: Project;
@@ -20,9 +21,10 @@ export function ProjectCard({ project }: ProjectCardProps) {
   };
 
   return (
+    <GlareCard containerClassName="w-full aspect-auto" className="bg-card/90">
     <Link
       to={`/projects/${project.id}/chats`}
-      className="glass-panel-hover p-6 group block"
+      className="p-6 group block h-full"
     >
       <div className="flex items-start justify-between">
         <div className="flex items-start gap-5">
@@ -62,5 +64,6 @@ export function ProjectCard({ project }: ProjectCardProps) {
         </div>
       </div>
     </Link>
+    </GlareCard>
   );
 }

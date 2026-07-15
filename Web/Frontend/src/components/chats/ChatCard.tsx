@@ -16,6 +16,7 @@ import { formatDistanceToNow } from "date-fns";
 import { cn } from "@/lib/utils";
 import { useToast } from "@/hooks/use-toast";
 import { useGenerationStore } from "@/store/generationStore";
+import { GlareCard } from "@/components/ui/glare-card";
 
 import {
   DropdownMenu,
@@ -94,11 +95,12 @@ export function ChatCard({ chat, onDeleted, onUpdated, projectId }: ChatCardProp
   };
 
   return (
+    <GlareCard containerClassName="w-full aspect-auto" className="bg-card/90">
     <Link
       to={`/projects/${chat.project_id}/chats/${chat.id}`}
       className={cn(
-        "glass-panel-hover p-5 group block",
-        chat.pinned && "border border-yellow-400/40 bg-yellow-400/5"
+        "p-5 group block h-full",
+        chat.pinned && "bg-yellow-400/5 shadow-[inset_0_0_0_1px_rgba(250,204,21,0.4)]"
       )}
     >
       <div className="flex items-start justify-between">
@@ -158,5 +160,6 @@ export function ChatCard({ chat, onDeleted, onUpdated, projectId }: ChatCardProp
         </div>
       </div>
     </Link>
+    </GlareCard>
   );
 }

@@ -69,7 +69,9 @@ export function Sidebar() {
       <div className="p-4 border-t border-border/20">
         <div className="glass-panel p-4 rounded-xl">
           <p className="text-xs text-muted-foreground mb-3 leading-relaxed">
+            <span className="text-neon-peach select-none" aria-hidden="true">~ </span>
             Turn messy chats into structured knowledge.
+            <span className="text-neon-peach select-none" aria-hidden="true"> ~</span>
           </p>
           <div className="flex gap-1.5">
             <div className="w-2 h-2 rounded-full bg-neon-cyan animate-pulse" />

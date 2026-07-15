@@ -1,6 +1,14 @@
 /* ═══════════════════════════════════════════════════════════════════════════
-   ClarityStack — "Obsidian" Design System
+   ClarityStack — "Graphite" Design System
    Global Tokens, Utilities & Component Classes
+
+   Brand palette (client-supplied): #e1e4e8, #939ca3, #646f77, #b5bdc4, #aeb4ac
+   The app is dark-first, so the palette (all light/mid tones) is used for
+   foreground/accent roles; the background family is a matching low-lightness
+   neutral in the same ~206° hue so it reads as one coherent graphite system.
+   Semantic status colors (destructive/success/warning) are intentionally left
+   untouched — they carry meaning (error/ok/caution), not brand identity.
+   Typography: Comic Sans MS (system) → Caveat (Google Fonts) — handwriting style.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 @tailwind base;
@@ -152,7 +160,7 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    font-family: 'Comic Sans MS', 'Caveat', 'Patrick Hand', cursive;
     background: var(--gradient-hero);
     min-height: 100vh;
     line-height: 1.65;
@@ -162,17 +170,17 @@
 
   /* ── Typography hierarchy ────────────────────────────────────────────── */
   h1, h2, h3 {
-    font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+    font-family: 'Comic Sans MS', 'Caveat', cursive;
     font-weight: 700;
-    letter-spacing: -0.03em;
+    letter-spacing: -0.01em;
     line-height: 1.15;
     color: hsl(var(--foreground));
   }
 
   h4, h5, h6 {
-    font-family: 'Plus Jakarta Sans', 'Inter', system-ui, sans-serif;
+    font-family: 'Comic Sans MS', 'Caveat', cursive;
     font-weight: 600;
-    letter-spacing: -0.02em;
+    letter-spacing: -0.01em;
     line-height: 1.3;
     color: hsl(var(--foreground));
   }
@@ -183,7 +191,7 @@
   }
 
   code, pre {
-    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-family: 'Comic Sans MS', 'Patrick Hand', cursive;
     font-size: 0.9em;
   }
 
@@ -330,6 +338,38 @@
   @keyframes shimmer {
     0% { background-position: -200% 0; }
     100% { background-position: 200% 0; }
+  }
+
+  /* ── Studio theme accents (Animus-inspired) ─────────────────────── */
+  /* Endless horizontal text band; the track holds two copies of its
+     content so the -50% translate loops seamlessly. */
+  .animate-marquee {
+    animation: marquee 28s linear infinite;
+  }
+
+  @keyframes marquee {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .animate-marquee { animation: none; }
+  }
+
+  /* Film-grain overlay: SVG turbulence noise, fixed above the page but
+     below nothing interactive (pointer-events: none). */
+  .grain-overlay {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    pointer-events: none;
+    opacity: 0.05;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='200' height='200'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+  }
+
+  /* Numbered section kicker: "01 — Features" */
+  .section-number {
+    @apply font-mono text-sm text-neon-peach tracking-[0.3em];
   }
 
   /* ── Staggered animation delay helpers ───────────────────────────── */

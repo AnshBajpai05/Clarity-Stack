@@ -416,6 +416,7 @@ export default function SettingsPage() {
     <MainLayout>
       {/* Header */}
       <div className="mb-8 animate-fade-in-up">
+        <span className="section-number block mb-2">07 ~ preferences</span>
         <div className="flex items-center gap-3 mb-2">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-neon-peach to-neon-violet flex items-center justify-center shadow-glow-sm">
             <Settings className="w-5 h-5 text-background" />

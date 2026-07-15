@@ -10,7 +10,9 @@ interface MainLayoutProps {
 
 export function MainLayout({ children, fullWidth = false, wide = false }: MainLayoutProps) {
   return (
-    <div className="h-screen w-screen relative overflow-hidden bg-background">
+    // Transparent root: the body supplies bg-background, letting the global
+    // ambient layers (dotted surface, grain) mounted in RequireAuth show through.
+    <div className="h-screen w-screen relative overflow-hidden">
       {/* Background orbs — deeper blur, more subtle */}
       <div className="glow-orb w-[28rem] h-[28rem] bg-neon-violet top-20 -left-48 fixed" />
       <div className="glow-orb w-[24rem] h-[24rem] bg-neon-cyan bottom-20 right-10 fixed" />

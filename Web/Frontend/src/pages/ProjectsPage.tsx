@@ -7,6 +7,7 @@ import { LoadingSpinner } from '@/components/shared/LoadingSpinner';
 import { ErrorState } from '@/components/shared/ErrorState';
 import { EmptyState } from '@/components/shared/EmptyState';
 import { Button } from '@/components/ui/button';
+import { DoodleStar } from '@/components/ui/doodles';
 
 import {
   getProjects,
@@ -97,13 +98,17 @@ export default function ProjectsPage() {
       {/* Header */}
       <div className="mb-8 flex justify-between items-center animate-fade-in-up">
         <div>
+          <span className="section-number block mb-2">01 ~ workspace</span>
           <div className="flex items-center gap-3 mb-2">
             <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-neon-cyan to-neon-violet flex items-center justify-center shadow-glow-sm">
               <Sparkles className="w-5 h-5 text-background" />
             </div>
-            <h1 className="text-3xl font-display font-bold gradient-text tracking-tight">
-              {localStorage.getItem('cs_nickname') ? `Hello, ${localStorage.getItem('cs_nickname')}` : 'Projects'}
-            </h1>
+            <div className="relative">
+              <h1 className="text-3xl font-display font-bold gradient-text tracking-tight">
+                {localStorage.getItem('cs_nickname') ? `Hello, ${localStorage.getItem('cs_nickname')}` : 'Projects'}
+              </h1>
+              <DoodleStar className="absolute -top-4 -right-9 w-6 h-6 text-neon-peach animate-float" />
+            </div>
           </div>
           <p className="text-muted-foreground leading-relaxed">
             Manage your knowledge projects and chat histories.

@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { supabase } from "./supabaseClient";
+import { GlareCard } from "@/components/ui/glare-card";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 const ACCENT_COLORS = ["#7c3aed","#4f46e5","#2563eb","#0891b2","#059669","#d97706","#dc2626","#db2777"];
@@ -232,7 +233,8 @@ function WorkspaceCard({ ws, onDelete }) {
     return (
         <Link to={`/editor/workspace/${ws.id}`} className="no-underline block group"
             onMouseEnter={() => setHov(true)} onMouseLeave={() => setHov(false)}>
-            <div className={`glass-panel-hover p-5 relative overflow-hidden transition-all duration-300 ${hov ? 'shadow-floating -translate-y-1' : ''}`} style={{ borderColor: hov ? accent : undefined }}>
+            <GlareCard containerClassName={`w-full aspect-auto transition-all duration-300 ${hov ? 'shadow-floating -translate-y-1' : ''}`} className="bg-card/90">
+            <div className="p-5 relative overflow-hidden h-full">
                 {/* Top accent bar */}
                 <div className="h-[3px] rounded-t-sm absolute top-0 left-0 right-0" style={{ backgroundColor: accent }} />
 
@@ -265,6 +267,7 @@ function WorkspaceCard({ ws, onDelete }) {
                     <span className="text-[11px] text-muted-foreground font-mono">{timeAgo(ws.created_at)}</span>
                 </div>
             </div>
+            </GlareCard>
         </Link>
     );
 }

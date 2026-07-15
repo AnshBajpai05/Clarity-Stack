@@ -1,7 +1,6 @@
 import React, { useState } from "react";
-import axios from "axios";
-import { useNavigate } from "react-router-dom";
-import { Sparkles } from "lucide-react";
+import { useNavigate, useLocation } from "react-router-dom";
+import { BackgroundLines } from "@/components/ui/background-lines";
 
 type FormData = {
   email: string;
@@ -17,9 +16,12 @@ type Errors = {
 
 function Register() {
   const navigate = useNavigate();
+  const location = useLocation();
+  // Prefill the email when arriving from the Login page's "no account" CTA.
+  const prefilledEmail = (location.state as { email?: string } | null)?.email ?? "";
 
   const [formData, setFormData] = useState<FormData>({
-    email: "",
+    email: prefilledEmail,
     password: "",
     confirmPassword: "",
   });
@@ -61,10 +63,17 @@ function Register() {
     if (!validate()) return;
 
     try {
-      await axios.post("http://127.0.0.1:8000/api/auth/register", {
-        email: formData.email,
-        password: formData.password,
+      const res = await fetch(`${import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}/api/auth/register`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        credentials: "include",
+        body: JSON.stringify({
+          email: formData.email,
+          password: formData.password,
+        }),
       });
+
+      if (!res.ok) throw new Error("User already exists");
 
       alert("Registered successfully");
       navigate("/login");
@@ -79,6 +88,9 @@ function Register() {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background text-foreground relative overflow-hidden">
       {/* Background effects */}
+      <BackgroundLines className="absolute inset-0 h-full bg-transparent dark:bg-transparent pointer-events-none opacity-50">
+        <></>
+      </BackgroundLines>
       <div className="glow-orb w-[32rem] h-[32rem] bg-neon-violet top-0 right-0 opacity-[0.10]" />
       <div className="glow-orb w-[28rem] h-[28rem] bg-neon-cyan bottom-0 left-0 opacity-[0.08]" />
 

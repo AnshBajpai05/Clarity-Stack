@@ -564,6 +564,7 @@ export default function KnowledgeGraphPage() {
         {/* Header */}
         <div className="flex justify-between items-center glass-panel p-4 rounded-xl animate-fade-in-up">
           <div>
+            <span className="section-number block mb-1">03 ~ graph</span>
             <h1 className="text-2xl font-display font-bold gradient-text tracking-tight">Knowledge Graph</h1>
             <div className="flex items-center gap-1 text-xs text-muted-foreground mt-0.5">
               {breadcrumb.map((b, i) => (

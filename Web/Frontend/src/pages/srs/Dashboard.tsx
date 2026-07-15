@@ -1,6 +1,7 @@
 import { useDocumentStore } from "@/store/documentStore";
 import { AlertTriangle, FileText, Upload, Zap, ArrowRight, ArrowLeft, Loader2, Sparkles, Play, CheckCircle2, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { GlareCard } from "@/components/ui/glare-card";
 import { useRef, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
 import { toast } from "sonner";
@@ -166,6 +167,7 @@ function DocumentListView() {
   return (
     <div className="space-y-6 animate-slide-in">
       <div>
+        <span className="section-number block mb-1">06 ~ srs intelligence</span>
         <h1 className="text-2xl font-display font-bold tracking-tight">Dashboard</h1>
         <p className="text-muted-foreground text-sm">Processed documents</p>
       </div>
@@ -195,9 +197,14 @@ function DocumentListView() {
       {/* Document list */}
       <div data-tour="srs-doc-list" className="space-y-3 relative">
         {documents.map((doc, idx) => (
-          <div key={doc.doc_id}
+          <GlareCard
+            key={doc.doc_id}
+            containerClassName={`w-full aspect-auto animate-fade-in-up stagger-${(idx % 5) + 1}`}
+            className="bg-card/90"
+          >
+          <div
             id={`doc-${doc.doc_id}`}
-            className={`glass-panel-hover p-5 flex items-center justify-between cursor-pointer group animate-fade-in-up stagger-${(idx % 5) + 1}`}
+            className="p-5 flex items-center justify-between cursor-pointer group h-full"
             onClick={() => handleSelect(doc.doc_id)}
           >
             <div className="flex items-center gap-4">
@@ -253,6 +260,7 @@ function DocumentListView() {
               <ArrowRight className="w-4 h-4 text-muted-foreground" />
             </div>
           </div>
+          </GlareCard>
         ))}
         {documents.length === 0 && !isLoading && (
           <div className="text-center py-12 text-muted-foreground">

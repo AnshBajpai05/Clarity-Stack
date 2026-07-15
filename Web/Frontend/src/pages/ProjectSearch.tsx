@@ -54,6 +54,7 @@ export default function ProjectSearch() {
   return (
     <MainLayout>
       <div className="mb-8">
+        <span className="section-number block mb-2">02 ~ join</span>
         <div className="flex items-center gap-3 mb-2">
           <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-neon-purple to-neon-pink flex items-center justify-center">
             <Search className="w-5 h-5 text-background" />
