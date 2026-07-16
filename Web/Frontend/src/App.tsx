@@ -32,6 +32,7 @@ import EditorSnapshot from "./pages/editor/Snapshot";
 import UMLDashboard from "./pages/uml/Dashboard";
 
 import { WalkthroughEngine } from "@/components/walkthrough/WalkthroughEngine";
+import { AmbientBackground } from "@/components/layout/AmbientBackground";
 import { useEffect } from "react";
 import { applyAccentColor } from "@/lib/utils";
 
@@ -58,6 +59,7 @@ const App = () => {
         <Toaster />
         <Sonner />
         <BrowserRouter>
+          <AmbientBackground />
           <WalkthroughEngine />
           <Routes>
             <Route path="/" element={<Index />} />

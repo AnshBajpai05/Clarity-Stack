@@ -59,22 +59,12 @@ function Login() {
       });
 
       if (res.ok) {
-        // We no longer store the JWT in localStorage
+        // Backend returns { access_token, token_type } as JSON — it does not set
+        // any auth cookie (no httpOnly session, no /api/auth/me). The Bearer token
+        // is the only credential; lib/http.ts's api() reads it from localStorage.
+        const data = await res.json();
+        localStorage.setItem("token", data.access_token);
         localStorage.setItem("cs_email", formData.email || "");
-        // Pull the server-side profile so greetings (cs_nickname) populate without
-        // needing a manual Settings save. Non-critical — never block login on it.
-        try {
-          const meRes = await fetch(
-            `${import.meta.env.VITE_API_BASE_URL || "http://localhost:8000"}/api/auth/me`,
-            { credentials: "include" }
-          );
-          if (meRes.ok) {
-            const me = await meRes.json();
-            if (me.nickname && !localStorage.getItem("cs_nickname")) {
-              localStorage.setItem("cs_nickname", me.nickname);
-            }
-          }
-        } catch { /* greeting is best-effort */ }
         navigate("/projects");
         return;
       }
@@ -148,16 +138,6 @@ function Login() {
 /* ════════════════════════════════════════════════════════════
    LeftPanel — form + spotlight effect
    ════════════════════════════════════════════════════════════ */
-
-interface FormData {
-  email?: string;
-  password?: string;
-}
-interface Errors {
-  email?: string;
-  password?: string;
-  general?: string;
-}
 
 interface LeftPanelProps {
   formData: FormData;

@@ -15,8 +15,8 @@ export type DottedSurfaceProps = {
 // background (tokens, glow orbs) shows through. Honors prefers-reduced-motion.
 export const DottedSurface = ({
   className,
-  baseColor = "#6b7280",
-  highlightColor = "#8b5cf6",
+  baseColor = "#9ca3af",
+  highlightColor = "#a78bfa",
 }: DottedSurfaceProps) => {
   const containerRef = React.useRef<HTMLDivElement>(null);
 
@@ -82,10 +82,10 @@ export const DottedSurface = ({
     geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
 
     const material = new THREE.PointsMaterial({
-      size: 7,
+      size: 9,
       vertexColors: true,
       transparent: true,
-      opacity: 0.85,
+      opacity: 1,
       sizeAttenuation: true,
     });
 

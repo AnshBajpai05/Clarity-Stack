@@ -8,7 +8,6 @@
    neutral in the same ~206° hue so it reads as one coherent graphite system.
    Semantic status colors (destructive/success/warning) are intentionally left
    untouched — they carry meaning (error/ok/caution), not brand identity.
-   Typography: Comic Sans MS (system) → Caveat (Google Fonts) — handwriting style.
    ═══════════════════════════════════════════════════════════════════════════ */
 
 @tailwind base;
@@ -21,32 +20,34 @@
 @layer base {
   :root {
     /* ── Background tiers (darkest → lightest) ────────────────────────── */
-    --background:       225 28% 7%;
-    --foreground:       210 30% 94%;
+    /* Derived dark neutral in the same ~206° hue as the brand palette —
+       none of the 5 supplied colors is dark enough to serve as a background. */
+    --background:       206 12% 7%;
+    --foreground:       214 13% 90%;  /* #e1e4e8 */
 
-    --card:             224 25% 11%;
-    --card-foreground:  210 30% 94%;
+    --card:             206 12% 10%;
+    --card-foreground:  214 13% 90%;
 
-    --popover:          224 25% 9%;
-    --popover-foreground: 210 30% 94%;
+    --popover:          206 12% 9%;
+    --popover-foreground: 214 13% 90%;
 
-    /* ── Primary accent (Electric Cyan‑Teal) ──────────────────────────── */
-    --primary:           185 85% 52%;
-    --primary-foreground: 225 28% 7%;
+    /* ── Primary accent (b5bdc4) ───────────────────────────────────────── */
+    --primary:           209 11% 74%;
+    --primary-foreground: 206 12% 10%;
 
-    /* ── Secondary accent (Iris Violet) ───────────────────────────────── */
-    --secondary:           265 55% 58%;
-    --secondary-foreground: 210 30% 98%;
+    /* ── Secondary accent (646f77, lightened for AA contrast on dark bg) ─ */
+    --secondary:           206 9% 52%;
+    --secondary-foreground: 214 13% 95%;
 
     /* ── Muted / subdued surfaces ─────────────────────────────────────── */
-    --muted:             222 22% 15%;
-    --muted-foreground:  218 14% 50%;
+    --muted:             206 10% 14%;
+    --muted-foreground:  206 8% 61%;  /* #939ca3 */
 
-    /* ── Accent (follows primary by default; overridden by data‑accent) ─ */
-    --accent:            265 55% 48%;
-    --accent-foreground: 210 30% 98%;
+    /* ── Accent (follows secondary by default; overridden by data‑accent) */
+    --accent:            206 9% 48%;
+    --accent-foreground: 214 13% 95%;
 
-    /* ── Semantic states ──────────────────────────────────────────────── */
+    /* ── Semantic states (kept as-is: functional, not brand color) ─────── */
     --destructive:           0 72% 51%;
     --destructive-foreground: 210 30% 98%;
 
@@ -57,43 +58,44 @@
     --warning-foreground: 0 0% 0%;
 
     /* ── Borders & Inputs ─────────────────────────────────────────────── */
-    --border:  222 18% 16%;
-    --input:   222 20% 13%;
-    --ring:    185 85% 52%;
+    --border:  206 10% 19%;
+    --input:   206 10% 12%;
+    --ring:    209 11% 74%;
 
     --radius:  0.75rem;
 
-    /* ── Neon palette (used across app) ───────────────────────────────── */
-    --neon-cyan:   185 85% 52%;
-    --neon-violet: 265 55% 58%;
-    --neon-peach:  28 90% 62%;
-    --neon-mint:   162 55% 50%;
+    /* ── Graphite palette (used across app; class names kept for
+       backwards compat with the Settings accent-picker) ────────────────── */
+    --neon-cyan:   209 11% 74%;  /* #b5bdc4 */
+    --neon-violet: 206 9% 52%;   /* #646f77, lightened */
+    --neon-peach:  106 5% 62%;   /* #aeb4ac, deeper */
+    --neon-mint:   106 8% 72%;   /* #aeb4ac, lighter */
 
     /* ── Glass effect ─────────────────────────────────────────────────── */
-    --glass-bg:     224 25% 10%;
-    --glass-border: 222 18% 22%;
+    --glass-bg:     206 12% 10%;
+    --glass-border: 206 10% 22%;
 
     /* ── Role colors for chat ─────────────────────────────────────────── */
-    --role-user:      185 85% 52%;
-    --role-assistant:  265 55% 58%;
-    --role-system:    218 14% 50%;
-    --role-moderator: 28 90% 62%;
+    --role-user:      209 11% 74%;
+    --role-assistant:  206 9% 52%;
+    --role-system:    206 8% 61%;
+    --role-moderator: 106 5% 62%;
 
     /* ── Gradients ────────────────────────────────────────────────────── */
-    --gradient-primary: linear-gradient(135deg, hsl(265 55% 48%), hsl(185 85% 52%));
-    --gradient-hero:    linear-gradient(145deg, hsl(228 25% 4%), hsl(265 30% 12%), hsl(225 28% 7%));
-    --gradient-glow:    radial-gradient(circle at 50% 50%, hsl(185 85% 52% / 0.12), transparent 70%);
-    --gradient-card:    linear-gradient(160deg, hsl(224 25% 13%), hsl(224 25% 9%));
+    --gradient-primary: linear-gradient(135deg, hsl(206 9% 48%), hsl(209 11% 74%));
+    --gradient-hero:    linear-gradient(145deg, hsl(206 14% 5%), hsl(206 10% 12%), hsl(206 12% 7%));
+    --gradient-glow:    radial-gradient(circle at 50% 50%, hsl(209 11% 74% / 0.12), transparent 70%);
+    --gradient-card:    linear-gradient(160deg, hsl(206 12% 13%), hsl(206 12% 9%));
 
     /* ── Shadow elevation system (layered, color-tinted) ──────────────── */
-    --shadow-base:     0 1px 2px hsl(228 25% 4% / 0.5);
-    --shadow-elevated: 0 2px 4px hsl(228 25% 4% / 0.3),
-                       0 8px 24px hsl(228 25% 4% / 0.4);
-    --shadow-floating: 0 4px 8px hsl(228 25% 4% / 0.2),
-                       0 16px 48px hsl(228 25% 4% / 0.45),
-                       0 0 0 1px hsl(222 18% 16% / 0.5);
-    --shadow-overlay:  0 8px 16px hsl(228 25% 4% / 0.3),
-                       0 32px 80px hsl(228 25% 4% / 0.5);
+    --shadow-base:     0 1px 2px hsl(206 14% 4% / 0.5);
+    --shadow-elevated: 0 2px 4px hsl(206 14% 4% / 0.3),
+                       0 8px 24px hsl(206 14% 4% / 0.4);
+    --shadow-floating: 0 4px 8px hsl(206 14% 4% / 0.2),
+                       0 16px 48px hsl(206 14% 4% / 0.45),
+                       0 0 0 1px hsl(206 10% 19% / 0.5);
+    --shadow-overlay:  0 8px 16px hsl(206 14% 4% / 0.3),
+                       0 32px 80px hsl(206 14% 4% / 0.5);
 
     /* Accent glow */
     --shadow-glow:    0 0 24px hsl(var(--primary) / 0.2),
@@ -116,37 +118,38 @@
 
   /* ── Dark mode (matches :root — app is dark-first) ────────────────── */
   .dark {
-    --background:  225 28% 7%;
-    --foreground:  210 30% 94%;
+    --background:  206 12% 7%;
+    --foreground:  214 13% 90%;
   }
 
-  /* ── Dynamic Accent Color Overrides ────────────────────────────────── */
+  /* ── Dynamic Accent Color Overrides (Settings picker; retextured to
+     the graphite palette, same option keys so Settings needs no change) ─ */
   :root[data-accent="neon-cyan"] {
-    --primary: 185 85% 52%;
-    --ring:    185 85% 52%;
-    --accent:  185 85% 44%;
-    --gradient-primary: linear-gradient(135deg, hsl(185 85% 44%), hsl(195 85% 56%));
+    --primary: 209 11% 74%;
+    --ring:    209 11% 74%;
+    --accent:  209 11% 62%;
+    --gradient-primary: linear-gradient(135deg, hsl(209 11% 62%), hsl(214 13% 80%));
   }
 
   :root[data-accent="neon-violet"] {
-    --primary: 265 55% 58%;
-    --ring:    265 55% 58%;
-    --accent:  265 55% 48%;
-    --gradient-primary: linear-gradient(135deg, hsl(265 55% 48%), hsl(285 55% 55%));
+    --primary: 206 9% 52%;
+    --ring:    206 9% 52%;
+    --accent:  206 9% 44%;
+    --gradient-primary: linear-gradient(135deg, hsl(206 9% 44%), hsl(206 11% 60%));
   }
 
   :root[data-accent="neon-peach"] {
-    --primary: 28 90% 62%;
-    --ring:    28 90% 62%;
-    --accent:  28 90% 52%;
-    --gradient-primary: linear-gradient(135deg, hsl(28 90% 52%), hsl(18 90% 60%));
+    --primary: 106 5% 62%;
+    --ring:    106 5% 62%;
+    --accent:  106 5% 50%;
+    --gradient-primary: linear-gradient(135deg, hsl(106 5% 50%), hsl(106 6% 68%));
   }
 
   :root[data-accent="neon-mint"] {
-    --primary: 162 55% 50%;
-    --ring:    162 55% 50%;
-    --accent:  162 55% 42%;
-    --gradient-primary: linear-gradient(135deg, hsl(162 55% 42%), hsl(178 55% 48%));
+    --primary: 106 8% 72%;
+    --ring:    106 8% 72%;
+    --accent:  106 8% 58%;
+    --gradient-primary: linear-gradient(135deg, hsl(106 8% 58%), hsl(106 9% 78%));
   }
 }
 
@@ -160,7 +163,7 @@
 
   body {
     @apply bg-background text-foreground antialiased;
-    font-family: 'Comic Sans MS', 'Caveat', 'Patrick Hand', cursive;
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
     background: var(--gradient-hero);
     min-height: 100vh;
     line-height: 1.65;
@@ -170,7 +173,7 @@
 
   /* ── Typography hierarchy ────────────────────────────────────────────── */
   h1, h2, h3 {
-    font-family: 'Comic Sans MS', 'Caveat', cursive;
+    font-family: 'Inter', system-ui, sans-serif;
     font-weight: 700;
     letter-spacing: -0.01em;
     line-height: 1.15;
@@ -178,7 +181,7 @@
   }
 
   h4, h5, h6 {
-    font-family: 'Comic Sans MS', 'Caveat', cursive;
+    font-family: 'Inter', system-ui, sans-serif;
     font-weight: 600;
     letter-spacing: -0.01em;
     line-height: 1.3;
@@ -191,7 +194,7 @@
   }
 
   code, pre {
-    font-family: 'Comic Sans MS', 'Patrick Hand', cursive;
+    font-family: 'JetBrains Mono', Consolas, monospace;
     font-size: 0.9em;
   }
 

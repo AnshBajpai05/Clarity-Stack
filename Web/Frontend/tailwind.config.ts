@@ -14,9 +14,9 @@ export default {
     },
     extend: {
       fontFamily: {
-        sans:    ['Comic Sans MS', 'Caveat', 'Patrick Hand', 'cursive'],
-        display: ['Comic Sans MS', 'Caveat', 'cursive'],
-        mono:    ['Comic Sans MS', 'Patrick Hand', 'cursive'],
+        sans:    ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        display: ['Inter', 'system-ui', '-apple-system', 'sans-serif'],
+        mono:    ['JetBrains Mono', 'Consolas', 'monospace'],
       },
       colors: {
         border: "hsl(var(--border))",

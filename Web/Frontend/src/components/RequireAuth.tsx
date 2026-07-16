@@ -1,8 +1,5 @@
 import { Navigate, Outlet, useLocation } from "react-router-dom";
 
-import { getCookie } from "../lib/http";
-import { DottedSurface } from "@/components/ui/dotted-surface";
-
 /**
  * Client-side route guard (§7.1).
  *
@@ -13,26 +10,15 @@ import { DottedSurface } from "@/components/ui/dotted-surface";
  */
 export function RequireAuth() {
   const location = useLocation();
-  // §5.4: We check for csrf_token (which is JS-readable) as a proxy for being logged in
-  const token = getCookie("csrf_token");
+  // Backend is Bearer-JWT only (no auth cookies) — same token lib/http.ts sends
+  // as `Authorization: Bearer <token>` on every API call.
+  const token = localStorage.getItem("token");
 
   if (!token) {
     return <Navigate to="/login" replace state={{ from: location.pathname }} />;
   }
 
-  return (
-    <>
-      {/* Ambient animated dot field behind every authenticated page. Fixed and
-          pointer-events-none so it never affects layout or interaction; the
-          surface tracks the cursor via window-level listeners. */}
-      <div className="fixed inset-0 z-0 pointer-events-none opacity-25" aria-hidden="true">
-        <DottedSurface />
-      </div>
-      {/* Studio film grain over every authenticated page */}
-      <div className="grain-overlay" aria-hidden="true" />
-      <Outlet />
-    </>
-  );
+  return <Outlet />;
 }
 
 export default RequireAuth;
