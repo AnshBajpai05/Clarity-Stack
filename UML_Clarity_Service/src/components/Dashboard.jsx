@@ -1300,6 +1300,11 @@ const Dashboard = () => {
         if (canvasRef.current) { canvasRef.current.addShape(type); }
     };
 
+    /* True only while a cell is actually being dragged (not merely clicked). Used to
+       pull the Properties panel off screen so it stops covering the canvas the user
+       is dragging across. */
+    const [isDraggingCell, setIsDraggingCell] = useState(false);
+
     const handleSelectionChange = (info) => {
         setSelectedShape(info);
         if (info) {
@@ -1828,6 +1833,7 @@ const Dashboard = () => {
                         onSelectionChange={handleSelectionChange}
                         onPositionUpdate={handlePositionUpdate}
                         onHoverNode={handleHoverNode}
+                        onDragStateChange={setIsDraggingCell}
                         onCellAdded={(id, type) => {
                             if (type === 'link') {
                                 setConnectedEdgeIds(prev => new Set(prev).add(id));
@@ -2222,7 +2228,13 @@ const Dashboard = () => {
                             boxShadow: '0 8px 32px rgba(0,0,0,0.18)',
                             padding: '16px',
                             fontFamily: 'Inter, sans-serif',
-                            transition: 'all 0.2s',
+                            transition: 'opacity 0.15s ease, all 0.2s',
+                            // Faded out rather than unmounted while dragging: the panel
+                            // sits over the top-right of the canvas and gets in the way
+                            // of the drag, but unmounting it would blow away focus and
+                            // any half-typed value in its inputs.
+                            opacity: isDraggingCell ? 0 : 1,
+                            pointerEvents: isDraggingCell ? 'none' : 'auto',
                         }}>
                             {/* Header */}
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>

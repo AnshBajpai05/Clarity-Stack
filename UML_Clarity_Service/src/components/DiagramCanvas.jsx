@@ -218,8 +218,10 @@ const makeLinkTools = () =>
             // vertexAdding:false — see above. Existing vertices stay draggable, and
             // double-clicking one removes it.
             new joint.linkTools.Vertices({ snapRadius: 0, vertexAdding: false }),
-            new joint.linkTools.SourceArrowhead(),
-            new joint.linkTools.TargetArrowhead(),
+            // scale 1.8 — the stock arrowhead handles are ~10px and were the thing the
+            // user had to hit to re-aim an arrow. Bigger handles mean fewer near-misses.
+            new joint.linkTools.SourceArrowhead({ scale: 1.8 }),
+            new joint.linkTools.TargetArrowhead({ scale: 1.8 }),
             // 25% — at 50% the ✕ sat exactly on the label midpoint, so "select the
             // edge" clicks deleted it instead.
             new joint.linkTools.Remove({ distance: '25%' }),
@@ -229,7 +231,7 @@ const makeLinkTools = () =>
 /* ═══════════════════════════════════════════════════════════════════════════
    DiagramCanvas component
 ═══════════════════════════════════════════════════════════════════════════ */
-const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGrid, onZoomChange, onSelectionChange, onPositionUpdate, onHoverNode, onCellAdded, onCellRemoved }, ref) {
+const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGrid, onZoomChange, onSelectionChange, onPositionUpdate, onHoverNode, onCellAdded, onCellRemoved, onDragStateChange }, ref) {
     const wrapperRef  = useRef(null);
     const paperRef    = useRef(null);
     const graphRef    = useRef(null);
@@ -281,7 +283,18 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
             gridSize:          20,
             drawGrid:          { name: 'dot', args: { color: '#c5c9d6', radius: 1.5 } },
             background:        { color: '#f9fafb' },
-            interactive:       true,
+            // Links: linkMove:false. Dragging a link BODY used to translate the whole
+            // arrow, and since the arrowhead handle is small, a near-miss when reaching
+            // for the head grabbed the body instead and slid the entire arrow away.
+            // With body-dragging off, a near-miss now does nothing instead of undoing
+            // the user's aim. Reposition a floating arrow by dragging its two ends;
+            // reshape it with the segment handles.
+            interactive: function(cellView) {
+                if (cellView.model.isLink()) {
+                    return { linkMove: false, labelMove: true, arrowheadMove: true };
+                }
+                return true;
+            },
             cellViewNamespace: CELL_NAMESPACE,
             // Flexible by default. manhattan re-routes on every move and cannot be
             // hand-shaped, so it is no longer the fallback any link silently inherits.
@@ -293,8 +306,36 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
                 }), false);
             },
             defaultConnectionPoint: { name: 'boundary' },
-            snapLinks:              { radius: 100 },
+            snapLinks:              { radius: 140 },
             linkPinning:            true,
+            // The drop target was previously left to JointJS's default highlighter,
+            // which draws a thin stroke clipped to the magnet's own geometry — on an
+            // ellipse or a thin shape that is easy to miss entirely, which is why the
+            // confirmation outline "sometimes didn't appear". These are explicit,
+            // padded mask outlines so there is always an unmistakable signal for both
+            // "this is a legal target" and "release here and it connects".
+            highlighting: {
+                // Every legal target, shown the moment an arrowhead drag begins.
+                elementAvailability: {
+                    name: 'mask',
+                    options: {
+                        padding: 6, layer: 'front',
+                        attrs: {
+                            stroke: '#f59e0b', 'stroke-width': 2,
+                            'stroke-opacity': 0.55, 'stroke-dasharray': '6,3',
+                        },
+                    },
+                },
+                // The one target currently under the arrowhead — solid and thicker so
+                // it clearly outranks the dashed "available" outlines around it.
+                connecting: {
+                    name: 'mask',
+                    options: {
+                        padding: 6, layer: 'front',
+                        attrs: { stroke: '#f59e0b', 'stroke-width': 4, 'stroke-opacity': 1 },
+                    },
+                },
+            },
             validateMagnet: function(_cv, magnet) {
                 // Allow links to start from any element (body, hitArea, etc.)
                 var tag = magnet.tagName.toLowerCase();
@@ -306,11 +347,29 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
         });
 
         /* ── Hover Highlights & Details ────────────────────────────────── */
+        /* The glow is a mask highlighter: it clones the body outline, so on a UseCase
+           it renders as a SECOND ellipse just outside the first. That is the "double
+           ellipse" — it is the hover glow that never got cleaned up. mouseleave alone
+           was not enough to guarantee removal: when the pointer crosses onto a hover
+           tool, leaves the window mid-drag, or the element re-renders under the
+           cursor, the leave event for that view never arrives and the clone is
+           orphaned on the canvas until an unrelated click happens to clear it.
+
+           Tracking the one glowed view and clearing it unconditionally — before any
+           new glow, on any pointerdown, and when the cell is removed — means at most
+           one glow can exist and it can never outlive the hover. */
+        var glowedView = null;
+        var clearHoverGlow = function() {
+            if (!glowedView) return;
+            try { joint.highlighters.mask.remove(glowedView, 'node-glow'); } catch { /* view already torn down */ }
+            glowedView = null;
+        };
+
         paper.on('cell:mouseenter', function(cellView) {
             var cell = cellView.model;
             if (cell.isLink()) return;
-            
-            // Apply Glow
+
+            clearHoverGlow();
             joint.highlighters.mask.add(cellView, 'body', 'node-glow', {
                 padding: 3,
                 attrs: {
@@ -319,6 +378,7 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
                     'stroke-opacity': 0.6
                 }
             });
+            glowedView = cellView;
 
             if (onHoverNode) {
                 var desc = cell.get('fullDescription') || cell.attr('label/text') || '';
@@ -326,8 +386,15 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
             }
         });
 
-        paper.on('cell:mouseleave', function(cellView) {
-            joint.highlighters.mask.remove(cellView, 'node-glow');
+        paper.on('cell:mouseleave', function() {
+            clearHoverGlow();
+            if (onHoverNode) onHoverNode(null, null);
+        });
+
+        // Dragging is the case mouseleave misses most often: the pointer outruns the
+        // shape, so the leave fires against a stale view or not at all.
+        paper.on('cell:pointerdown blank:pointerdown', function() {
+            clearHoverGlow();
             if (onHoverNode) onHoverNode(null, null);
         });
 
@@ -444,6 +511,19 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
             if (onCellAdded) onCellAdded(cell.id, cell.isLink() ? 'link' : 'element');
         });
 
+        /* A SystemBoundary is a container, so it is only ever a backdrop. It was sent
+           toBack() once at creation, but nothing held it there: drop a boundary over
+           existing shapes, or move/resize one across them, and its fill plus its two
+           invisible grab handles (a 24px band around the border and a 30px title strip)
+           sat ABOVE those shapes and ate their clicks — the shapes were visible but not
+           editable. Re-sinking the boundary whenever it is added or moved keeps every
+           other shape reachable no matter what order things were placed in. */
+        var sinkBoundaries = function(cell) {
+            if (cell && cell.get('type') === 'uml.SystemBoundary') cell.toBack();
+        };
+        graph.on('add', sinkBoundaries);
+        graph.on('change:position change:size', sinkBoundaries);
+
         /* ── Selection tracking ─────────────────────────────────────────── */
         paper.on('element:pointerdown', function(cv) {
             selectedRef.current = cv.model;
@@ -477,8 +557,29 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
             onPositionUpdate(posMap);
         };
 
-        paper.on('element:pointermove', reportPositions);
-        paper.on('element:pointerup', reportPositions);
+        /* Drag state, so the Properties panel can get out of the way while a cell is
+           being moved. Deliberately raised on the first pointermove rather than on
+           pointerdown: a plain click to SELECT a shape must keep the panel on screen,
+           and only an actual drag should hide it. */
+        var draggingCell = false;
+        paper.on('element:pointermove', function() {
+            if (!draggingCell) {
+                draggingCell = true;
+                if (onDragStateChange) onDragStateChange(true);
+            }
+            reportPositions();
+        });
+        var endCellDrag = function() {
+            if (draggingCell) {
+                draggingCell = false;
+                if (onDragStateChange) onDragStateChange(false);
+            }
+            reportPositions();
+        };
+        paper.on('element:pointerup', endCellDrag);
+        // A pointerup that lands outside the paper never reaches the paper handler, so
+        // without this the panel would stay hidden until the next drag ended cleanly.
+        paper.on('cell:pointerup blank:pointerup', endCellDrag);
         paper.on('link:pointerdown', function(lv) {
             selectedRef.current = lv.model;
             if (onSelectionChange) {
