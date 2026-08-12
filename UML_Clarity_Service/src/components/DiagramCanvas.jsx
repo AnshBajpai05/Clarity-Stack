@@ -121,17 +121,21 @@ const buildElement = (cell) => {
 
 /* ── Link factory ─────────────────────────────────────────────────────────── */
 
-const buildLink = (cell) => {
-    const linkLabel = cell.attrs && cell.attrs.label ? cell.attrs.label.text : null;
-    return new joint.shapes.standard.Link({
-        id:     cell.id,
-        source: cell.source,
-        target: cell.target,
-        attrs:  { line: { stroke: '#6b7280', strokeWidth: 1.5, targetMarker: { type: 'arrow', size: 8 } } },
-        labels: linkLabel
-            ? [{ position: 0.5, attrs: { text: { text: linkLabel, fontSize: 11 } } }]
-            : [],
-    });
+/* Every link-creation path funnels through here. Previously each path set — or
+   forgot to set — its own router: the toolbox arrows inherited the paper's
+   manhattan default, the import path picked a router per diagram domain, and
+   drawConnection/addEdge used normal+smooth. So the "same" arrow bent
+   differently depending on whether it was spawned from the toolbox or read
+   back from a file.
+
+   'normal' routes the path as exactly source → vertices → target and nothing
+   else, so a segment the user drags STAYS where they put it. 'manhattan'
+   re-solves the whole path on every endpoint move and forces 90° corners —
+   that is why straight arrows elbowed themselves when repositioned. */
+const applyLinkRouting = (link, curved) => {
+    link.router('normal');
+    link.connector(curved ? 'smooth' : 'normal');
+    return link;
 };
 
 /* ── Tool builders ────────────────────────────────────────────────────────── */
@@ -200,11 +204,20 @@ const makeLinkTools = () =>
     new joint.dia.ToolsView({
         name: 'link-tools',
         tools: [
-            // vertexAdding:false — the default adds an invisible full-path hit band
-            // that swallows every click on the line, so link:pointerdown never fired
-            // and links could not be selected (the edge Properties panel depends on
-            // it). Existing vertices stay draggable.
-            new joint.linkTools.Vertices({ snapRadius: 20, vertexAdding: false }),
+            // Segments is what makes a link bendable: it puts a discrete handle at
+            // each segment midpoint, and dragging one inserts a vertex there. It is
+            // used INSTEAD of Vertices' own vertexAdding because that option lays an
+            // invisible full-path hit band over the line which swallows every click,
+            // so link:pointerdown never fires and the edge Properties panel can never
+            // open. Discrete handles bend the line without stealing the whole path.
+            new joint.linkTools.Segments({
+                snapRadius: 0,              // free placement, no grid snapping
+                redundancyRemoval: false,   // keep collinear vertices the user placed
+                segmentLengthThreshold: 40, // hide handles on segments too short to grab
+            }),
+            // vertexAdding:false — see above. Existing vertices stay draggable, and
+            // double-clicking one removes it.
+            new joint.linkTools.Vertices({ snapRadius: 0, vertexAdding: false }),
             new joint.linkTools.SourceArrowhead(),
             new joint.linkTools.TargetArrowhead(),
             // 25% — at 50% the ✕ sat exactly on the label midpoint, so "select the
@@ -270,12 +283,14 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
             background:        { color: '#f9fafb' },
             interactive:       true,
             cellViewNamespace: CELL_NAMESPACE,
-            defaultRouter:     { name: 'manhattan', args: { padding: 20 } },
-            defaultConnector:  { name: 'rounded' },
+            // Flexible by default. manhattan re-routes on every move and cannot be
+            // hand-shaped, so it is no longer the fallback any link silently inherits.
+            defaultRouter:     { name: 'normal' },
+            defaultConnector:  { name: 'normal' },
             defaultLink: function() {
-                return new joint.shapes.standard.Link({
+                return applyLinkRouting(new joint.shapes.standard.Link({
                     attrs: { line: { stroke: '#6366f1', strokeWidth: 2, targetMarker: { type: 'arrow', size: 10 } } },
-                });
+                }), false);
             },
             defaultConnectionPoint: { name: 'boundary' },
             snapLinks:              { radius: 100 },
@@ -733,33 +748,21 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
                 id:     l.id,
                 source: l.source,
                 target: l.target,
+                // Carry the bends across a save/reload — without this every vertex the
+                // user dragged is dropped and the arrow snaps back to a bare line.
+                vertices: l.vertices || [],
                 attrs:  { line: { stroke: '#6b7280', strokeWidth: 1.5, targetMarker: { type: 'arrow', size: 8 } } },
                 labels: linkLabel
                     ? [{ position: 0.5, attrs: { text: { text: linkLabel, fontSize: 11 } } }]
                     : [],
             });
 
-            var srcType = shapeTypeMap[l.source.id];
-            var tgtType = shapeTypeMap[l.target.id];
-
-            // Apply presentable router logic per diagram domain
-            if (srcType === 'uml.UseCase' && tgtType === 'uml.UseCase') {
-                jointLink.router('manhattan', { padding: 20 });
-                jointLink.connector('rounded');
-            } else if (srcType === 'uml.Actor' || tgtType === 'uml.Actor') {
-                jointLink.router('normal');
-                jointLink.connector('normal');
-            } else if (srcType && (srcType.startsWith('uml.Action') || srcType.startsWith('uml.Decision') || srcType.startsWith('uml.Start') || srcType.startsWith('uml.End'))) {
-                jointLink.router('manhattan', { padding: 20 });
-                jointLink.connector('rounded');
-            } else if (srcType && srcType.startsWith('dfd.')) {
-                jointLink.router('manhattan', { padding: 20 });
-                jointLink.connector('rounded');
-            } else {
-                jointLink.router('normal');
-                jointLink.connector('normal');
-            }
-            return jointLink;
+            // Previously this branched per diagram domain (manhattan for use-case,
+            // activity and DFD edges; normal elsewhere), which is why an arrow read
+            // back from a file behaved differently from the identical arrow dropped
+            // from the toolbox — and why those edges could not be hand-shaped at all.
+            // All links now route the same way, and the user bends them by hand.
+            return applyLinkRouting(jointLink, (l.connector && l.connector.name) === 'smooth');
         });
 
         graph.addCells(processedShapes.concat(builtLinks));
@@ -847,7 +850,7 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
                         rel.marker === 'hollow' // generalization: hollow triangle
                             ? { type: 'path', d: 'M 16 -8 0 0 16 8 Z', fill: darkMode ? '#0d0f17' : '#ffffff', stroke: lineColor, 'stroke-width': 1.5 }
                             : { type: 'path', d: 'M 12 -6 0 0 12 6', fill: 'none', stroke: lineColor, 'stroke-width': 1.5 };
-                    graph.addCell(new joint.shapes.standard.Link({
+                    graph.addCell(applyLinkRouting(new joint.shapes.standard.Link({
                         id,
                         source: { x: cx - 90, y: cy },
                         target: { x: cx + 90, y: cy },
@@ -859,28 +862,29 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
                                 rect: { fill: darkMode ? '#0d0f17' : '#ffffff', stroke: 'none' },
                             },
                         }] : [],
-                    }));
+                    }), false));
                     return;
                 }
                 if (type === 'standard.Link') {
-                    graph.addCell(new joint.shapes.standard.Link({
+                    graph.addCell(applyLinkRouting(new joint.shapes.standard.Link({
                         id,
                         source: { x: cx - 80, y: cy },
                         target: { x: cx + 80, y: cy },
                         attrs:  { line: { stroke: darkMode ? '#94a3b8' : '#6b7280', strokeWidth: 1.5, targetMarker: { type: 'arrow', size: 8 } } },
-                    }));
+                    }), false));
                     return;
                 }
                 if (type === 'curved.Link') {
-                    var clk = new joint.shapes.standard.Link({
+                    // Seeded with one vertex so it spawns as a visible arc rather than
+                    // a line that only curves once the user finds a handle. Both the
+                    // vertex and the segment handles are draggable from the start.
+                    graph.addCell(applyLinkRouting(new joint.shapes.standard.Link({
                         id,
                         source: { x: cx - 80, y: cy },
                         target: { x: cx + 80, y: cy },
+                        vertices: [{ x: cx, y: cy - 55 }],
                         attrs:  { line: { stroke: darkMode ? '#94a3b8' : '#6b7280', strokeWidth: 1.5, targetMarker: { type: 'arrow', size: 8 } } },
-                    });
-                    clk.router('manhattan', { padding: 20 });
-                    clk.connector('rounded');
-                    graph.addCell(clk);
+                    }), true));
                     return;
                 }
                 var defSize = DEFAULT_SIZES[type] || { width: 160, height: 60 };
@@ -962,8 +966,7 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
                     attrs:  { line: { stroke: darkMode ? '#60a5fa' : '#2563eb', strokeWidth: 1.5, targetMarker: { type: 'arrow', size: 8 } } },
                     labels: label ? [{ position: 0.5, attrs: { text: { text: label, fontSize: 10, fill: darkMode ? '#94a3b8' : '#475569' } } }] : [],
                 });
-                link.connector('smooth');
-                link.router('normal');
+                applyLinkRouting(link, true);
                 graph.addCell(link);
                 console.log('[Canvas] drawConnection', fromId, '->', toId, label);
                 return true;
@@ -1148,6 +1151,7 @@ const DiagramCanvas = forwardRef(function DiagramCanvas({ data, darkMode, snapGr
                     target: { id: toId },
                     router: { name: 'normal' },
                     connector: { name: 'smooth' },
+                    // (routing kept inline here — matches applyLinkRouting(link, true))
                     attrs: {
                         line: {
                             stroke: '#6366f1',
